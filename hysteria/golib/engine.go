@@ -54,7 +54,6 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 	if err != nil {
 		return fmt.Errorf("resolve server: %w", err)
 	}
-	logMsg(LogLevelInfo, "Resolved to %s", serverAddr.String())
 
 	coreConfig := &client.Config{
 		ServerAddr: serverAddr,
@@ -67,7 +66,6 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 
 	if cfg.TLSSni != "" {
 		coreConfig.TLSConfig.ServerName = cfg.TLSSni
-		logMsg(LogLevelDebug, "TLS SNI: %s", cfg.TLSSni)
 	}
 	coreConfig.TLSConfig.InsecureSkipVerify = cfg.TLSInsecure
 
@@ -93,10 +91,6 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 		coreConfig.BandwidthConfig.MaxRx = uint64(cfg.MaxRxMbps) * 125000
 	}
 
-	if cfg.DisablePathMTUDiscovery {
-		logMsg(LogLevelDebug, "Path MTU Discovery disabled")
-	}
-
 	logMsg(LogLevelInfo, "Connecting to %s...", serverAddr.String())
 	c, info, err := client.NewClient(coreConfig)
 	if err != nil {
@@ -113,8 +107,7 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 
 	if socksAddr != "" {
 		if err := startSOCKS5(c, socksAddr); err != nil {
-			c.Close()
-			activeClient = nil
+			StopClient()
 			return fmt.Errorf("socks5: %w", err)
 		}
 		logMsg(LogLevelInfo, "SOCKS5 listening on %s", socksAddr)
@@ -122,8 +115,7 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 
 	if httpAddr != "" {
 		if err := startHTTPProxy(c, httpAddr); err != nil {
-			c.Close()
-			activeClient = nil
+			StopClient()
 			return fmt.Errorf("http proxy: %w", err)
 		}
 		logMsg(LogLevelInfo, "HTTP proxy listening on %s", httpAddr)

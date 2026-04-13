@@ -13,26 +13,37 @@ import org.json.JSONObject
 import ru.shapovalov.hysteria.api.HysteriaClient
 
 class HysteriaClientImpl : HysteriaClient {
-
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
     override fun setLogListener(listener: HysteriaClient.LogListener?) {
-        Golib.setLogHandler(listener?.let { kotlinListener ->
-            LogHandler { level, message -> kotlinListener.onLog(level, message) }
-        })
+        if (listener == null) {
+            Golib.setLogHandler(null)
+            return
+        }
+
+        Golib.setLogHandler { level, message ->
+            listener.onLog(level, message)
+        }
     }
 
     override suspend fun connect(config: HysteriaConfig) {
-        _state.update { ConnectionState.Connecting }
+        if (_state.value is ConnectionState.Connecting || _state.value is ConnectionState.Connected) {
+            return
+        }
+
+        _state.value = ConnectionState.Connecting
 
         val configJson = JSONObject().apply {
             put("server", config.server)
             put("auth", config.auth)
             put("tls_sni", config.tlsSni)
             put("tls_insecure", config.tlsInsecure)
+            put("tls_ca", config.tlsCa)
             put("disable_pmtud", config.disablePathMTUDiscovery)
             put("fast_open", config.fastOpen)
+            put("max_tx_mbps", config.maxTxMbps)
+            put("max_rx_mbps", config.maxRxMbps)
         }.toString()
 
         withContext(Dispatchers.IO) {
@@ -53,19 +64,16 @@ class HysteriaClientImpl : HysteriaClient {
                         override fun onError(message: String) {
                             _state.value = ConnectionState.Error(message)
                         }
-                    })
+                    }
+                )
             } catch (e: Exception) {
-                _state.update { ConnectionState.Error(e.message ?: "Unknown connection error") }
+                _state.value = ConnectionState.Error(e.message ?: "Native link failure")
             }
         }
     }
 
     override fun disconnect() {
-        try {
-            Golib.stopClient()
-        } catch (e: Exception) {
-            _state.update { ConnectionState.Error(e.message ?: "Unknown error while disconnecting") }
-        }
-        _state.update { ConnectionState.Disconnected }
+        runCatching { Golib.stopClient() }
+        _state.value = ConnectionState.Disconnected
     }
 }
