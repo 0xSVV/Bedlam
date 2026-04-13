@@ -29,6 +29,8 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    api(libs.kotlinx.coroutines.android)
+    compileOnly(files("libs/golib.aar"))
 }
 
 val golibDir = layout.projectDirectory.dir("golib")
@@ -116,7 +118,7 @@ val buildGolib by tasks.registering(Exec::class) {
             "Install it with: go install golang.org/x/mobile/cmd/gobind@latest"
         )
 
-    val submoduleDir = golibDir.asFile.resolve("../hysteria-upstream/core")
+    val submoduleDir = golibDir.asFile.resolve("../upstream/core")
     if (!submoduleDir.exists()) {
         error(
             "Hysteria submodule not found at ${submoduleDir.canonicalPath}\n" +

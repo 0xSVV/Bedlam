@@ -27,6 +27,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/apernet/hysteria/core/v2 => ../hysteria-upstream/core
+replace github.com/apernet/hysteria/core/v2 => ../upstream/core
 
-replace github.com/apernet/hysteria/extras/v2 => ../hysteria-upstream/extras
+replace github.com/apernet/hysteria/extras/v2 => ../upstream/extras
