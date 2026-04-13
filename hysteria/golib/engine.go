@@ -30,15 +30,15 @@ type EventHandler interface {
 }
 
 var (
-	mu            sync.Mutex
+	clientMu      sync.Mutex
 	activeClient  client.Client
 	socksListener net.Listener
 	httpListener  net.Listener
 )
 
 func StartClient(configJSON string, socksAddr string, httpAddr string, handler EventHandler) error {
-	mu.Lock()
-	defer mu.Unlock()
+	clientMu.Lock()
+	defer clientMu.Unlock()
 
 	if activeClient != nil {
 		return fmt.Errorf("client already running")
@@ -49,10 +49,12 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 		return fmt.Errorf("invalid config JSON: %w", err)
 	}
 
+	logMsg(LogLevelInfo, "Resolving server address: %s", cfg.Server)
 	serverAddr, err := resolveServerAddr(cfg.Server)
 	if err != nil {
 		return fmt.Errorf("resolve server: %w", err)
 	}
+	logMsg(LogLevelInfo, "Resolved to %s", serverAddr.String())
 
 	coreConfig := &client.Config{
 		ServerAddr: serverAddr,
@@ -65,6 +67,7 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 
 	if cfg.TLSSni != "" {
 		coreConfig.TLSConfig.ServerName = cfg.TLSSni
+		logMsg(LogLevelDebug, "TLS SNI: %s", cfg.TLSSni)
 	}
 	coreConfig.TLSConfig.InsecureSkipVerify = cfg.TLSInsecure
 
@@ -90,11 +93,19 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 		coreConfig.BandwidthConfig.MaxRx = uint64(cfg.MaxRxMbps) * 125000
 	}
 
+	if cfg.DisablePathMTUDiscovery {
+		logMsg(LogLevelDebug, "Path MTU Discovery disabled")
+	}
+
+	logMsg(LogLevelInfo, "Connecting to %s...", serverAddr.String())
 	c, info, err := client.NewClient(coreConfig)
 	if err != nil {
+		logMsg(LogLevelError, "Connection failed: %s", err.Error())
 		return fmt.Errorf("connect: %w", err)
 	}
 	activeClient = c
+
+	logMsg(LogLevelInfo, "Connected (UDP: %v, TX: %d)", info.UDPEnabled, info.Tx)
 
 	if handler != nil {
 		handler.OnConnected(info.UDPEnabled)
@@ -106,6 +117,7 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 			activeClient = nil
 			return fmt.Errorf("socks5: %w", err)
 		}
+		logMsg(LogLevelInfo, "SOCKS5 listening on %s", socksAddr)
 	}
 
 	if httpAddr != "" {
@@ -114,18 +126,21 @@ func StartClient(configJSON string, socksAddr string, httpAddr string, handler E
 			activeClient = nil
 			return fmt.Errorf("http proxy: %w", err)
 		}
+		logMsg(LogLevelInfo, "HTTP proxy listening on %s", httpAddr)
 	}
 
 	return nil
 }
 
 func StopClient() error {
-	mu.Lock()
-	defer mu.Unlock()
+	clientMu.Lock()
+	defer clientMu.Unlock()
 
 	if activeClient == nil {
 		return fmt.Errorf("no client running")
 	}
+
+	logMsg(LogLevelInfo, "Stopping client...")
 
 	if socksListener != nil {
 		socksListener.Close()
@@ -138,12 +153,14 @@ func StopClient() error {
 
 	err := activeClient.Close()
 	activeClient = nil
+
+	logMsg(LogLevelInfo, "Client stopped")
 	return err
 }
 
 func IsRunning() bool {
-	mu.Lock()
-	defer mu.Unlock()
+	clientMu.Lock()
+	defer clientMu.Unlock()
 	return activeClient != nil
 }
 
