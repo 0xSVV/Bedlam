@@ -35,6 +35,7 @@ android {
 
 dependencies {
     implementation(project(":hysteria"))
+    implementation(files("${rootProject.projectDir}/hysteria/libs/golib.aar"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
