@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.library)
 }
@@ -30,16 +32,18 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     api(libs.kotlinx.coroutines.android)
-    compileOnly(files("libs/golib.aar"))
+    compileOnly(fileTree("libs") { include("*.aar") })
 }
 
 val golibDir = layout.projectDirectory.dir("golib")
 val golibAar = layout.projectDirectory.file("libs/golib.aar")
 
 fun findExecutable(name: String, extraPaths: List<String> = emptyList()): String? {
+    val isWindows = System.getProperty("os.name").lowercase().contains("win")
+    val names = if (isWindows) listOf("$name.exe", "$name.bat", "$name.cmd", name) else listOf(name)
     val pathDirs = (extraPaths + (System.getenv("PATH")?.split(File.pathSeparator) ?: emptyList()))
     return pathDirs
-        .map { File(it, name) }
+        .flatMap { dir -> names.map { File(dir, it) } }
         .firstOrNull { it.exists() && it.canExecute() }
         ?.absolutePath
 }
@@ -76,12 +80,9 @@ fun findNdk(): String {
 fun sdkDirFromLocalProperties(): String? {
     val file = rootProject.file("local.properties")
     if (!file.exists()) return null
-    file.readLines().forEach { line ->
-        if (line.startsWith("sdk.dir=")) {
-            return line.substringAfter("sdk.dir=").trim()
-        }
-    }
-    return null
+    val props = Properties()
+    file.reader().use { props.load(it) }
+    return props.getProperty("sdk.dir")
 }
 
 fun findGoPath(): String {
@@ -97,56 +98,59 @@ val buildGolib by tasks.registering(Exec::class) {
     inputs.dir(golibDir)
     outputs.file(golibAar)
 
-    val goPath = findGoPath()
-    val goExe = findExecutable("go", listOf("$goPath/bin", "/usr/local/go/bin", "/opt/homebrew/bin"))
-        ?: error(
-            "Go is not installed or not in PATH.\n" +
-            "Install it from: https://go.dev/dl/"
-        )
+    // Defer all tool resolution to execution time so sync/configuration never fails
+    doFirst {
+        val goPath = findGoPath()
+        val goExe = findExecutable("go", listOf("$goPath/bin", "/usr/local/go/bin", "/opt/homebrew/bin"))
+            ?: error(
+                "Go is not installed or not in PATH.\n" +
+                "Install it from: https://go.dev/dl/"
+            )
 
-    val gomobileExe = findExecutable("gomobile", listOf("$goPath/bin"))
-        ?: error(
-            "gomobile is not installed.\n" +
-            "Install it with:\n" +
-            "  go install golang.org/x/mobile/cmd/gomobile@latest\n" +
-            "  go install golang.org/x/mobile/cmd/gobind@latest"
-        )
+        val gomobileExe = findExecutable("gomobile", listOf("$goPath/bin"))
+            ?: error(
+                "gomobile is not installed.\n" +
+                "Install it with:\n" +
+                "  go install golang.org/x/mobile/cmd/gomobile@latest\n" +
+                "  go install golang.org/x/mobile/cmd/gobind@latest"
+            )
 
-    findExecutable("gobind", listOf("$goPath/bin"))
-        ?: error(
-            "gobind is not installed.\n" +
-            "Install it with: go install golang.org/x/mobile/cmd/gobind@latest"
-        )
+        findExecutable("gobind", listOf("$goPath/bin"))
+            ?: error(
+                "gobind is not installed.\n" +
+                "Install it with: go install golang.org/x/mobile/cmd/gobind@latest"
+            )
 
-    val submoduleDir = golibDir.asFile.resolve("../upstream/core")
-    if (!submoduleDir.exists()) {
-        error(
-            "Hysteria submodule not found at ${submoduleDir.canonicalPath}\n" +
-            "Initialize it with: git submodule update --init --recursive"
+        val submoduleDir = golibDir.asFile.resolve("../upstream/core")
+        if (!submoduleDir.exists()) {
+            error(
+                "Hysteria submodule not found at ${submoduleDir.canonicalPath}\n" +
+                "Initialize it with: git submodule update --init --recursive"
+            )
+        }
+
+        val ndkPath = findNdk()
+        val sdkPath = System.getenv("ANDROID_HOME")
+            ?: System.getenv("ANDROID_SDK_ROOT")
+            ?: sdkDirFromLocalProperties()
+            ?: ""
+
+        environment("ANDROID_HOME", sdkPath)
+        environment("ANDROID_NDK_HOME", ndkPath)
+        environment("PATH", listOf(
+            File(goExe).parent,
+            File(gomobileExe).parent,
+            System.getenv("PATH")
+        ).joinToString(File.pathSeparator))
+
+        commandLine(
+            gomobileExe, "bind",
+            "-target=android/arm64",
+            "-androidapi", "29",
+            "-o", golibAar.asFile.absolutePath,
+            "."
         )
     }
-
-    val ndkPath = findNdk()
-    val sdkPath = System.getenv("ANDROID_HOME")
-        ?: System.getenv("ANDROID_SDK_ROOT")
-        ?: sdkDirFromLocalProperties()
-        ?: ""
-
-    environment("ANDROID_HOME", sdkPath)
-    environment("ANDROID_NDK_HOME", ndkPath)
-    environment("PATH", listOf(
-        File(goExe).parent,
-        File(gomobileExe).parent,
-        System.getenv("PATH")
-    ).joinToString(File.pathSeparator))
-
-    commandLine(
-        gomobileExe, "bind",
-        "-target=android/arm64",
-        "-androidapi", "29",
-        "-o", golibAar.asFile.absolutePath,
-        "."
-    )
 }
 
 tasks.named("preBuild") {
