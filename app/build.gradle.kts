@@ -33,9 +33,15 @@ android {
     }
 }
 
+afterEvaluate {
+    tasks.matching { it.name.contains("Dependencies") }.configureEach {
+        dependsOn(":hysteria:buildGolib")
+    }
+}
+
 dependencies {
     implementation(project(":hysteria"))
-    implementation(files("${rootProject.projectDir}/hysteria/libs/golib.aar"))
+    implementation(fileTree("${rootProject.projectDir}/hysteria/libs") { include("*.aar") })
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
