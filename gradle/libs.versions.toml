@@ -1,5 +1,9 @@
 [versions]
-agp = "9.1.0"
+minSdk = "29"
+targetSdk = "37"
+versionName = "1.0"
+versionCode = "1"
+agp = "9.1.1"
 kotlin = "2.3.20"
 coreKtx = "1.18.0"
 appcompat = "1.7.1"
