@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -42,19 +43,18 @@ func startSOCKS5(c client.Client, addr string, cfg socksProxyConfig) error {
 }
 
 func handleSOCKS5(c client.Client, conn net.Conn, cfg socksProxyConfig) {
+	defer conn.Close()
+
 	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		conn.Close()
 		return
 	}
 	if buf[0] != 0x05 {
-		conn.Close()
 		return
 	}
 
 	methods := make([]byte, buf[1])
 	if _, err := io.ReadFull(conn, methods); err != nil {
-		conn.Close()
 		return
 	}
 
@@ -70,41 +70,12 @@ func handleSOCKS5(c client.Client, conn net.Conn, cfg socksProxyConfig) {
 		}
 		if !found {
 			conn.Write([]byte{0x05, 0xFF})
-			conn.Close()
 			return
 		}
 		conn.Write([]byte{0x05, 0x02})
 
-		// RFC 1929 username/password sub-negotiation
-		authBuf := make([]byte, 2)
-		if _, err := io.ReadFull(conn, authBuf); err != nil {
-			conn.Close()
-			return
-		}
-		if authBuf[0] != 0x01 {
-			conn.Close()
-			return
-		}
-		ulen := int(authBuf[1])
-		username := make([]byte, ulen)
-		if _, err := io.ReadFull(conn, username); err != nil {
-			conn.Close()
-			return
-		}
-		plenBuf := make([]byte, 1)
-		if _, err := io.ReadFull(conn, plenBuf); err != nil {
-			conn.Close()
-			return
-		}
-		password := make([]byte, plenBuf[0])
-		if _, err := io.ReadFull(conn, password); err != nil {
-			conn.Close()
-			return
-		}
-
-		if string(username) != cfg.Username || string(password) != cfg.Password {
+		if !readSOCKS5Auth(conn, cfg) {
 			conn.Write([]byte{0x01, 0x01})
-			conn.Close()
 			return
 		}
 		conn.Write([]byte{0x01, 0x00})
@@ -114,67 +85,94 @@ func handleSOCKS5(c client.Client, conn net.Conn, cfg socksProxyConfig) {
 
 	buf = make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		conn.Close()
 		return
 	}
 
 	if buf[0] != 0x05 || buf[1] != 0x01 {
 		conn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
-		conn.Close()
 		return
 	}
 
-	var targetAddr string
-	switch buf[3] {
-	case 0x01: // IPv4
-		addr := make([]byte, 4)
-		if _, err := io.ReadFull(conn, addr); err != nil {
-			conn.Close()
-			return
-		}
-		targetAddr = net.IP(addr).String()
-	case 0x03: // Domain
-		lenBuf := make([]byte, 1)
-		if _, err := io.ReadFull(conn, lenBuf); err != nil {
-			conn.Close()
-			return
-		}
-		domain := make([]byte, lenBuf[0])
-		if _, err := io.ReadFull(conn, domain); err != nil {
-			conn.Close()
-			return
-		}
-		targetAddr = string(domain)
-	case 0x04: // IPv6
-		addr := make([]byte, 16)
-		if _, err := io.ReadFull(conn, addr); err != nil {
-			conn.Close()
-			return
-		}
-		targetAddr = "[" + net.IP(addr).String() + "]"
-	default:
+	target, err := readSOCKS5Addr(conn, buf[3])
+	if err != nil {
 		conn.Write([]byte{0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
-		conn.Close()
 		return
 	}
-
-	portBuf := make([]byte, 2)
-	if _, err := io.ReadFull(conn, portBuf); err != nil {
-		conn.Close()
-		return
-	}
-	port := binary.BigEndian.Uint16(portBuf)
-	target := net.JoinHostPort(targetAddr, strconv.Itoa(int(port)))
 
 	remote, err := c.TCP(target)
 	if err != nil {
 		conn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
-		conn.Close()
 		return
 	}
 
 	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 	relay(conn, remote)
+}
+
+func readSOCKS5Auth(conn net.Conn, cfg socksProxyConfig) bool {
+	authBuf := make([]byte, 2)
+	if _, err := io.ReadFull(conn, authBuf); err != nil {
+		return false
+	}
+	if authBuf[0] != 0x01 {
+		return false
+	}
+
+	username := make([]byte, authBuf[1])
+	if _, err := io.ReadFull(conn, username); err != nil {
+		return false
+	}
+
+	plenBuf := make([]byte, 1)
+	if _, err := io.ReadFull(conn, plenBuf); err != nil {
+		return false
+	}
+
+	password := make([]byte, plenBuf[0])
+	if _, err := io.ReadFull(conn, password); err != nil {
+		return false
+	}
+
+	usernameOk := subtle.ConstantTimeCompare(username, []byte(cfg.Username)) == 1
+	passwordOk := subtle.ConstantTimeCompare(password, []byte(cfg.Password)) == 1
+	return usernameOk && passwordOk
+}
+
+func readSOCKS5Addr(conn net.Conn, addrType byte) (string, error) {
+	var host string
+	switch addrType {
+	case 0x01: // IPv4
+		buf := make([]byte, 4)
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			return "", err
+		}
+		host = net.IP(buf).String()
+	case 0x03: // Domain
+		lenBuf := make([]byte, 1)
+		if _, err := io.ReadFull(conn, lenBuf); err != nil {
+			return "", err
+		}
+		domain := make([]byte, lenBuf[0])
+		if _, err := io.ReadFull(conn, domain); err != nil {
+			return "", err
+		}
+		host = string(domain)
+	case 0x04: // IPv6
+		buf := make([]byte, 16)
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			return "", err
+		}
+		host = "[" + net.IP(buf).String() + "]"
+	default:
+		return "", fmt.Errorf("unsupported address type: %d", addrType)
+	}
+
+	portBuf := make([]byte, 2)
+	if _, err := io.ReadFull(conn, portBuf); err != nil {
+		return "", err
+	}
+	port := binary.BigEndian.Uint16(portBuf)
+	return net.JoinHostPort(host, strconv.Itoa(int(port))), nil
 }
 
 func startHTTPProxy(c client.Client, addr string, cfg httpProxyConfig) error {
@@ -196,34 +194,18 @@ func startHTTPProxy(c client.Client, addr string, cfg httpProxyConfig) error {
 }
 
 func handleHTTPConnect(c client.Client, conn net.Conn, cfg httpProxyConfig) {
+	defer conn.Close()
+
 	buf := make([]byte, 4096)
 	n, err := conn.Read(buf)
 	if err != nil {
-		conn.Close()
 		return
 	}
 	request := string(buf[:n])
 
 	if cfg.Username != "" && cfg.Password != "" {
-		expected := base64.StdEncoding.EncodeToString([]byte(cfg.Username + ":" + cfg.Password))
-		authOk := false
-		for _, line := range strings.Split(request, "\r\n") {
-			lower := strings.ToLower(line)
-			if !strings.HasPrefix(lower, "proxy-authorization:") {
-				continue
-			}
-			value := strings.TrimSpace(line[len("proxy-authorization:"):])
-			if strings.HasPrefix(strings.ToLower(value), "basic ") {
-				token := strings.TrimSpace(value[6:])
-				if token == expected {
-					authOk = true
-				}
-			}
-			break
-		}
-		if !authOk {
+		if !checkHTTPProxyAuth(request, cfg) {
 			conn.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"Hysteria\"\r\n\r\n"))
-			conn.Close()
 			return
 		}
 	}
@@ -233,7 +215,6 @@ func handleHTTPConnect(c client.Client, conn net.Conn, cfg httpProxyConfig) {
 
 	if method != "CONNECT" {
 		conn.Write([]byte("HTTP/1.1 405 Method Not Allowed\r\n\r\n"))
-		conn.Close()
 		return
 	}
 
@@ -244,7 +225,6 @@ func handleHTTPConnect(c client.Client, conn net.Conn, cfg httpProxyConfig) {
 	remote, err := c.TCP(host)
 	if err != nil {
 		conn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
-		conn.Close()
 		return
 	}
 
@@ -252,19 +232,35 @@ func handleHTTPConnect(c client.Client, conn net.Conn, cfg httpProxyConfig) {
 	relay(conn, remote)
 }
 
+func checkHTTPProxyAuth(request string, cfg httpProxyConfig) bool {
+	expected := base64.StdEncoding.EncodeToString([]byte(cfg.Username + ":" + cfg.Password))
+	for _, line := range strings.Split(request, "\r\n") {
+		if !strings.HasPrefix(strings.ToLower(line), "proxy-authorization:") {
+			continue
+		}
+		value := strings.TrimSpace(line[len("proxy-authorization:"):])
+		if strings.HasPrefix(strings.ToLower(value), "basic ") {
+			token := strings.TrimSpace(value[6:])
+			return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
+		}
+		break
+	}
+	return false
+}
+
 func relay(a, b net.Conn) {
 	defer a.Close()
 	defer b.Close()
 
-	errc := make(chan error, 2)
+	done := make(chan struct{}, 1)
 	go func() {
-		_, err := io.Copy(a, b)
-		errc <- err
+		io.Copy(a, b)
+		done <- struct{}{}
 	}()
 	go func() {
-		_, err := io.Copy(b, a)
-		errc <- err
+		io.Copy(b, a)
+		done <- struct{}{}
 	}()
 
-	<-errc
+	<-done
 }

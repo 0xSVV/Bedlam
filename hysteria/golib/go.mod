@@ -7,8 +7,6 @@ toolchain go1.25.1
 require (
 	github.com/apernet/hysteria/core/v2 v2.0.0-00010101000000-000000000000
 	github.com/apernet/hysteria/extras/v2 v2.0.0-00010101000000-000000000000
-	github.com/apernet/sing-tun v0.2.6-0.20250920121535-299f04629986
-	github.com/sagernet/sing v0.3.2
 	golang.org/x/mobile v0.0.0-20260410095206-2cfb76559b7b
 )
 
