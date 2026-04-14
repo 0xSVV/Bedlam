@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -11,7 +12,18 @@ import (
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
-func startSOCKS5(c client.Client, addr string) error {
+type socksProxyConfig struct {
+	Username   string
+	Password   string
+	DisableUDP bool
+}
+
+type httpProxyConfig struct {
+	Username string
+	Password string
+}
+
+func startSOCKS5(c client.Client, addr string, cfg socksProxyConfig) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -23,13 +35,13 @@ func startSOCKS5(c client.Client, addr string) error {
 			if err != nil {
 				return
 			}
-			go handleSOCKS5(c, conn)
+			go handleSOCKS5(c, conn, cfg)
 		}
 	}()
 	return nil
 }
 
-func handleSOCKS5(c client.Client, conn net.Conn) {
+func handleSOCKS5(c client.Client, conn net.Conn, cfg socksProxyConfig) {
 	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
 		conn.Close()
@@ -45,7 +57,60 @@ func handleSOCKS5(c client.Client, conn net.Conn) {
 		conn.Close()
 		return
 	}
-	conn.Write([]byte{0x05, 0x00}) // No auth required
+
+	requireAuth := cfg.Username != "" && cfg.Password != ""
+
+	if requireAuth {
+		found := false
+		for _, m := range methods {
+			if m == 0x02 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			conn.Write([]byte{0x05, 0xFF})
+			conn.Close()
+			return
+		}
+		conn.Write([]byte{0x05, 0x02})
+
+		// RFC 1929 username/password sub-negotiation
+		authBuf := make([]byte, 2)
+		if _, err := io.ReadFull(conn, authBuf); err != nil {
+			conn.Close()
+			return
+		}
+		if authBuf[0] != 0x01 {
+			conn.Close()
+			return
+		}
+		ulen := int(authBuf[1])
+		username := make([]byte, ulen)
+		if _, err := io.ReadFull(conn, username); err != nil {
+			conn.Close()
+			return
+		}
+		plenBuf := make([]byte, 1)
+		if _, err := io.ReadFull(conn, plenBuf); err != nil {
+			conn.Close()
+			return
+		}
+		password := make([]byte, plenBuf[0])
+		if _, err := io.ReadFull(conn, password); err != nil {
+			conn.Close()
+			return
+		}
+
+		if string(username) != cfg.Username || string(password) != cfg.Password {
+			conn.Write([]byte{0x01, 0x01})
+			conn.Close()
+			return
+		}
+		conn.Write([]byte{0x01, 0x00})
+	} else {
+		conn.Write([]byte{0x05, 0x00})
+	}
 
 	buf = make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
@@ -54,7 +119,7 @@ func handleSOCKS5(c client.Client, conn net.Conn) {
 	}
 
 	if buf[0] != 0x05 || buf[1] != 0x01 {
-		conn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // Command not supported
+		conn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		conn.Close()
 		return
 	}
@@ -88,7 +153,7 @@ func handleSOCKS5(c client.Client, conn net.Conn) {
 		}
 		targetAddr = "[" + net.IP(addr).String() + "]"
 	default:
-		conn.Write([]byte{0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // Address type not supported
+		conn.Write([]byte{0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		conn.Close()
 		return
 	}
@@ -103,7 +168,7 @@ func handleSOCKS5(c client.Client, conn net.Conn) {
 
 	remote, err := c.TCP(target)
 	if err != nil {
-		conn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // Host unreachable
+		conn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		conn.Close()
 		return
 	}
@@ -112,7 +177,7 @@ func handleSOCKS5(c client.Client, conn net.Conn) {
 	relay(conn, remote)
 }
 
-func startHTTPProxy(c client.Client, addr string) error {
+func startHTTPProxy(c client.Client, addr string, cfg httpProxyConfig) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -124,13 +189,13 @@ func startHTTPProxy(c client.Client, addr string) error {
 			if err != nil {
 				return
 			}
-			go handleHTTPConnect(c, conn)
+			go handleHTTPConnect(c, conn, cfg)
 		}
 	}()
 	return nil
 }
 
-func handleHTTPConnect(c client.Client, conn net.Conn) {
+func handleHTTPConnect(c client.Client, conn net.Conn, cfg httpProxyConfig) {
 	buf := make([]byte, 4096)
 	n, err := conn.Read(buf)
 	if err != nil {
@@ -138,6 +203,30 @@ func handleHTTPConnect(c client.Client, conn net.Conn) {
 		return
 	}
 	request := string(buf[:n])
+
+	if cfg.Username != "" && cfg.Password != "" {
+		expected := base64.StdEncoding.EncodeToString([]byte(cfg.Username + ":" + cfg.Password))
+		authOk := false
+		for _, line := range strings.Split(request, "\r\n") {
+			lower := strings.ToLower(line)
+			if !strings.HasPrefix(lower, "proxy-authorization:") {
+				continue
+			}
+			value := strings.TrimSpace(line[len("proxy-authorization:"):])
+			if strings.HasPrefix(strings.ToLower(value), "basic ") {
+				token := strings.TrimSpace(value[6:])
+				if token == expected {
+					authOk = true
+				}
+			}
+			break
+		}
+		if !authOk {
+			conn.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"Hysteria\"\r\n\r\n"))
+			conn.Close()
+			return
+		}
+	}
 
 	var method, host string
 	fmt.Sscanf(request, "%s %s", &method, &host)

@@ -33,9 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ru.shapovalov.hysteria.api.HysteriaClient
-import ru.shapovalov.hysteria.internal.ConnectionState
-import ru.shapovalov.hysteria.internal.HysteriaClientImpl
-import ru.shapovalov.hysteria.internal.HysteriaConfig
+import ru.shapovalov.hysteria.internal.*
 
 class MainActivity : ComponentActivity() {
 
@@ -127,10 +125,19 @@ private fun MainScreen(client: HysteriaClient) {
                         scope.launch {
                             client.connect(
                                 HysteriaConfig(
-                                    server = server,
-                                    auth = auth,
-                                    tlsSni = sni,
-                                    disablePathMTUDiscovery = true,
+                                    server = ServerCredentials(
+                                        server = server,
+                                        auth = auth,
+                                    ),
+                                    tls = TlsOptions(tlsSni = sni),
+                                    obfuscation = ObfuscationOptions(),
+                                    quic = QuicOptions(disablePathMTUDiscovery = true),
+                                    congestion = CongestionOptions(),
+                                    bandwidth = BandwidthOptions(),
+                                    transport = TransportOptions(),
+                                    behavior = BehaviorOptions(),
+                                    socks = SocksOptions(),
+                                    http = HttpOptions(),
                                 )
                             )
                         }
