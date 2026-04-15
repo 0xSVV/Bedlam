@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-t type FdProtector interface {
+type FdProtector interface {
 	Protect(fd int32) bool
 }
 

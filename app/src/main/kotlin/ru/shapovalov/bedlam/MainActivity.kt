@@ -1,12 +1,16 @@
 package ru.shapovalov.bedlam
 
+import android.content.Intent
+import android.net.VpnService
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -39,24 +44,78 @@ class MainActivity : ComponentActivity() {
 
     private val client: HysteriaClient = HysteriaClientImpl()
 
+    private var pendingVpnConfig: HysteriaConfig? = null
+    private var onVpnReady: (() -> Unit)? = null
+
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            onVpnReady?.invoke()
+        } else {
+            Log.w("Bedlam", "VPN permission denied")
+        }
+        onVpnReady = null
+    }
+
+    private fun requestVpnPermissionThen(block: () -> Unit) {
+        val intent = VpnService.prepare(this)
+        if (intent != null) {
+            onVpnReady = block
+            vpnPermissionLauncher.launch(intent)
+        } else {
+            block()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             MaterialTheme {
-                MainScreen(client)
+                MainScreen(
+                    client = client,
+                    onStartVpn = { config, log ->
+                        requestVpnPermissionThen {
+                            log("VPN permission granted, connecting...")
+                            startVpn(config, log)
+                        }
+                    },
+                    onStopVpn = { log ->
+                        stopVpn(log)
+                    }
+                )
             }
         }
+    }
+
+    private fun startVpn(config: HysteriaConfig, log: (String) -> Unit) {
+        pendingVpnConfig = config
+        val intent = Intent(this, BedlamVpnService::class.java)
+        startService(intent)
+        log("VPN service started")
+    }
+
+    private fun stopVpn(log: (String) -> Unit) {
+        val intent = Intent(this, BedlamVpnService::class.java)
+        intent.action = BedlamVpnService.ACTION_STOP
+        startService(intent)
+        log("VPN stop requested")
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainScreen(client: HysteriaClient) {
+private fun MainScreen(
+    client: HysteriaClient,
+    onStartVpn: (HysteriaConfig, (String) -> Unit) -> Unit,
+    onStopVpn: ((String) -> Unit) -> Unit
+) {
     var server by remember { mutableStateOf("") }
     var auth by remember { mutableStateOf("") }
     var sni by remember { mutableStateOf("") }
     var logText by remember { mutableStateOf("") }
+    var vpnRunning by remember { mutableStateOf(false) }
     val connectionState by client.state.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -123,23 +182,7 @@ private fun MainScreen(client: HysteriaClient) {
                     } else {
                         log("Connecting...")
                         scope.launch {
-                            client.connect(
-                                HysteriaConfig(
-                                    server = ServerCredentials(
-                                        server = server,
-                                        auth = auth,
-                                    ),
-                                    tls = TlsOptions(tlsSni = sni),
-                                    obfuscation = ObfuscationOptions(),
-                                    quic = QuicOptions(disablePathMTUDiscovery = true),
-                                    congestion = CongestionOptions(),
-                                    bandwidth = BandwidthOptions(),
-                                    transport = TransportOptions(),
-                                    behavior = BehaviorOptions(),
-                                    socks = SocksOptions(),
-                                    http = HttpOptions(),
-                                )
-                            )
+                            client.connect(buildConfig(server, auth, sni))
                         }
                     }
                 },
@@ -148,12 +191,60 @@ private fun MainScreen(client: HysteriaClient) {
                 Text(if (isConnected) "Disconnect" else "Connect")
             }
 
+            Button(
+                onClick = {
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        log("Testing UDP relay...")
+                        val result = golib.Golib.testUDP()
+                        log("UDP test: $result")
+                    }
+                },
+                enabled = isConnected,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Test UDP")
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        if (!isConnected) {
+                            log("Connect Hysteria first before starting VPN")
+                            return@Button
+                        }
+                        onStartVpn(buildConfig(server, auth, sni)) { log(it) }
+                        vpnRunning = true
+                    },
+                    enabled = isConnected && !vpnRunning,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Start VPN")
+                }
+
+                Button(
+                    onClick = {
+                        onStopVpn { log(it) }
+                        vpnRunning = false
+                    },
+                    enabled = vpnRunning,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Stop VPN")
+                }
+            }
+
             Text(
                 text = "Status: ${
                     when (val s = connectionState) {
                         is ConnectionState.Disconnected -> "Disconnected"
                         is ConnectionState.Connecting -> "Connecting..."
-                        is ConnectionState.Connected -> "Connected"
+                        is ConnectionState.Connected -> "Connected" + if (vpnRunning) " + VPN" else ""
                         is ConnectionState.Error -> "Error: ${s.message}"
                     }
                 }",
@@ -174,3 +265,16 @@ private fun MainScreen(client: HysteriaClient) {
         }
     }
 }
+
+private fun buildConfig(server: String, auth: String, sni: String) = HysteriaConfig(
+    server = ServerCredentials(server = server, auth = auth),
+    tls = TlsOptions(tlsSni = sni),
+    obfuscation = ObfuscationOptions(),
+    quic = QuicOptions(disablePathMTUDiscovery = true),
+    congestion = CongestionOptions(),
+    bandwidth = BandwidthOptions(),
+    transport = TransportOptions(),
+    behavior = BehaviorOptions(),
+    socks = SocksOptions(socksAddress = ""),
+    http = HttpOptions(),
+)
