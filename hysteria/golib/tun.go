@@ -15,6 +15,20 @@ import (
 	N "github.com/sagernet/sing/common/network"
 )
 
+type tunLogger struct{}
+
+func (l *tunLogger) Trace(args ...any) { logMsg(LogLevelDebug, "TUN stack: %v", fmt.Sprint(args...)) }
+func (l *tunLogger) Debug(args ...any) { logMsg(LogLevelDebug, "TUN stack: %v", fmt.Sprint(args...)) }
+func (l *tunLogger) Info(args ...any)  { logMsg(LogLevelInfo, "TUN stack: %v", fmt.Sprint(args...)) }
+func (l *tunLogger) Warn(args ...any)  { logMsg(LogLevelWarn, "TUN stack: %v", fmt.Sprint(args...)) }
+func (l *tunLogger) Error(args ...any) { logMsg(LogLevelError, "TUN stack: %v", fmt.Sprint(args...)) }
+func (l *tunLogger) Fatal(args ...any) { logMsg(LogLevelError, "TUN stack fatal: %v", fmt.Sprint(args...)) }
+func (l *tunLogger) Panic(args ...any) { logMsg(LogLevelError, "TUN stack panic: %v", fmt.Sprint(args...)) }
+
+type tunHandler struct {
+	client client.Client
+}
+
 var (
 	tunMu           sync.Mutex
 	activeTunIface  singtun.Tun
@@ -102,20 +116,6 @@ func StopTUN() error {
 	return err
 }
 
-type tunLogger struct{}
-
-func (l *tunLogger) Trace(args ...any) { logMsg(LogLevelDebug, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Debug(args ...any) { logMsg(LogLevelDebug, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Info(args ...any)  { logMsg(LogLevelInfo, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Warn(args ...any)  { logMsg(LogLevelWarn, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Error(args ...any) { logMsg(LogLevelError, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Fatal(args ...any) { logMsg(LogLevelError, "TUN stack fatal: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Panic(args ...any) { logMsg(LogLevelError, "TUN stack panic: %v", fmt.Sprint(args...)) }
-
-type tunHandler struct {
-	client client.Client
-}
-
 func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metadata) error {
 	defer conn.Close()
 
@@ -129,7 +129,7 @@ func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metad
 	}
 	defer remote.Close()
 
-	done := make(chan struct{}, 1)
+	done := make(chan struct{}, 2)
 	go func() {
 		io.Copy(remote, conn)
 		done <- struct{}{}
@@ -155,7 +155,10 @@ func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn,
 	return h.handleUDPRelay(ctx, conn)
 }
 
+const maxConcurrentDNS = 16
+
 func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) error {
+	sem := make(chan struct{}, maxConcurrentDNS)
 	for {
 		buffer := buf.NewPacket()
 		dest, err := conn.ReadPacket(buffer)
@@ -175,7 +178,10 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 
 		logMsg(LogLevelDebug, "TUN DNS-over-TCP: %s (%d bytes)", dnsAddr, len(query))
 
+		sem <- struct{}{}
 		go func() {
+			defer func() { <-sem }()
+
 			resp, err := dnsOverTCP(h.client, dnsAddr, query)
 			if err != nil {
 				logMsg(LogLevelWarn, "TUN DNS-over-TCP error: %s: %s", dnsAddr, err)
@@ -202,7 +208,7 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 	}
 	defer rc.Close()
 
-	done := make(chan struct{}, 1)
+	done := make(chan struct{}, 2)
 
 	// Remote → Local
 	go func() {
