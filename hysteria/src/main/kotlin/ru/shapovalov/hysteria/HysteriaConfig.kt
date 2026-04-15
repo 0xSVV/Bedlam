@@ -1,4 +1,4 @@
-package ru.shapovalov.hysteria.internal
+package ru.shapovalov.hysteria
 
 import org.json.JSONObject
 
