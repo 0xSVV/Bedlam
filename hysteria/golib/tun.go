@@ -145,8 +145,56 @@ func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metad
 func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn, m M.Metadata) error {
 	defer conn.Close()
 
-	logMsg(LogLevelInfo, "TUN UDP session: %s → %s", m.Source, m.Destination)
+	dest := m.Destination.String()
+	logMsg(LogLevelDebug, "TUN UDP session: %s → %s", m.Source, dest)
 
+	if isDNSPort(dest) {
+		return h.handleDNSOverTCP(conn, dest)
+	}
+
+	return h.handleUDPRelay(ctx, conn)
+}
+
+func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) error {
+	for {
+		buffer := buf.NewPacket()
+		dest, err := conn.ReadPacket(buffer)
+		if err != nil {
+			buffer.Release()
+			return err
+		}
+
+		query := make([]byte, buffer.Len())
+		copy(query, buffer.Bytes())
+		buffer.Release()
+
+		dnsAddr := dest.String()
+		if !isDNSPort(dnsAddr) {
+			dnsAddr = defaultDest
+		}
+
+		logMsg(LogLevelDebug, "TUN DNS-over-TCP: %s (%d bytes)", dnsAddr, len(query))
+
+		go func() {
+			resp, err := dnsOverTCP(h.client, dnsAddr, query)
+			if err != nil {
+				logMsg(LogLevelWarn, "TUN DNS-over-TCP error: %s: %s", dnsAddr, err)
+				return
+			}
+			logMsg(LogLevelDebug, "TUN DNS-over-TCP response: %d bytes from %s", len(resp), dnsAddr)
+
+			var src M.Socksaddr
+			if ap, perr := netip.ParseAddrPort(dnsAddr); perr == nil {
+				src = M.SocksaddrFromNetIP(ap)
+			}
+			if werr := conn.WritePacket(buf.As(resp), src); werr != nil {
+				logMsg(LogLevelDebug, "TUN DNS write to local error: %s", werr)
+			}
+		}()
+	}
+}
+
+func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) error {
 	rc, err := h.client.UDP()
 	if err != nil {
 		logMsg(LogLevelError, "TUN UDP session open failed: %s", err)
@@ -156,50 +204,50 @@ func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn,
 
 	done := make(chan struct{}, 1)
 
+	// Remote → Local
 	go func() {
 		for {
 			data, from, err := rc.Receive()
 			if err != nil {
-				logMsg(LogLevelDebug, "TUN UDP remote recv error: %s", err)
 				done <- struct{}{}
 				return
 			}
-			logMsg(LogLevelDebug, "TUN UDP remote → local: %d bytes from %s", len(data), from)
 			var dest M.Socksaddr
 			if ap, perr := netip.ParseAddrPort(from); perr == nil {
 				dest = M.SocksaddrFromNetIP(ap)
 			}
 			if err := conn.WritePacket(buf.As(data), dest); err != nil {
-				logMsg(LogLevelDebug, "TUN UDP write to local error: %s", err)
 				done <- struct{}{}
 				return
 			}
 		}
 	}()
 
+	// Local → Remote
 	go func() {
+		buffer := buf.NewPacket()
+		defer buffer.Release()
 		for {
-			buffer := buf.NewPacket()
+			buffer.Reset()
 			dest, err := conn.ReadPacket(buffer)
 			if err != nil {
-				buffer.Release()
-				logMsg(LogLevelDebug, "TUN UDP local read error: %s", err)
 				done <- struct{}{}
 				return
 			}
-			logMsg(LogLevelDebug, "TUN UDP local → remote: %d bytes to %s", buffer.Len(), dest.String())
 			err = rc.Send(buffer.Bytes(), dest.String())
-			buffer.Release()
 			if err != nil {
-				logMsg(LogLevelDebug, "TUN UDP remote send error: %s", err)
 				done <- struct{}{}
 				return
 			}
 		}
 	}()
 
-	<-done
-	return nil
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
 }
 
 func (h *tunHandler) NewError(ctx context.Context, err error) {
