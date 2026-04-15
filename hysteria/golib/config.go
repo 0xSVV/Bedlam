@@ -50,15 +50,6 @@ type clientConfig struct {
 
 	FastOpen bool `json:"fast_open"`
 	Lazy     bool `json:"lazy"`
-
-	SocksAddr       string `json:"socks_addr"`
-	SocksUsername   string `json:"socks_username"`
-	SocksPassword   string `json:"socks_password"`
-	SocksDisableUDP bool   `json:"socks_disable_udp"`
-
-	HttpAddr     string `json:"http_addr"`
-	HttpUsername string `json:"http_username"`
-	HttpPassword string `json:"http_password"`
 }
 
 func buildCoreConfig(cfg *clientConfig) (*client.Config, error) {

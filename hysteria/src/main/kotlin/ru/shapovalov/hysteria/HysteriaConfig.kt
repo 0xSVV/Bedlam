@@ -11,8 +11,6 @@ data class HysteriaConfig(
     val bandwidth: BandwidthOptions,
     val transport: TransportOptions,
     val behavior: BehaviorOptions,
-    val socks: SocksOptions,
-    val http: HttpOptions
 )
 
 data class ServerCredentials(
@@ -64,18 +62,6 @@ data class BehaviorOptions(
     val lazy: Boolean = false,
 )
 
-data class SocksOptions(
-    val socksAddress: String = "127.0.0.1:1080",
-    val socksUsername: String = "",
-    val socksPassword: String = "",
-    val socksDisableUDP: Boolean = false,
-)
-
-data class HttpOptions(
-    val httpAddress: String = "",
-    val httpUsername: String = "",
-    val httpPassword: String = "",
-)
 
 fun HysteriaConfig.toJson(): String = JSONObject().apply {
     put("server", server.server)
@@ -104,11 +90,4 @@ fun HysteriaConfig.toJson(): String = JSONObject().apply {
     put("max_hop_interval", transport.maxHopIntervalSec)
     put("fast_open", behavior.fastOpen)
     put("lazy", behavior.lazy)
-    put("socks_addr", socks.socksAddress)
-    put("socks_username", socks.socksUsername)
-    put("socks_password", socks.socksPassword)
-    put("socks_disable_udp", socks.socksDisableUDP)
-    put("http_addr", http.httpAddress)
-    put("http_username", http.httpUsername)
-    put("http_password", http.httpPassword)
 }.toString()
