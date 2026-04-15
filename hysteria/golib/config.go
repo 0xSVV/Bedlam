@@ -151,8 +151,9 @@ func buildCoreConfig(cfg *clientConfig) (*client.Config, error) {
 func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr net.Addr) error {
 	isHop := serverAddr.Network() == "udphop"
 	hasObfs := strings.ToLower(cfg.ObfsType) == "salamander"
+	hasProtect := getFdProtector() != nil
 
-	if !isHop && !hasObfs {
+	if !isHop && !hasObfs && !hasProtect {
 		return nil
 	}
 
@@ -169,19 +170,26 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 		logMsg(LogLevelInfo, "Obfuscation: salamander")
 	}
 
+	listenUDP := func() (net.PacketConn, error) {
+		conn, err := net.ListenPacket("udp", "")
+		if err != nil {
+			return nil, err
+		}
+		protectPacketConn(conn)
+		return conn, nil
+	}
+
 	var newFunc func(addr net.Addr) (net.PacketConn, error)
 	if isHop {
 		hopAddr := serverAddr.(*udphop.UDPHopAddr)
 		hopInterval := buildHopInterval(cfg)
 		newFunc = func(addr net.Addr) (net.PacketConn, error) {
-			return udphop.NewUDPHopPacketConn(hopAddr, hopInterval, func() (net.PacketConn, error) {
-				return net.ListenPacket("udp", "")
-			})
+			return udphop.NewUDPHopPacketConn(hopAddr, hopInterval, listenUDP)
 		}
 		logMsg(LogLevelInfo, "Transport: UDP port hopping")
 	} else {
 		newFunc = func(addr net.Addr) (net.PacketConn, error) {
-			return net.ListenPacket("udp", "")
+			return listenUDP()
 		}
 	}
 
