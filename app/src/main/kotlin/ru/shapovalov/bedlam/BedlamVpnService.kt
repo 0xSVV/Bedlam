@@ -3,15 +3,19 @@ package ru.shapovalov.bedlam
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.VpnService
-import android.os.ParcelFileDescriptor
 import android.util.Log
-import golib.FdProtector
 import golib.Golib
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 @SuppressLint("VpnServicePolicy")
 class BedlamVpnService : VpnService() {
 
-    private var tunFd: ParcelFileDescriptor? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val tunActive = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -19,12 +23,22 @@ class BedlamVpnService : VpnService() {
             return START_NOT_STICKY
         }
 
-        try {
-            registerProtector()
-            createTunnel()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start VPN", e)
-            stop()
+        val configJson = intent?.getStringExtra(EXTRA_CONFIG_JSON)
+        if (configJson.isNullOrEmpty()) {
+            Log.e(TAG, "No config provided")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        registerProtector()
+
+        scope.launch {
+            try {
+                connectAndStartTun(configJson)
+            } catch (e: Exception) {
+                Log.e(TAG, "VPN startup failed", e)
+                stop()
+            }
         }
 
         return START_STICKY
@@ -32,6 +46,24 @@ class BedlamVpnService : VpnService() {
 
     private fun registerProtector() {
         Golib.setFdProtector { fd -> this@BedlamVpnService.protect(fd) }
+    }
+
+    private fun connectAndStartTun(configJson: String) {
+        Golib.startClient(configJson, object : golib.EventHandler {
+            override fun onConnected(udpEnabled: Boolean) {
+                Log.i(TAG, "Hysteria connected (UDP=$udpEnabled)")
+            }
+
+            override fun onDisconnected(reason: String) {
+                Log.i(TAG, "Hysteria disconnected: $reason")
+            }
+
+            override fun onError(message: String) {
+                Log.e(TAG, "Hysteria error: $message")
+            }
+        })
+
+        createTunnel()
     }
 
     private fun createTunnel() {
@@ -44,18 +76,21 @@ class BedlamVpnService : VpnService() {
             .addDnsServer("8.8.8.8")
             .addDnsServer("8.8.4.4")
 
-        val fd = builder.establish() ?: throw IllegalStateException("VpnService.establish() returned null")
-        tunFd = fd
+        val pfd = builder.establish()
+            ?: throw IllegalStateException("VpnService.establish() returned null")
 
-        Golib.startTUN(fd.fd, MTU)
+        val rawFd = pfd.detachFd()
+        Golib.startTUN(rawFd, MTU)
+        tunActive.set(true)
 
-        Log.i(TAG, "VPN tunnel established (fd=${fd.fd}, mtu=$MTU)")
+        Log.i(TAG, "VPN tunnel established (fd=$rawFd, mtu=$MTU)")
     }
 
     private fun stop() {
-        runCatching { Golib.stopTUN() }
-        runCatching { tunFd?.close() }
-        tunFd = null
+        if (tunActive.compareAndSet(true, false)) {
+            runCatching { Golib.stopTUN() }
+        }
+        runCatching { Golib.stopClient() }
         Golib.setFdProtector(null)
         stopSelf()
     }
@@ -66,6 +101,7 @@ class BedlamVpnService : VpnService() {
 
     override fun onDestroy() {
         stop()
+        scope.cancel()
         super.onDestroy()
     }
 
@@ -73,5 +109,6 @@ class BedlamVpnService : VpnService() {
         private const val TAG = "BedlamVpn"
         private const val MTU = 1500
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
+        const val EXTRA_CONFIG_JSON = "config_json"
     }
 }

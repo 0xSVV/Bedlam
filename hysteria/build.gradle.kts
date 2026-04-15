@@ -6,10 +6,10 @@ plugins {
 
 android {
     namespace = "ru.shapovalov.hysteria"
-    compileSdk = 36
+    compileSdk = libs.versions.targetSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 29
+        minSdk = libs.versions.minSdk.get().toInt()
         consumerProguardFiles("consumer-rules.pro")
     }
 
@@ -98,7 +98,6 @@ val buildGolib by tasks.registering(Exec::class) {
     inputs.dir(golibDir)
     outputs.file(golibAar)
 
-    // Defer all tool resolution to execution time so sync/configuration never fails
     doFirst {
         val goPath = findGoPath()
         val goExe = findExecutable("go", listOf("$goPath/bin", "/usr/local/go/bin", "/opt/homebrew/bin"))
