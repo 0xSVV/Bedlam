@@ -1,5 +1,7 @@
 package ru.shapovalov.hysteria.internal
 
+import org.json.JSONObject
+
 data class HysteriaConfig(
     val server: ServerCredentials,
     val tls: TlsOptions,
@@ -74,3 +76,39 @@ data class HttpOptions(
     val httpUsername: String = "",
     val httpPassword: String = "",
 )
+
+fun HysteriaConfig.toJson(): String = JSONObject().apply {
+    put("server", server.server)
+    put("auth", server.auth)
+    put("tls_sni", tls.tlsSni)
+    put("tls_insecure", tls.tlsInsecure)
+    put("tls_pin_sha256", tls.tlsPinSHA256)
+    put("tls_ca", tls.tlsCa)
+    put("tls_client_cert", tls.tlsClientCert)
+    put("tls_client_key", tls.tlsClientKey)
+    put("obfs_type", obfuscation.obfuscationType)
+    put("obfs_password", obfuscation.obfuscationPassword)
+    put("init_stream_receive_window", quic.initStreamReceiveWindow)
+    put("max_stream_receive_window", quic.maxStreamReceiveWindow)
+    put("init_conn_receive_window", quic.initConnReceiveWindow)
+    put("max_conn_receive_window", quic.maxConnReceiveWindow)
+    put("max_idle_timeout", quic.maxIdleTimeoutSec)
+    put("keep_alive_period", quic.keepAlivePeriodSec)
+    put("disable_pmtud", quic.disablePathMTUDiscovery)
+    put("congestion_type", congestion.congestionType)
+    put("bbr_profile", congestion.bbrProfile)
+    put("max_tx_mbps", bandwidth.maxTxMbps)
+    put("max_rx_mbps", bandwidth.maxRxMbps)
+    put("hop_interval", transport.hopIntervalSec)
+    put("min_hop_interval", transport.minHopIntervalSec)
+    put("max_hop_interval", transport.maxHopIntervalSec)
+    put("fast_open", behavior.fastOpen)
+    put("lazy", behavior.lazy)
+    put("socks_addr", socks.socksAddress)
+    put("socks_username", socks.socksUsername)
+    put("socks_password", socks.socksPassword)
+    put("socks_disable_udp", socks.socksDisableUDP)
+    put("http_addr", http.httpAddress)
+    put("http_username", http.httpUsername)
+    put("http_password", http.httpPassword)
+}.toString()
