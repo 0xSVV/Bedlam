@@ -29,10 +29,10 @@ func StartTUN(fd int32, mtu int32) error {
 	}
 
 	clientMutex.Lock()
-	client := activeClient
+	c := activeClient
 	clientMutex.Unlock()
 
-	if client == nil {
+	if c == nil {
 		return fmt.Errorf("client not connected")
 	}
 
@@ -58,7 +58,7 @@ func StartTUN(fd int32, mtu int32) error {
 		Tun:        tunIface,
 		TunOptions: tunOpts,
 		UDPTimeout: 300, // seconds
-		Handler:    &tunHandler{client: client},
+		Handler:    &tunHandler{client: c},
 		Logger:     &tunLogger{},
 	})
 	if err != nil {
@@ -167,12 +167,12 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 		go func() {
 			defer func() { <-sem }()
 
-			resp, err := dnsOverTCP(h.client, dnsAddr, query)
+			resp, err := globalDNSCache.resolve(h.client, dnsAddr, query)
 			if err != nil {
-				log(LogLevelWarn, "TUN DNS-over-TCP error: %s: %s", dnsAddr, err)
+				log(LogLevelWarn, "TUN DNS error: %s: %s", dnsAddr, err)
 				return
 			}
-			log(LogLevelDebug, "TUN DNS-over-TCP response: %d bytes from %s", len(resp), dnsAddr)
+			log(LogLevelDebug, "TUN DNS response: %d bytes from %s", len(resp), dnsAddr)
 
 			var src M.Socksaddr
 			if ap, perr := netip.ParseAddrPort(dnsAddr); perr == nil {

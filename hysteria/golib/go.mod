@@ -10,6 +10,7 @@ require (
 	github.com/apernet/sing-tun v0.2.6-0.20250920121535-299f04629986
 	github.com/sagernet/sing v0.3.2
 	golang.org/x/mobile v0.0.0-20260410095206-2cfb76559b7b
+	golang.org/x/sync v0.20.0
 )
 
 require (
@@ -29,7 +30,6 @@ require (
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
