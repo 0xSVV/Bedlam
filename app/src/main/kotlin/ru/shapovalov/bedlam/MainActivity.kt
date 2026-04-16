@@ -33,13 +33,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import golib.Golib
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import ru.shapovalov.hysteria.ConnectionState
+import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.HysteriaClient
-import ru.shapovalov.hysteria.internal.*
+import ru.shapovalov.hysteria.parseHysteriaUri
+import ru.shapovalov.hysteria.toJson
 
 class MainActivity : ComponentActivity() {
 
@@ -73,24 +78,17 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MaterialTheme {
-                MainScreen(
-                    client = client,
-                    onStartVpn = { configJson, log ->
-                        requestVpnPermissionThen {
-                            log("VPN permission granted, starting...")
-                            val intent = Intent(this, BedlamVpnService::class.java)
-                            intent.putExtra(BedlamVpnService.EXTRA_CONFIG_JSON, configJson)
-                            startService(intent)
-                            log("VPN service starting (protect → connect → TUN)")
-                        }
-                    },
-                    onStopVpn = { log ->
+                MainScreen(client = client, onStartVpn = { configJson ->
+                    requestVpnPermissionThen {
                         val intent = Intent(this, BedlamVpnService::class.java)
-                        intent.action = BedlamVpnService.ACTION_STOP
+                        intent.putExtra(BedlamVpnService.EXTRA_CONFIG_JSON, configJson)
                         startService(intent)
-                        log("VPN stopping...")
                     }
-                )
+                }, onStopVpn = {
+                    val intent = Intent(this, BedlamVpnService::class.java)
+                    intent.action = BedlamVpnService.ACTION_STOP
+                    startService(intent)
+                })
             }
         }
     }
@@ -99,17 +97,16 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreen(
-    client: HysteriaClient,
-    onStartVpn: (String, (String) -> Unit) -> Unit,
-    onStopVpn: ((String) -> Unit) -> Unit
+    client: HysteriaClient, onStartVpn: (String) -> Unit, onStopVpn: () -> Unit
 ) {
-    var server by remember { mutableStateOf("") }
-    var auth by remember { mutableStateOf("") }
-    var sni by remember { mutableStateOf("") }
+    var uri by rememberSaveable { mutableStateOf("") }
     var logText by remember { mutableStateOf("") }
-    var vpnRunning by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf("") }
     val connectionState by client.state.collectAsState()
     val scope = rememberCoroutineScope()
+
+    val isConnected = connectionState is ConnectionState.Connected
+    val isConnecting = connectionState is ConnectionState.Connecting
 
     fun log(msg: String) {
         Log.d("Bedlam", msg)
@@ -129,8 +126,7 @@ private fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Bedlam") })
-        }
-    ) { innerPadding ->
+        }) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -139,50 +135,19 @@ private fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedTextField(
-                value = server,
-                onValueChange = { server = it },
-                label = { Text("Server (host:port)") },
-                placeholder = { Text("1.2.3.4:443") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = auth,
-                onValueChange = { auth = it },
-                label = { Text("Auth") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = sni,
-                onValueChange = { sni = it },
-                label = { Text("TLS SNI (optional)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            val isConnected = connectionState is ConnectionState.Connected
-
-            Button(
-                onClick = {
-                    if (isConnected) {
-                        log("Disconnecting...")
-                        client.disconnect()
-                        log("Disconnected")
-                    } else {
-                        log("Connecting (proxy mode)...")
-                        scope.launch {
-                            client.connect(buildConfig(server, auth, sni))
-                        }
-                    }
+                value = uri,
+                onValueChange = {
+                    uri = it
+                    errorText = ""
                 },
-                enabled = !vpnRunning,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (isConnected) "Disconnect" else "Connect (Proxy)")
-            }
+                label = { Text("Connection URI") },
+                placeholder = { Text("hysteria2://auth@host:port/?sni=...") },
+                singleLine = true,
+                isError = errorText.isNotEmpty(),
+                supportingText = if (errorText.isNotEmpty()) {
+                    { Text(errorText, color = MaterialTheme.colorScheme.error) }
+                } else null,
+                modifier = Modifier.fillMaxWidth())
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -190,32 +155,32 @@ private fun MainScreen(
             ) {
                 Button(
                     onClick = {
-                        if (server.isBlank()) {
-                            log("Enter server address first")
-                            return@Button
+                        errorText = ""
+                        try {
+                            val config = parseHysteriaUri(uri)
+                            val json = config.toJson()
+                            log("Connecting to ${config.server.server}...")
+                            onStartVpn(json)
+                        } catch (e: Exception) {
+                            errorText = e.message ?: "Invalid URI"
+                            log("Error: $errorText")
                         }
-                        val configJson = buildConfig(server, auth, sni).toJson()
-                        onStartVpn(configJson) { log(it) }
-                        vpnRunning = true
                     },
-                    enabled = !vpnRunning && !isConnected,
+                    enabled = !isConnected && !isConnecting && uri.isNotBlank(),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Start VPN")
+                    Text(if (isConnecting) "Connecting..." else "Connect")
                 }
 
                 Button(
                     onClick = {
-                        onStopVpn { log(it) }
-                        vpnRunning = false
-                    },
-                    enabled = vpnRunning,
-                    colors = ButtonDefaults.buttonColors(
+                        log("Disconnecting...")
+                        onStopVpn()
+                    }, enabled = isConnected || isConnecting, colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error
-                    ),
-                    modifier = Modifier.weight(1f)
+                    ), modifier = Modifier.weight(1f)
                 ) {
-                    Text("Stop VPN")
+                    Text("Disconnect")
                 }
             }
 
@@ -226,65 +191,51 @@ private fun MainScreen(
                 Button(
                     onClick = {
                         scope.launch(Dispatchers.IO) {
-                            log("Testing UDP...")
-                            log("UDP: ${golib.Golib.testUDP()}")
+                            val result = Golib.testUDP()
+                            log("UDP test: $result")
                         }
-                    },
-                    enabled = isConnected || vpnRunning,
-                    modifier = Modifier.weight(1f)
+                    }, enabled = isConnected, modifier = Modifier.weight(1f)
                 ) {
                     Text("Test UDP")
                 }
+
                 Button(
                     onClick = {
                         scope.launch(Dispatchers.IO) {
-                            log("Testing DNS/TCP...")
-                            log("DNS/TCP: ${golib.Golib.testDNSOverTCP()}")
+                            val result = Golib.testDNSOverTCP()
+                            log("DNS/TCP test: $result")
                         }
-                    },
-                    enabled = isConnected || vpnRunning,
-                    modifier = Modifier.weight(1f)
+                    }, enabled = isConnected, modifier = Modifier.weight(1f)
                 ) {
                     Text("Test DNS/TCP")
                 }
             }
 
+            Spacer(modifier = Modifier.height(4.dp))
+
             Text(
-                text = "Status: ${
-                    when (val s = connectionState) {
-                        is ConnectionState.Disconnected -> if (vpnRunning) "VPN Active" else "Disconnected"
-                        is ConnectionState.Connecting -> "Connecting..."
-                        is ConnectionState.Connected -> "Connected" + if (vpnRunning) " + VPN" else " (Proxy)"
-                        is ConnectionState.Error -> "Error: ${s.message}"
-                    }
-                }",
-                style = MaterialTheme.typography.bodyLarge
+                text = "Status: $connectionState",
+                style = MaterialTheme.typography.labelLarge,
+                color = when (connectionState) {
+                    is ConnectionState.Connected -> MaterialTheme.colorScheme.primary
+                    is ConnectionState.Connecting -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text("Log:", style = MaterialTheme.typography.titleSmall)
             Text(
-                text = logText.ifEmpty { "(no logs yet)" },
+                text = logText.ifEmpty { "Logs will appear here..." },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (logText.isEmpty()) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-                style = MaterialTheme.typography.bodySmall
+                    .verticalScroll(rememberScrollState())
             )
         }
     }
 }
-
-private fun buildConfig(server: String, auth: String, sni: String) = HysteriaConfig(
-    server = ServerCredentials(server = server, auth = auth),
-    tls = TlsOptions(tlsSni = sni),
-    obfuscation = ObfuscationOptions(),
-    quic = QuicOptions(disablePathMTUDiscovery = true),
-    congestion = CongestionOptions(),
-    bandwidth = BandwidthOptions(),
-    transport = TransportOptions(),
-    behavior = BehaviorOptions(),
-    socks = SocksOptions(socksAddress = ""),
-    http = HttpOptions(),
-)
