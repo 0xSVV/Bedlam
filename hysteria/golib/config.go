@@ -52,13 +52,18 @@ type clientConfig struct {
 	Lazy     bool `json:"lazy"`
 }
 
+type connFactory struct {
+	newFunc    func(addr net.Addr) (net.PacketConn, error)
+	obfuscator obfs.Obfuscator
+}
+
 func buildCoreConfig(cfg *clientConfig) (*client.Config, error) {
-	serverAddr, err := resolveServerAddr(cfg.Server)
+	serverAddr, err := resolveHost(cfg.Server)
 	if err != nil {
 		return nil, fmt.Errorf("resolve server: %w", err)
 	}
 
-	logMsg(LogLevelInfo, "Resolved server address: %s", serverAddr.String())
+	log(LogLevelInfo, "Resolved server address: %s", serverAddr.String())
 
 	coreConfig := &client.Config{
 		ServerAddr: serverAddr,
@@ -139,6 +144,33 @@ func buildCoreConfig(cfg *clientConfig) (*client.Config, error) {
 	return coreConfig, nil
 }
 
+func resolveHost(server string) (net.Addr, error) {
+	host, port, err := net.SplitHostPort(server)
+	if err != nil {
+		return nil, fmt.Errorf("invalid host address %q: %w", server, err)
+	}
+
+	if isPortHopping(port) {
+		return udphop.ResolveUDPHopAddr(server)
+	}
+
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return nil, fmt.Errorf("DNS lookup failed for %q: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("no addresses found for %q", host)
+	}
+	portNum, err := net.LookupPort("udp", port)
+	if err != nil {
+		return nil, err
+	}
+	return &net.UDPAddr{
+		IP:   net.ParseIP(ips[0]),
+		Port: portNum,
+	}, nil
+}
+
 func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr net.Addr) error {
 	isHop := serverAddr.Network() == "udphop"
 	hasObfs := strings.ToLower(cfg.ObfsType) == "salamander"
@@ -158,7 +190,7 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 		if err != nil {
 			return fmt.Errorf("create salamander obfuscator: %w", err)
 		}
-		logMsg(LogLevelInfo, "Obfuscation: salamander")
+		log(LogLevelInfo, "Obfuscation: salamander")
 	}
 
 	listenUDP := func() (net.PacketConn, error) {
@@ -177,7 +209,7 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 		newFunc = func(addr net.Addr) (net.PacketConn, error) {
 			return udphop.NewUDPHopPacketConn(hopAddr, hopInterval, listenUDP)
 		}
-		logMsg(LogLevelInfo, "Transport: UDP port hopping")
+		log(LogLevelInfo, "Transport: UDP port hopping")
 	} else {
 		newFunc = func(addr net.Addr) (net.PacketConn, error) {
 			return listenUDP()
@@ -189,11 +221,6 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 		obfuscator: ob,
 	}
 	return nil
-}
-
-type connFactory struct {
-	newFunc    func(addr net.Addr) (net.PacketConn, error)
-	obfuscator obfs.Obfuscator
 }
 
 func (f *connFactory) New(addr net.Addr) (net.PacketConn, error) {
@@ -222,33 +249,6 @@ func buildHopInterval(cfg *clientConfig) udphop.HopIntervalConfig {
 		Min: 30 * time.Second,
 		Max: 30 * time.Second,
 	}
-}
-
-func resolveServerAddr(server string) (net.Addr, error) {
-	host, port, err := net.SplitHostPort(server)
-	if err != nil {
-		return nil, fmt.Errorf("invalid server address %q: %w", server, err)
-	}
-
-	if isPortHopping(port) {
-		return udphop.ResolveUDPHopAddr(server)
-	}
-
-	ips, err := net.LookupHost(host)
-	if err != nil {
-		return nil, fmt.Errorf("DNS lookup failed for %q: %w", host, err)
-	}
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("no addresses found for %q", host)
-	}
-	portNum, err := net.LookupPort("udp", port)
-	if err != nil {
-		return nil, err
-	}
-	return &net.UDPAddr{
-		IP:   net.ParseIP(ips[0]),
-		Port: portNum,
-	}, nil
 }
 
 func isPortHopping(port string) bool {

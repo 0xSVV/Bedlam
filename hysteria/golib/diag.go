@@ -6,9 +6,9 @@ import (
 )
 
 func TestUDP() string {
-	clientMu.Lock()
+	clientMutex.Lock()
 	c := activeClient
-	clientMu.Unlock()
+	clientMutex.Unlock()
 
 	if c == nil {
 		return "error: client not connected"
@@ -20,7 +20,7 @@ func TestUDP() string {
 	}
 	defer rc.Close()
 
-	logMsg(LogLevelInfo, "TestUDP: sending DNS query to 8.8.8.8:53 via QUIC datagram")
+	log(LogLevelInfo, "TestUDP: sending DNS query to 8.8.8.8:53 via QUIC datagram")
 	if err := rc.Send(buildDNSQuery(), "8.8.8.8:53"); err != nil {
 		return fmt.Sprintf("error: send failed: %s", err)
 	}
@@ -48,16 +48,16 @@ func TestUDP() string {
 }
 
 func TestDNSOverTCP() string {
-	clientMu.Lock()
-	c := activeClient
-	clientMu.Unlock()
+	clientMutex.Lock()
+	client := activeClient
+	clientMutex.Unlock()
 
-	if c == nil {
+	if client == nil {
 		return "error: client not connected"
 	}
 
-	logMsg(LogLevelInfo, "TestDNS: sending DNS query to 8.8.8.8:53 via TCP")
-	resp, err := dnsOverTCP(c, "8.8.8.8:53", buildDNSQuery())
+	log(LogLevelInfo, "TestDNS: sending DNS query to 8.8.8.8:53 via TCP")
+	resp, err := dnsOverTCP(client, "8.8.8.8:53", buildDNSQuery())
 	if err != nil {
 		return fmt.Sprintf("error: %s", err)
 	}

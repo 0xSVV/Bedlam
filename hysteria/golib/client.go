@@ -15,13 +15,13 @@ type EventHandler interface {
 }
 
 var (
-	clientMu      sync.Mutex
 	activeClient  client.Client
+	clientMutex   sync.Mutex
 )
 
 func StartClient(configJSON string, handler EventHandler) error {
-	clientMu.Lock()
-	defer clientMu.Unlock()
+	clientMutex.Lock()
+	defer clientMutex.Unlock()
 
 	if activeClient != nil {
 		return fmt.Errorf("client already running")
@@ -32,14 +32,14 @@ func StartClient(configJSON string, handler EventHandler) error {
 		return fmt.Errorf("invalid config JSON: %w", err)
 	}
 
-	logMsg(LogLevelInfo, "Starting client for %s", cfg.Server)
+	log(LogLevelInfo, "Starting client for %s", cfg.Server)
 
-	c, err := client.NewReconnectableClient(
+	client, err := client.NewReconnectableClient(
 		func() (*client.Config, error) {
 			return buildCoreConfig(&cfg)
 		},
 		func(_ client.Client, info *client.HandshakeInfo, count int) {
-			logMsg(LogLevelInfo, "Connected (UDP: %v, TX: %d, count: %d)", info.UDPEnabled, info.Tx, count)
+			log(LogLevelInfo, "Connected (UDP: %v, TX: %d, count: %d)", info.UDPEnabled, info.Tx, count)
 			if handler != nil {
 				handler.OnConnected(info.UDPEnabled)
 			}
@@ -47,16 +47,16 @@ func StartClient(configJSON string, handler EventHandler) error {
 		cfg.Lazy,
 	)
 	if err != nil {
-		logMsg(LogLevelError, "Connection failed: %s", err.Error())
+		log(LogLevelError, "Connection failed: %s", err.Error())
 		return fmt.Errorf("connect: %w", err)
 	}
-	activeClient = c
+	activeClient = client
 	return nil
 }
 
 func StopClient() error {
-	clientMu.Lock()
-	defer clientMu.Unlock()
+	clientMutex.Lock()
+	defer clientMutex.Unlock()
 	return stopClientLocked()
 }
 
@@ -65,17 +65,17 @@ func stopClientLocked() error {
 		return fmt.Errorf("no client running")
 	}
 
-	logMsg(LogLevelInfo, "Stopping client...")
+	log(LogLevelInfo, "Stopping client...")
 
 	err := activeClient.Close()
 	activeClient = nil
 
-	logMsg(LogLevelInfo, "Client stopped")
+	log(LogLevelInfo, "Client stopped")
 	return err
 }
 
 func IsRunning() bool {
-	clientMu.Lock()
-	defer clientMu.Unlock()
+	clientMutex.Lock()
+	defer clientMutex.Unlock()
 	return activeClient != nil
 }
