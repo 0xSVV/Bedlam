@@ -36,6 +36,16 @@ class BedlamVpnService : VpnService() {
         createNotificationChannel()
     }
 
+    override fun onRevoke() = stop()
+
+    override fun onDestroy() {
+        releaseWakeLock()
+        stop()
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    @SuppressLint("WakelockTimeout") // releasing in onDestroy
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
         val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -132,13 +142,6 @@ class BedlamVpnService : VpnService() {
         networkListener = null
     }
 
-    override fun onRevoke() = stop()
-
-    override fun onDestroy() {
-        stop()
-        scope.cancel()
-        super.onDestroy()
-    }
 
     private fun startAsForeground() {
         val notification = buildNotification()

@@ -7,16 +7,11 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
 
-/**
- * Tracks the underlying (non-VPN) default network and invokes [onChanged]
- * whenever it changes. Intentionally avoids `registerDefaultNetworkCallback`
- * on API 29+ because that returns the VPN itself.
- */
 class DefaultNetworkListener(
     context: Context,
     private val onChanged: (Network?) -> Unit,
 ) {
-    private val cm = context.applicationContext
+    private val connectivityManager = context.applicationContext
         .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     private var active: Network? = null
@@ -50,15 +45,19 @@ class DefaultNetworkListener(
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            cm.registerBestMatchingNetworkCallback(request, callback, android.os.Handler(android.os.Looper.getMainLooper()))
+            connectivityManager.registerBestMatchingNetworkCallback(
+                request,
+                callback,
+                android.os.Handler(android.os.Looper.getMainLooper())
+            )
         } else {
-            cm.requestNetwork(request, callback)
+            connectivityManager.requestNetwork(request, callback)
         }
     }
 
     fun stop() {
         try {
-            cm.unregisterNetworkCallback(callback)
+            connectivityManager.unregisterNetworkCallback(callback)
         } catch (_: IllegalArgumentException) {
             // already unregistered
         }
