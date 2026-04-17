@@ -22,6 +22,9 @@ type tunLogger struct{}
 
 type tunHandler struct {
 	client client.Client
+
+	muxMu sync.Mutex
+	mux   *udpMux
 }
 
 var (

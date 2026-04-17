@@ -11,7 +11,7 @@ import ru.shapovalov.hysteria.api.HysteriaClient
 import java.util.concurrent.atomic.AtomicBoolean
 
 object HysteriaClientImpl : HysteriaClient {
-    private const val TUN_MTU = 1500
+    private const val TUN_MTU = 1400
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()

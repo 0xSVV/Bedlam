@@ -15,9 +15,10 @@ import (
 )
 
 var (
-	tunMu           sync.Mutex
-	activeTunIface  singtun.Tun
-	activeTunCancel context.CancelFunc
+	tunMu            sync.Mutex
+	activeTunIface   singtun.Tun
+	activeTunCancel  context.CancelFunc
+	activeTunHandler *tunHandler
 )
 
 func StartTUN(fd int32, mtu int32) error {
@@ -40,10 +41,13 @@ func StartTUN(fd int32, mtu int32) error {
 		mtu = 1500
 	}
 
+	handler := &tunHandler{client: c}
+
 	tunOpts := singtun.Options{
 		FileDescriptor: int(fd),
 		MTU:            uint32(mtu),
 		Inet4Address:   []netip.Prefix{netip.MustParsePrefix("172.19.0.1/30")},
+		Inet6Address:   []netip.Prefix{netip.MustParsePrefix("fdfe:dcba:9876::1/126")},
 	}
 
 	tunIface, err := singtun.New(tunOpts)
@@ -58,7 +62,7 @@ func StartTUN(fd int32, mtu int32) error {
 		Tun:        tunIface,
 		TunOptions: tunOpts,
 		UDPTimeout: 300, // seconds
-		Handler:    &tunHandler{client: c},
+		Handler:    handler,
 		Logger:     &tunLogger{},
 	})
 	if err != nil {
@@ -69,6 +73,7 @@ func StartTUN(fd int32, mtu int32) error {
 
 	activeTunIface = tunIface
 	activeTunCancel = cancel
+	activeTunHandler = handler
 
 	go func() {
 		err := stack.(singtun.StackRunner).Run()
@@ -92,6 +97,11 @@ func StopTUN() error {
 	if activeTunCancel != nil {
 		activeTunCancel()
 		activeTunCancel = nil
+	}
+
+	if activeTunHandler != nil {
+		activeTunHandler.closeMux()
+		activeTunHandler = nil
 	}
 
 	err := activeTunIface.Close()
@@ -185,36 +195,41 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 	}
 }
 
+func (h *tunHandler) getMux() (*udpMux, error) {
+	h.muxMu.Lock()
+	defer h.muxMu.Unlock()
+	if h.mux != nil {
+		return h.mux, nil
+	}
+	m, err := newUDPMux(h.client)
+	if err != nil {
+		return nil, err
+	}
+	h.mux = m
+	return m, nil
+}
+
+func (h *tunHandler) closeMux() {
+	h.muxMu.Lock()
+	m := h.mux
+	h.mux = nil
+	h.muxMu.Unlock()
+	if m != nil {
+		m.close()
+	}
+}
+
 func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) error {
-	rc, err := h.client.UDP()
+	mux, err := h.getMux()
 	if err != nil {
 		log(LogLevelError, "TUN UDP session open failed: %s", err)
 		return err
 	}
-	defer rc.Close()
+	defer mux.unregister(conn)
 
-	done := make(chan struct{}, 2)
+	done := make(chan struct{}, 1)
 
-	// Remote → Local
-	go func() {
-		for {
-			data, from, err := rc.Receive()
-			if err != nil {
-				done <- struct{}{}
-				return
-			}
-			var dest M.Socksaddr
-			if ap, perr := netip.ParseAddrPort(from); perr == nil {
-				dest = M.SocksaddrFromNetIP(ap)
-			}
-			if err := conn.WritePacket(buf.As(data), dest); err != nil {
-				done <- struct{}{}
-				return
-			}
-		}
-	}()
-
-	// Local → Remote
+	// Local → Remote (replies dispatched by shared mux reader)
 	go func() {
 		buffer := buf.NewPacket()
 		defer buffer.Release()
@@ -225,8 +240,7 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 				done <- struct{}{}
 				return
 			}
-			err = rc.Send(buffer.Bytes(), dest.String())
-			if err != nil {
+			if err := mux.send(buffer.Bytes(), dest.String(), conn); err != nil {
 				done <- struct{}{}
 				return
 			}
