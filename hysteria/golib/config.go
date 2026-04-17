@@ -209,8 +209,19 @@ func resolveHost(server string) (net.Addr, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Prefer IPv4 — on cellular the underlying network often lacks a
+	// working v6 route, so a v6 AAAA record causes bind/connect to
+	// fail even though v4 would have worked.
+	pick := ips[0]
+	for _, ip := range ips {
+		if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() != nil {
+			pick = ip
+			break
+		}
+	}
+	log(LogLevelInfo, "Resolved %s → %s (candidates: %v)", host, pick, ips)
 	return &net.UDPAddr{
-		IP:   net.ParseIP(ips[0]),
+		IP:   net.ParseIP(pick),
 		Port: portNum,
 	}, nil
 }
