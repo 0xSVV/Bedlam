@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
@@ -55,6 +56,49 @@ type clientConfig struct {
 type connFactory struct {
 	newFunc    func(addr net.Addr) (net.PacketConn, error)
 	obfuscator obfs.Obfuscator
+}
+
+// activeConns tracks live upstream packet conns so we can force-close
+// them on network handoff, triggering the reconnectable client to
+// re-dial over the new transport.
+var (
+	activeConnsMu sync.Mutex
+	activeConns   = map[net.PacketConn]struct{}{}
+)
+
+func registerActiveConn(c net.PacketConn) {
+	activeConnsMu.Lock()
+	activeConns[c] = struct{}{}
+	activeConnsMu.Unlock()
+}
+
+func unregisterActiveConn(c net.PacketConn) {
+	activeConnsMu.Lock()
+	delete(activeConns, c)
+	activeConnsMu.Unlock()
+}
+
+func closeAllActiveConns() {
+	activeConnsMu.Lock()
+	conns := make([]net.PacketConn, 0, len(activeConns))
+	for c := range activeConns {
+		conns = append(conns, c)
+	}
+	activeConns = map[net.PacketConn]struct{}{}
+	activeConnsMu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
+	}
+}
+
+// trackedPacketConn removes itself from the active set on Close.
+type trackedPacketConn struct {
+	net.PacketConn
+}
+
+func (t *trackedPacketConn) Close() error {
+	unregisterActiveConn(t.PacketConn)
+	return t.PacketConn.Close()
 }
 
 func buildCoreConfig(cfg *clientConfig) (*client.Config, error) {
@@ -228,10 +272,12 @@ func (f *connFactory) New(addr net.Addr) (net.PacketConn, error) {
 	if err != nil {
 		return nil, err
 	}
+	tracked := &trackedPacketConn{PacketConn: conn}
+	registerActiveConn(conn)
 	if f.obfuscator != nil {
-		return obfs.WrapPacketConn(conn, f.obfuscator), nil
+		return obfs.WrapPacketConn(tracked, f.obfuscator), nil
 	}
-	return conn, nil
+	return tracked, nil
 }
 
 func buildHopInterval(cfg *clientConfig) udphop.HopIntervalConfig {
