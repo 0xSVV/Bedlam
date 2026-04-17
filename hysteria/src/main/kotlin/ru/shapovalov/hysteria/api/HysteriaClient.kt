@@ -2,7 +2,7 @@ package ru.shapovalov.hysteria.api
 
 import kotlinx.coroutines.flow.StateFlow
 import ru.shapovalov.hysteria.ConnectionState
-import ru.shapovalov.hysteria.HysteriaConfig
+import ru.shapovalov.hysteria.config.HysteriaConfig
 
 /**
  * Kotlin-native API for driving a Hysteria 2 tunnel.

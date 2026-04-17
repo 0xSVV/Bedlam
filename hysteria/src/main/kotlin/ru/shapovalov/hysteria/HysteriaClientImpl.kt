@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import ru.shapovalov.hysteria.api.HysteriaClient
+import ru.shapovalov.hysteria.config.HysteriaConfig
+import ru.shapovalov.hysteria.config.toJson
 import java.util.concurrent.atomic.AtomicBoolean
 
 object HysteriaClientImpl : HysteriaClient {

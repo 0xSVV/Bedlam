@@ -58,9 +58,7 @@ type connFactory struct {
 	obfuscator obfs.Obfuscator
 }
 
-// activeConns tracks live upstream packet conns so we can force-close
-// them on network handoff, triggering the reconnectable client to
-// re-dial over the new transport.
+
 var (
 	activeConnsMu sync.Mutex
 	activeConns   = map[net.PacketConn]struct{}{}
@@ -91,7 +89,6 @@ func closeAllActiveConns() {
 	}
 }
 
-// trackedPacketConn removes itself from the active set on Close.
 type trackedPacketConn struct {
 	net.PacketConn
 }
@@ -209,9 +206,7 @@ func resolveHost(server string) (net.Addr, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Prefer IPv4 — on cellular the underlying network often lacks a
-	// working v6 route, so a v6 AAAA record causes bind/connect to
-	// fail even though v4 would have worked.
+
 	pick := ips[0]
 	for _, ip := range ips {
 		if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() != nil {

@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.HysteriaClientImpl
-import ru.shapovalov.hysteria.HysteriaConfig
+import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.parseHysteriaUri
 
@@ -292,18 +292,18 @@ private fun ConfigCard(config: HysteriaConfig) {
             if (config.tls.tlsPinSHA256.isNotEmpty()) {
                 ConfigRow("Pin SHA256", config.tls.tlsPinSHA256)
             }
-            if (config.obfuscation.obfuscationType.isNotEmpty()) {
-                ConfigRow("Obfuscation", config.obfuscation.obfuscationType)
+            if (!config.obfuscation?.obfuscationType.isNullOrEmpty()) {
+                ConfigRow("Obfuscation", config.obfuscation?.obfuscationType)
             }
-            if (config.obfuscation.obfuscationPassword.isNotEmpty()) {
-                ConfigRow("Obfs password", config.obfuscation.obfuscationPassword)
+            if (!config.obfuscation?.obfuscationPassword.isNullOrEmpty()) {
+                ConfigRow("Obfs password", config.obfuscation?.obfuscationPassword)
             }
         }
     }
 }
 
 @Composable
-private fun ConfigRow(label: String, value: String) {
+private fun ConfigRow(label: String, value: String?) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -315,7 +315,7 @@ private fun ConfigRow(label: String, value: String) {
             modifier = Modifier.weight(1f)
         )
         Text(
-            text = value,
+            text = value.toString(),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(2f)
         )

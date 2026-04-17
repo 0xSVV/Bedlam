@@ -68,10 +68,6 @@ func stopClientLocked() error {
 
 	log(LogLevelInfo, "Stopping client...")
 
-	// Force-close live upstream sockets so any in-flight QUIC
-	// dial/handshake aborts and releases the reconnectable client's
-	// internal lock — otherwise Close() can block indefinitely when
-	// the previous transport died (e.g. after a network handoff).
 	closeAllActiveConns()
 
 	c := activeClient

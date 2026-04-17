@@ -2,6 +2,11 @@ package ru.shapovalov.hysteria
 
 import android.net.Uri
 import androidx.core.net.toUri
+import ru.shapovalov.hysteria.config.HysteriaConfig
+import ru.shapovalov.hysteria.config.ObfuscationOptions
+import ru.shapovalov.hysteria.config.ServerCredentials
+import ru.shapovalov.hysteria.config.TlsOptions
+import ru.shapovalov.hysteria.config.defaultTlsOptions
 
 /**
  * Parses a Hysteria 2 URI into a [HysteriaConfig].
@@ -39,16 +44,14 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
             tlsSni = sni,
             tlsInsecure = insecure,
             tlsPinSHA256 = pinSHA256,
+            tlsCa = defaultTlsOptions.tlsCa,
+            tlsClientCert = defaultTlsOptions.tlsClientKey,
+            tlsClientKey = defaultTlsOptions.tlsClientKey,
         ),
         obfuscation = ObfuscationOptions(
             obfuscationType = obfs,
             obfuscationPassword = obfsPassword,
-        ),
-        quic = QuicOptions(),
-        congestion = CongestionOptions(),
-        bandwidth = BandwidthOptions(),
-        transport = TransportOptions(),
-        behavior = BehaviorOptions(),
+        )
     )
 }
 

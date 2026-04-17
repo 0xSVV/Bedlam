@@ -1,0 +1,32 @@
+package ru.shapovalov.hysteria.config
+
+import org.json.JSONObject
+
+fun HysteriaConfig.toJson(): String = JSONObject().apply {
+    put("server", server.server)
+    put("auth", server.auth)
+    put("tls_sni", tls.tlsSni)
+    put("tls_insecure", tls.tlsInsecure)
+    put("tls_pin_sha256", tls.tlsPinSHA256)
+    put("tls_ca", tls.tlsCa)
+    put("tls_client_cert", tls.tlsClientCert)
+    put("tls_client_key", tls.tlsClientKey)
+    put("obfs_type", obfuscation?.obfuscationType)
+    put("obfs_password", obfuscation?.obfuscationPassword)
+    put("init_stream_receive_window", quic?.initStreamReceiveWindow ?: defaultQuicOptions.initStreamReceiveWindow)
+    put("max_stream_receive_window", quic?.maxStreamReceiveWindow ?: defaultQuicOptions.maxStreamReceiveWindow)
+    put("init_conn_receive_window", quic?.initConnReceiveWindow ?: defaultQuicOptions.initConnReceiveWindow)
+    put("max_conn_receive_window", quic?.maxConnReceiveWindow ?: defaultQuicOptions.maxConnReceiveWindow)
+    put("max_idle_timeout", quic?.maxIdleTimeoutSec ?: defaultQuicOptions.maxIdleTimeoutSec)
+    put("keep_alive_period", quic?.keepAlivePeriodSec ?: defaultQuicOptions.keepAlivePeriodSec)
+    put("disable_pmtud", quic?.disablePathMTUDiscovery ?: defaultQuicOptions.disablePathMTUDiscovery)
+    put("congestion_type", congestion?.congestionType)
+    put("bbr_profile", congestion?.bbrProfile)
+    put("max_tx_mbps", bandwidth?.maxTxMbps ?: defaultBandwidthOptions.maxTxMbps)
+    put("max_rx_mbps", bandwidth?.maxRxMbps ?: defaultBandwidthOptions.maxRxMbps)
+    put("hop_interval", transport?.hopIntervalSec ?: defaultTransportOptions.hopIntervalSec)
+    put("min_hop_interval", transport?.minHopIntervalSec ?: defaultTransportOptions.minHopIntervalSec)
+    put("max_hop_interval", transport?.maxHopIntervalSec ?: defaultTransportOptions.maxHopIntervalSec)
+    put("fast_open", behavior?.fastOpen ?: defaultBehaviorOptions.fastOpen)
+    put("lazy", behavior?.lazy ?: defaultBehaviorOptions.lazy)
+}.toString()
