@@ -26,7 +26,8 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
     val port = uri.port.takeIf { it > 0 } ?: 443
     val server = resolveServerAddress(uri, host, port)
 
-    val sni = uri.getQueryParameter("sni").orEmpty()
+    val sniParam = uri.getQueryParameter("sni").orEmpty()
+    val sni = sniParam.ifEmpty { if (isIpLiteral(host)) "" else host }
     val insecure = uri.getQueryParameter("insecure") == "0"
     val pinSHA256 = uri.getQueryParameter("pinSHA256").orEmpty()
     val obfs = uri.getQueryParameter("obfs").orEmpty()
@@ -49,6 +50,15 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
         transport = TransportOptions(),
         behavior = BehaviorOptions(),
     )
+}
+
+private fun isIpLiteral(host: String): Boolean {
+    if (host.isEmpty()) return false
+    if (host.startsWith("[") && host.endsWith("]")) return true // bracketed IPv6
+    if (":" in host) return true // bare IPv6
+    val parts = host.split('.')
+    if (parts.size != 4) return false
+    return parts.all { p -> p.toIntOrNull()?.let { it in 0..255 } == true }
 }
 
 private fun resolveServerAddress(uri: Uri, parsedHost: String, parsedPort: Int): String {
