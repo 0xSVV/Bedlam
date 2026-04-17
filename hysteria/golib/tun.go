@@ -88,24 +88,25 @@ func StartTUN(fd int32, mtu int32) error {
 
 func StopTUN() error {
 	tunMu.Lock()
-	defer tunMu.Unlock()
+	iface := activeTunIface
+	cancel := activeTunCancel
+	handler := activeTunHandler
+	activeTunIface = nil
+	activeTunCancel = nil
+	activeTunHandler = nil
+	tunMu.Unlock()
 
-	if activeTunIface == nil {
+	if iface == nil {
 		return fmt.Errorf("TUN not running")
 	}
 
-	if activeTunCancel != nil {
-		activeTunCancel()
-		activeTunCancel = nil
+	if cancel != nil {
+		cancel()
 	}
-
-	if activeTunHandler != nil {
-		activeTunHandler.closeMux()
-		activeTunHandler = nil
+	if handler != nil {
+		handler.closeMux()
 	}
-
-	err := activeTunIface.Close()
-	activeTunIface = nil
+	err := iface.Close()
 
 	log(LogLevelInfo, "TUN stopped")
 	return err
@@ -209,9 +210,7 @@ func (h *tunHandler) getMux() (*udpMux, error) {
 	return m, nil
 }
 
-// resetTunMux closes the active TUN handler's UDP mux if any.
-// Next local UDP flow will lazily recreate it against the newly
-// re-dialed Hysteria client.
+
 func resetTunMux() {
 	tunMu.Lock()
 	h := activeTunHandler
