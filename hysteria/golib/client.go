@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
 )
@@ -67,17 +68,31 @@ func stopClientLocked() error {
 
 	log(LogLevelInfo, "Stopping client...")
 
-	err := activeClient.Close()
+	// Force-close live upstream sockets so any in-flight QUIC
+	// dial/handshake aborts and releases the reconnectable client's
+	// internal lock — otherwise Close() can block indefinitely when
+	// the previous transport died (e.g. after a network handoff).
+	closeAllActiveConns()
+
+	c := activeClient
 	activeClient = nil
 	globalDNSCache.clear()
+
+	done := make(chan error, 1)
+	go func() { done <- c.Close() }()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(3 * time.Second):
+		err = fmt.Errorf("client close timed out")
+		log(LogLevelWarn, "Client close timed out; continuing")
+	}
 
 	log(LogLevelInfo, "Client stopped")
 	return err
 }
 
-// ResetConnections force-closes all live upstream packet conns (and the
-// shared UDP mux) so the reconnectable client re-dials over the current
-// default network. Call this on Android network handoff.
 func ResetConnections() {
 	log(LogLevelInfo, "Resetting upstream connections")
 	resetTunMux()
