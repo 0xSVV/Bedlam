@@ -75,6 +75,16 @@ func stopClientLocked() error {
 	return err
 }
 
+// ResetConnections force-closes all live upstream packet conns (and the
+// shared UDP mux) so the reconnectable client re-dials over the current
+// default network. Call this on Android network handoff.
+func ResetConnections() {
+	log(LogLevelInfo, "Resetting upstream connections")
+	resetTunMux()
+	closeAllActiveConns()
+	globalDNSCache.clear()
+}
+
 func IsRunning() bool {
 	clientMutex.Lock()
 	defer clientMutex.Unlock()

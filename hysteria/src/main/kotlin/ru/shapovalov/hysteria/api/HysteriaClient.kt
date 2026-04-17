@@ -40,6 +40,13 @@ interface HysteriaClient {
     /** Tear the tunnel down. Idempotent. */
     fun stop()
 
+    /**
+     * Force-close live upstream sockets so the core re-dials on the
+     * current default network. Call on Android connectivity handoff
+     * (WiFi↔mobile). No-op if the tunnel isn't running.
+     */
+    suspend fun resetConnections()
+
     /** QUIC-datagram round-trip diagnostic. Returns a human-readable status line. */
     suspend fun testUdp(): String
 

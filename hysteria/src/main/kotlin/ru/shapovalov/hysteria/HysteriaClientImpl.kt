@@ -70,6 +70,11 @@ object HysteriaClientImpl : HysteriaClient {
         _state.value = ConnectionState.Disconnected
     }
 
+    override suspend fun resetConnections() {
+        if (!tunActive.get()) return
+        withContext(Dispatchers.IO) { runCatching { Golib.resetConnections() } }
+    }
+
     override suspend fun testUdp(): String =
         withContext(Dispatchers.IO) { Golib.testUDP() }
 

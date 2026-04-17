@@ -209,6 +209,18 @@ func (h *tunHandler) getMux() (*udpMux, error) {
 	return m, nil
 }
 
+// resetTunMux closes the active TUN handler's UDP mux if any.
+// Next local UDP flow will lazily recreate it against the newly
+// re-dialed Hysteria client.
+func resetTunMux() {
+	tunMu.Lock()
+	h := activeTunHandler
+	tunMu.Unlock()
+	if h != nil {
+		h.closeMux()
+	}
+}
+
 func (h *tunHandler) closeMux() {
 	h.muxMu.Lock()
 	m := h.mux
