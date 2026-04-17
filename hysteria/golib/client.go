@@ -69,6 +69,7 @@ func stopClientLocked() error {
 
 	err := activeClient.Close()
 	activeClient = nil
+	globalDNSCache.clear()
 
 	log(LogLevelInfo, "Client stopped")
 	return err

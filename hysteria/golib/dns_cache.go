@@ -106,6 +106,12 @@ func (c *dnsCache) store(key string, response []byte, ttl time.Duration) {
 	}
 }
 
+func (c *dnsCache) clear() {
+	c.mu.Lock()
+	c.entries = make(map[string]*dnsCacheEntry)
+	c.mu.Unlock()
+}
+
 func (c *dnsCache) evictExpiredLocked() {
 	now := time.Now()
 	for k, e := range c.entries {
