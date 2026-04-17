@@ -5,10 +5,14 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,10 +28,30 @@ class BedlamVpnService : VpnService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client: HysteriaClient = HysteriaClientImpl
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+    }
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bedlam:vpn").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+    }
+
+    private fun activeUnderlyingNetwork(): Network? {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        return cm.activeNetwork
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -44,6 +68,8 @@ class BedlamVpnService : VpnService() {
         }
 
         startAsForeground()
+        acquireWakeLock()
+        setUnderlyingNetworks(activeUnderlyingNetwork()?.let { arrayOf(it) })
 
         scope.launch {
             try {
@@ -66,6 +92,7 @@ class BedlamVpnService : VpnService() {
         val pfd = Builder()
             .setSession("Bedlam")
             .setMtu(mtu)
+            .setMetered(false)
             .addAddress("172.19.0.1", 30)
             .addAddress("fdfe:dcba:9876::1", 126)
             .addRoute("0.0.0.0", 0)
@@ -81,6 +108,7 @@ class BedlamVpnService : VpnService() {
 
     private fun stop() {
         client.stop()
+        releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
