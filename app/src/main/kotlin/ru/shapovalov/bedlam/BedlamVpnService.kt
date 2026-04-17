@@ -29,6 +29,7 @@ class BedlamVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client: HysteriaClient = HysteriaClientImpl
     private var wakeLock: PowerManager.WakeLock? = null
+    private var networkListener: DefaultNetworkListener? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -70,6 +71,7 @@ class BedlamVpnService : VpnService() {
         startAsForeground()
         acquireWakeLock()
         setUnderlyingNetworks(activeUnderlyingNetwork()?.let { arrayOf(it) })
+        startNetworkListener()
 
         scope.launch {
             try {
@@ -107,10 +109,27 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun stop() {
+        stopNetworkListener()
         client.stop()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    private fun startNetworkListener() {
+        if (networkListener != null) return
+        networkListener = DefaultNetworkListener(this) { network ->
+            Log.i(TAG, "Underlying network changed: $network")
+            setUnderlyingNetworks(network?.let { arrayOf(it) })
+            if (network != null) {
+                scope.launch { client.resetConnections() }
+            }
+        }.also { it.start() }
+    }
+
+    private fun stopNetworkListener() {
+        networkListener?.stop()
+        networkListener = null
     }
 
     override fun onRevoke() = stop()
