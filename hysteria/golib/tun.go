@@ -47,7 +47,6 @@ func StartTUN(fd int32, mtu int32) error {
 		FileDescriptor: int(fd),
 		MTU:            uint32(mtu),
 		Inet4Address:   []netip.Prefix{netip.MustParsePrefix("172.19.0.1/30")},
-		Inet6Address:   []netip.Prefix{netip.MustParsePrefix("fdfe:dcba:9876::1/126")},
 	}
 
 	tunIface, err := singtun.New(tunOpts)
