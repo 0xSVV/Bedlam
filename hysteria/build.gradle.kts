@@ -146,6 +146,7 @@ val buildGolib by tasks.registering(Exec::class) {
             gomobileExe, "bind",
             "-target=android/arm64",
             "-androidapi", "29",
+            "-tags", "with_gvisor",
             "-o", golibAar.asFile.absolutePath,
             "."
         )
