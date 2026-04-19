@@ -91,7 +91,6 @@ func stopClientLocked() error {
 
 func ResetConnections() {
 	log(LogLevelInfo, "Resetting upstream connections")
-	resetTunMux()
 	closeAllActiveConns()
 	globalDNSCache.clear()
 }
