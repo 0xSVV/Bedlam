@@ -198,8 +198,12 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 func (h *tunHandler) getMux() (*udpMux, error) {
 	h.muxMu.Lock()
 	defer h.muxMu.Unlock()
-	if h.mux != nil {
+	if h.mux != nil && !h.mux.isDead() {
 		return h.mux, nil
+	}
+	if h.mux != nil {
+		h.mux.close()
+		h.mux = nil
 	}
 	m, err := newUDPMux(h.client)
 	if err != nil {

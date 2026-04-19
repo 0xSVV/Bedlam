@@ -34,10 +34,17 @@ func newUDPMux(c client.Client) (*udpMux, error) {
 }
 
 func (m *udpMux) readLoop() {
+	defer func() {
+		// Mark dead so next send forces a fresh mux.
+		m.mu.Lock()
+		m.closed = true
+		m.flows = nil
+		m.mu.Unlock()
+	}()
 	for {
 		data, from, err := m.conn.Receive()
 		if err != nil {
-			log(LogLevelDebug, "UDP mux receive ended: %s", err)
+			log(LogLevelWarn, "UDP mux receive ended: %s (mux will be recreated)", err)
 			return
 		}
 		m.mu.RLock()
@@ -75,6 +82,12 @@ func (m *udpMux) unregister(local N.PacketConn) {
 			delete(m.flows, k)
 		}
 	}
+}
+
+func (m *udpMux) isDead() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closed
 }
 
 func (m *udpMux) close() {
