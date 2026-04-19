@@ -8,7 +8,7 @@ import (
 	"net/netip"
 	"sync"
 
-	singtun "github.com/apernet/sing-tun"
+	singtun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/buf"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
@@ -17,6 +17,7 @@ import (
 var (
 	tunMu            sync.Mutex
 	activeTunIface   singtun.Tun
+	activeTunStack   singtun.Stack
 	activeTunCancel  context.CancelFunc
 	activeTunHandler *tunHandler
 )
@@ -47,6 +48,7 @@ func StartTUN(fd int32, mtu int32) error {
 		FileDescriptor: int(fd),
 		MTU:            uint32(mtu),
 		Inet4Address:   []netip.Prefix{netip.MustParsePrefix("172.19.0.1/30")},
+		Inet6Address:   []netip.Prefix{netip.MustParsePrefix("fdfe:dcba:9876::1/126")},
 	}
 
 	tunIface, err := singtun.New(tunOpts)
@@ -56,7 +58,11 @@ func StartTUN(fd int32, mtu int32) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	stack, err := singtun.NewSystem(singtun.StackOptions{
+	// gVisor stack keeps TCP/UDP handling in userspace so we don't need
+	// to bind host listeners on TUN-assigned addresses — in particular
+	// avoids "listen tcp6 [...]: cannot assign requested address" that
+	// the system stack hits on Android after a network handoff.
+	stack, err := singtun.NewGVisor(singtun.StackOptions{
 		Context:    ctx,
 		Tun:        tunIface,
 		TunOptions: tunOpts,
@@ -70,27 +76,29 @@ func StartTUN(fd int32, mtu int32) error {
 		return fmt.Errorf("create TUN stack: %w", err)
 	}
 
+	if err := stack.Start(); err != nil {
+		cancel()
+		tunIface.Close()
+		return fmt.Errorf("start TUN stack: %w", err)
+	}
+
 	activeTunIface = tunIface
+	activeTunStack = stack
 	activeTunCancel = cancel
 	activeTunHandler = handler
 
-	go func() {
-		err := stack.(singtun.StackRunner).Run()
-		if err != nil {
-			log(LogLevelError, "TUN stack stopped: %s", err.Error())
-		}
-	}()
-
-	log(LogLevelInfo, "TUN started (fd=%d, mtu=%d)", fd, mtu)
+	log(LogLevelInfo, "TUN started (fd=%d, mtu=%d, stack=gvisor)", fd, mtu)
 	return nil
 }
 
 func StopTUN() error {
 	tunMu.Lock()
 	iface := activeTunIface
+	stack := activeTunStack
 	cancel := activeTunCancel
 	handler := activeTunHandler
 	activeTunIface = nil
+	activeTunStack = nil
 	activeTunCancel = nil
 	activeTunHandler = nil
 	tunMu.Unlock()
@@ -104,6 +112,9 @@ func StopTUN() error {
 	}
 	if handler != nil {
 		handler.closeMux()
+	}
+	if stack != nil {
+		_ = stack.Close()
 	}
 	err := iface.Close()
 
