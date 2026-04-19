@@ -13,7 +13,10 @@ import ru.shapovalov.hysteria.config.toJson
 import java.util.concurrent.atomic.AtomicBoolean
 
 object HysteriaClientImpl : HysteriaClient {
-    private const val TUN_MTU = 1400
+    // 1280 is the IPv6 minimum MTU and always fits in cellular MTU
+    // (typically 1428–1500) after adding QUIC/IP/UDP headers, avoiding
+    // fragmentation when PMTUD is blocked on the path.
+    private const val TUN_MTU = 1280
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
