@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"time"
 
 	singtun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/buf"
@@ -113,10 +114,23 @@ func StopTUN() error {
 	if handler != nil {
 		handler.closeMux()
 	}
-	if stack != nil {
-		_ = stack.Close()
+
+	// stack.Close() can block on in-flight gVisor goroutines; bound it
+	// so the caller (which drives service shutdown) never hangs.
+	done := make(chan error, 1)
+	go func() {
+		if stack != nil {
+			_ = stack.Close()
+		}
+		done <- iface.Close()
+	}()
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(3 * time.Second):
+		err = fmt.Errorf("TUN close timed out")
+		log(LogLevelWarn, "TUN close timed out; continuing")
 	}
-	err := iface.Close()
 
 	log(LogLevelInfo, "TUN stopped")
 	return err
