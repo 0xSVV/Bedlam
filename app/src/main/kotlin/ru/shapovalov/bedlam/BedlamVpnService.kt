@@ -120,10 +120,14 @@ class BedlamVpnService : VpnService() {
 
     private fun stop() {
         stopNetworkListener()
-        client.stop()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        // client.stop() does synchronous Golib calls that can block on
+        // stuck Go goroutines (DNS, UDP mux). Don't hold the main thread.
+        Thread({
+            runCatching { client.stop() }
+            stopSelf()
+        }, "BedlamVpnStop").start()
     }
 
     private fun startNetworkListener() {
