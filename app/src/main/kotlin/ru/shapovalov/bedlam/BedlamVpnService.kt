@@ -45,7 +45,7 @@ class BedlamVpnService : VpnService() {
         super.onDestroy()
     }
 
-    @SuppressLint("WakelockTimeout") // releasing in onDestroy
+    @SuppressLint("WakelockTimeout")
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
         val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -122,8 +122,6 @@ class BedlamVpnService : VpnService() {
         stopNetworkListener()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        // client.stop() does synchronous Golib calls that can block on
-        // stuck Go goroutines (DNS, UDP mux). Don't hold the main thread.
         Thread({
             runCatching { client.stop() }
             stopSelf()
