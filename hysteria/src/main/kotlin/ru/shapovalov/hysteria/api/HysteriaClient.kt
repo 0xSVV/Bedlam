@@ -10,26 +10,34 @@ import ru.shapovalov.hysteria.config.HysteriaConfig
  * Consumers do not interact with the native layer directly — every Go call
  * is confined to the hysteria module, and this interface is the only seam.
  * Callers inject Android-specific concerns (socket protection, TUN device
- * creation) as callbacks, keeping the client transport-agnostic.
+ * creation) as callbacks via [SocketProtector] and [TunFactory], keeping
+ * the client transport-agnostic.
  */
 interface HysteriaClient {
-    /** Observable connection state. Hot flow; starts at [ConnectionState.Disconnected]. */
+    /**
+     * Observable connection state. Hot flow; starts at [ConnectionState.Disconnected].
+     */
     val state: StateFlow<ConnectionState>
 
-    /** Attach a log sink. Pass `null` to detach. */
+    /**
+     * Attaches a [LogListener] to act as a log sink. Pass `null` to detach.
+     */
     fun setLogListener(listener: LogListener?)
 
     /**
-     * Bring the tunnel up. Suspends until the handshake completes (or fails)
-     * and the TUN device is wired to the Hysteria core.
+     * Brings the tunnel up.
      *
-     * @param protector invoked for each UDP socket the native layer opens,
-     *   from a native worker thread, before dialing. Typically delegated
-     *   to `VpnService.protect()`. Must be registered *before* the handshake
-     *   or the QUIC traffic will loop back through the VPN route and stall.
-     * @param tun invoked after the handshake succeeds; must return the raw
-     *   file descriptor of an established Android TUN device. Ownership of
-     *   the fd transfers to the client (closed on [stop]).
+     * Suspends until the handshake completes (or fails) and the TUN device is wired
+     * to the Hysteria core.
+     *
+     * @param config The configuration payload for the Hysteria tunnel.
+     * @param protector Invoked for each UDP socket the native layer opens, from a native
+     *   worker thread, before dialing. Typically delegated to `VpnService.protect()`.
+     *   Must be registered *before* the handshake or the QUIC traffic will loop back
+     *   through the VPN route and stall.
+     * @param tun Invoked after the handshake succeeds; its [TunFactory.create] method
+     *   must return the raw file descriptor of an established Android TUN device.
+     *   Ownership of the fd transfers to the client (closed on [stop]).
      */
     suspend fun start(
         config: HysteriaConfig,
@@ -37,31 +45,60 @@ interface HysteriaClient {
         tun: TunFactory,
     )
 
-    /** Tear the tunnel down. Idempotent. */
+    /**
+     * Tears the tunnel down. Idempotent.
+     */
     fun stop()
 
     /**
-     * Force-close live upstream sockets so the core re-dials on the
-     * current default network. Call on Android connectivity handoff
-     * (WiFi↔mobile). No-op if the tunnel isn't running.
+     * Forces live upstream sockets to close so the core re-dials on the
+     * current default network.
+     *
+     * Call on Android connectivity handoff (WiFi ↔ mobile). No-op if the tunnel
+     * isn't currently running.
      */
     suspend fun resetConnections()
 
-    /** QUIC-datagram round-trip diagnostic. Returns a human-readable status line. */
+    /**
+     * Executes a QUIC-datagram round-trip diagnostic.
+     *
+     * @return A human-readable status line.
+     */
     suspend fun testUdp(): String
 
-    /** TCP-stream round-trip diagnostic. Returns a human-readable status line. */
+    /**
+     * Executes a TCP-stream round-trip diagnostic.
+     *
+     * @return A human-readable status line.
+     */
     suspend fun testDnsOverTcp(): String
 
+    /**
+     * Callback interface to bind native sockets to the underlying network.
+     *
+     * The [protect] method is called to prevent routing loops, returning `true`
+     * if the socket with the given file descriptor was successfully protected.
+     */
     fun interface SocketProtector {
         fun protect(fd: Int): Boolean
     }
 
+    /**
+     * Factory for establishing the Android VPN interface.
+     *
+     * The [create] method must establish a TUN device utilizing the requested MTU.
+     * and return its raw file descriptor.
+     */
     fun interface TunFactory {
-        /** Establish a TUN device with the given MTU and return its raw fd. */
         fun create(mtu: Int): Int
     }
 
+    /**
+     * Sink for native logging output.
+     *
+     * The [onLog] method is invoked synchronously by the core with the severity
+     * level and formatted message.
+     */
     interface LogListener {
         fun onLog(level: String, message: String)
     }
