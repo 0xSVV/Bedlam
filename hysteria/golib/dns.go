@@ -10,10 +10,6 @@ import (
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
-// dnsOverTCP performs a DNS-over-TCP query with a hard overall timeout.
-// The dial itself (c.TCP) has no context support in hysteria core, so we
-// wrap it in a goroutine and abandon it on timeout — the stuck goroutine
-// will finish on its own when the underlying QUIC stream closes.
 func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error) {
 	type result struct {
 		resp []byte

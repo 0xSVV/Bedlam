@@ -11,7 +11,7 @@ type FdProtector interface {
 
 var (
 	protectorMu sync.Mutex
-	fdProtector  FdProtector
+	fdProtector FdProtector
 )
 
 func SetFdProtector(protector FdProtector) {

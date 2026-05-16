@@ -64,21 +64,18 @@ func TestDNSOverTCP() string {
 	return fmt.Sprintf("ok: %d bytes", len(resp))
 }
 
-// buildDNSQuery builds an A-record query for cloudflare.com. We avoid
-// example.com (often hijacked or short-circuited by transparent DNS
-// interceptors) so a successful response actually exercises the tunnel.
 func buildDNSQuery() []byte {
 	return []byte{
-		0x12, 0x34, // Transaction ID
-		0x01, 0x00, // Flags: standard query, recursion desired
-		0x00, 0x01, // Questions: 1
-		0x00, 0x00, // Answers: 0
-		0x00, 0x00, // Authority: 0
-		0x00, 0x00, // Additional: 0
+		0x12, 0x34,
+		0x01, 0x00,
+		0x00, 0x01,
+		0x00, 0x00,
+		0x00, 0x00,
+		0x00, 0x00,
 		0x0a, 'c', 'l', 'o', 'u', 'd', 'f', 'l', 'a', 'r', 'e',
 		0x03, 'c', 'o', 'm',
-		0x00,       // Root label
-		0x00, 0x01, // Type A
-		0x00, 0x01, // Class IN
+		0x00,
+		0x00, 0x01,
+		0x00, 0x01,
 	}
 }

@@ -65,15 +65,11 @@ func StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// gVisor stack keeps TCP/UDP handling in userspace so we don't need
-	// to bind host listeners on TUN-assigned addresses — in particular
-	// avoids "listen tcp6 [...]: cannot assign requested address" that
-	// the system stack hits on Android after a network handoff.
 	stack, err := singtun.NewGVisor(singtun.StackOptions{
 		Context:    ctx,
 		Tun:        tunIface,
 		TunOptions: tunOpts,
-		UDPTimeout: 300, // seconds
+		UDPTimeout: 300,
 		Handler:    &tunHandler{client: c},
 		Logger:     &tunLogger{},
 	})
@@ -115,8 +111,6 @@ func StopTUN() error {
 		cancel()
 	}
 
-	// stack.Close() can block on in-flight gVisor goroutines; bound it
-	// so the caller (which drives service shutdown) never hangs.
 	done := make(chan error, 1)
 	go func() {
 		if stack != nil {
@@ -149,10 +143,6 @@ func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metad
 	}
 	defer remote.Close()
 
-	// Copy both directions to completion. When either side returns we close
-	// the peer so the other goroutine unblocks promptly — this preserves any
-	// trailing bytes the in-flight side has already buffered, unlike a bare
-	// first-wins channel which would drop the second direction on return.
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -237,7 +227,6 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 
 	done := make(chan struct{}, 2)
 
-	// Remote → Local
 	go func() {
 		for {
 			data, from, err := rc.Receive()
@@ -256,9 +245,6 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 		}
 	}()
 
-	// Local → Remote. Allocate a fresh buffer per iteration: hysteria's
-	// rc.Send does not document whether it copies the payload before
-	// queueing, so we can't safely reuse a single buffer across iterations.
 	go func() {
 		for {
 			buffer := buf.NewPacket()
