@@ -2,7 +2,7 @@ package golib
 
 import (
 	"fmt"
-	"sync"
+	"sync/atomic"
 
 	"github.com/apernet/hysteria/core/v2/client"
 )
@@ -12,6 +12,13 @@ const (
 	LogLevelInfo  = "INFO"
 	LogLevelWarn  = "WARN"
 	LogLevelError = "ERROR"
+)
+
+const (
+	logLevelDebugN = 0
+	logLevelInfoN  = 1
+	logLevelWarnN  = 2
+	logLevelErrorN = 3
 )
 
 type LogHandler interface {
@@ -25,23 +32,53 @@ type tunHandler struct {
 }
 
 var (
-	logMutex      sync.Mutex
-	logHandler LogHandler
+	logHandler atomic.Value // *logHandlerBox
+	minLevel   atomic.Int32 // logLevel*N
 )
 
+func init() {
+	minLevel.Store(logLevelInfoN)
+}
+
+// SetLogHandler installs the sink. Pass nil to detach.
 func SetLogHandler(handler LogHandler) {
-	logMutex.Lock()
-	defer logMutex.Unlock()
-	logHandler = handler
+	if handler == nil {
+		logHandler.Store((*logHandlerBox)(nil))
+		return
+	}
+	logHandler.Store(&logHandlerBox{h: handler})
+}
+
+// SetMinLogLevel filters messages below the given level before they cross the
+// JNI boundary. Accepts the LogLevel* constants; unknown values default to INFO.
+func SetMinLogLevel(level string) {
+	minLevel.Store(int32(levelN(level)))
+}
+
+type logHandlerBox struct{ h LogHandler }
+
+func levelN(level string) int {
+	switch level {
+	case LogLevelDebug:
+		return logLevelDebugN
+	case LogLevelWarn:
+		return logLevelWarnN
+	case LogLevelError:
+		return logLevelErrorN
+	default:
+		return logLevelInfoN
+	}
 }
 
 func log(level, format string, args ...interface{}) {
-	logMutex.Lock()
-	h := logHandler
-	logMutex.Unlock()
-	if h != nil {
-		h.OnLog(level, fmt.Sprintf(format, args...))
+	if levelN(level) < int(minLevel.Load()) {
+		return
 	}
+	box, _ := logHandler.Load().(*logHandlerBox)
+	if box == nil || box.h == nil {
+		return
+	}
+	box.h.OnLog(level, fmt.Sprintf(format, args...))
 }
 
 func (l *tunLogger) Trace(args ...any) { log(LogLevelDebug, "TUN stack: %v", fmt.Sprint(args...)) }
