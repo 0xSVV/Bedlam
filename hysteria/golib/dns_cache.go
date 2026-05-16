@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"container/list"
 	"encoding/binary"
 	"sync"
 	"time"
@@ -16,17 +17,23 @@ const (
 )
 
 type dnsCacheEntry struct {
+	key      string
 	response []byte
 	expiry   time.Time
+	elem     *list.Element // position in LRU order
 }
 
 type dnsCache struct {
 	mu      sync.RWMutex
 	entries map[string]*dnsCacheEntry
+	lru     *list.List // front = most recently used
 	sf      singleflight.Group
 }
 
-var globalDNSCache = &dnsCache{entries: make(map[string]*dnsCacheEntry)}
+var globalDNSCache = &dnsCache{
+	entries: make(map[string]*dnsCacheEntry),
+	lru:     list.New(),
+}
 
 func (c *dnsCache) resolve(hc client.Client, dnsServer string, query []byte) ([]byte, error) {
 	txID, qKey, ok := parseDNSQuery(query)
@@ -69,14 +76,16 @@ func (c *dnsCache) resolve(hc client.Client, dnsServer string, query []byte) ([]
 }
 
 func (c *dnsCache) lookup(key string, txID uint16) []byte {
-	c.mu.RLock()
+	c.mu.Lock()
 	entry, ok := c.entries[key]
-	c.mu.RUnlock()
 	if !ok || time.Now().After(entry.expiry) {
+		c.mu.Unlock()
 		return nil
 	}
+	c.lru.MoveToFront(entry.elem)
 	resp := make([]byte, len(entry.response))
 	copy(resp, entry.response)
+	c.mu.Unlock()
 	if len(resp) >= 2 {
 		binary.BigEndian.PutUint16(resp[:2], txID)
 	}
@@ -90,35 +99,40 @@ func (c *dnsCache) store(key string, response []byte, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if len(c.entries) >= dnsCacheMaxEntries {
-		c.evictExpiredLocked()
-		if len(c.entries) >= dnsCacheMaxEntries {
-			for k := range c.entries {
-				delete(c.entries, k)
-				break
-			}
-		}
+	if existing, ok := c.entries[key]; ok {
+		existing.response = respCopy
+		existing.expiry = time.Now().Add(ttl)
+		c.lru.MoveToFront(existing.elem)
+		return
 	}
 
-	c.entries[key] = &dnsCacheEntry{
+	for len(c.entries) >= dnsCacheMaxEntries {
+		oldest := c.lru.Back()
+		if oldest == nil {
+			break
+		}
+		c.removeLocked(oldest.Value.(*dnsCacheEntry))
+	}
+
+	entry := &dnsCacheEntry{
+		key:      key,
 		response: respCopy,
 		expiry:   time.Now().Add(ttl),
 	}
+	entry.elem = c.lru.PushFront(entry)
+	c.entries[key] = entry
+}
+
+func (c *dnsCache) removeLocked(e *dnsCacheEntry) {
+	c.lru.Remove(e.elem)
+	delete(c.entries, e.key)
 }
 
 func (c *dnsCache) clear() {
 	c.mu.Lock()
 	c.entries = make(map[string]*dnsCacheEntry)
+	c.lru.Init()
 	c.mu.Unlock()
-}
-
-func (c *dnsCache) evictExpiredLocked() {
-	now := time.Now()
-	for k, e := range c.entries {
-		if now.After(e.expiry) {
-			delete(c.entries, k)
-		}
-	}
 }
 
 func parseDNSQuery(query []byte) (uint16, string, bool) {

@@ -20,8 +20,8 @@ func TestUDP() string {
 	}
 	defer rc.Close()
 
-	log(LogLevelInfo, "TestUDP: sending DNS query to 8.8.8.8:53 via QUIC datagram")
-	if err := rc.Send(buildDNSQuery(), "8.8.8.8:53"); err != nil {
+	log(LogLevelInfo, "TestUDP: sending DNS query to 1.1.1.1:53 via QUIC datagram")
+	if err := rc.Send(buildDNSQuery(), "1.1.1.1:53"); err != nil {
 		return fmt.Sprintf("error: send failed: %s", err)
 	}
 
@@ -56,14 +56,17 @@ func TestDNSOverTCP() string {
 		return "error: client not connected"
 	}
 
-	log(LogLevelInfo, "TestDNS: sending DNS query to 8.8.8.8:53 via TCP")
-	resp, err := dnsOverTCP(client, "8.8.8.8:53", buildDNSQuery())
+	log(LogLevelInfo, "TestDNS: sending DNS query to 1.1.1.1:53 via TCP")
+	resp, err := dnsOverTCP(client, "1.1.1.1:53", buildDNSQuery())
 	if err != nil {
 		return fmt.Sprintf("error: %s", err)
 	}
 	return fmt.Sprintf("ok: %d bytes", len(resp))
 }
 
+// buildDNSQuery builds an A-record query for cloudflare.com. We avoid
+// example.com (often hijacked or short-circuited by transparent DNS
+// interceptors) so a successful response actually exercises the tunnel.
 func buildDNSQuery() []byte {
 	return []byte{
 		0x12, 0x34, // Transaction ID
@@ -72,7 +75,7 @@ func buildDNSQuery() []byte {
 		0x00, 0x00, // Answers: 0
 		0x00, 0x00, // Authority: 0
 		0x00, 0x00, // Additional: 0
-		0x07, 'e', 'x', 'a', 'm', 'p', 'l', 'e',
+		0x0a, 'c', 'l', 'o', 'u', 'd', 'f', 'l', 'a', 'r', 'e',
 		0x03, 'c', 'o', 'm',
 		0x00,       // Root label
 		0x00, 0x01, // Type A
