@@ -24,10 +24,6 @@ interface HysteriaClient {
      */
     fun setLogListener(listener: LogListener?)
 
-    /**
-     * Filters log output below [level] before it crosses the native boundary.
-     * Defaults to `INFO`. Accepts: `DEBUG`, `INFO`, `WARN`, `ERROR`.
-     */
     fun setMinLogLevel(level: String)
 
     /**

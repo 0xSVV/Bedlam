@@ -32,15 +32,14 @@ type tunHandler struct {
 }
 
 var (
-	logHandler atomic.Value // *logHandlerBox
-	minLevel   atomic.Int32 // logLevel*N
+	logHandler atomic.Value
+	minLevel   atomic.Int32
 )
 
 func init() {
 	minLevel.Store(logLevelInfoN)
 }
 
-// SetLogHandler installs the sink. Pass nil to detach.
 func SetLogHandler(handler LogHandler) {
 	if handler == nil {
 		logHandler.Store((*logHandlerBox)(nil))
@@ -49,8 +48,6 @@ func SetLogHandler(handler LogHandler) {
 	logHandler.Store(&logHandlerBox{h: handler})
 }
 
-// SetMinLogLevel filters messages below the given level before they cross the
-// JNI boundary. Accepts the LogLevel* constants; unknown values default to INFO.
 func SetMinLogLevel(level string) {
 	minLevel.Store(int32(levelN(level)))
 }
@@ -86,5 +83,9 @@ func (l *tunLogger) Debug(args ...any) { log(LogLevelDebug, "TUN stack: %v", fmt
 func (l *tunLogger) Info(args ...any)  { log(LogLevelInfo, "TUN stack: %v", fmt.Sprint(args...)) }
 func (l *tunLogger) Warn(args ...any)  { log(LogLevelWarn, "TUN stack: %v", fmt.Sprint(args...)) }
 func (l *tunLogger) Error(args ...any) { log(LogLevelError, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Fatal(args ...any) { log(LogLevelError, "TUN stack fatal: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Panic(args ...any) { log(LogLevelError, "TUN stack panic: %v", fmt.Sprint(args...)) }
+func (l *tunLogger) Fatal(args ...any) {
+	log(LogLevelError, "TUN stack fatal: %v", fmt.Sprint(args...))
+}
+func (l *tunLogger) Panic(args ...any) {
+	log(LogLevelError, "TUN stack panic: %v", fmt.Sprint(args...))
+}

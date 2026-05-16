@@ -58,7 +58,6 @@ type connFactory struct {
 	obfuscator obfs.Obfuscator
 }
 
-
 var (
 	activeConnsMu sync.Mutex
 	activeConns   = map[net.PacketConn]struct{}{}
