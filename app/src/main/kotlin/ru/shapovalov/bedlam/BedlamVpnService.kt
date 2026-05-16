@@ -7,11 +7,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
-import android.os.Build
 import android.os.PowerManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
@@ -146,16 +144,7 @@ class BedlamVpnService : VpnService() {
 
 
     private fun startAsForeground() {
-        val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        startForeground(NOTIFICATION_ID, buildNotification())
     }
 
     private fun createNotificationChannel() {
