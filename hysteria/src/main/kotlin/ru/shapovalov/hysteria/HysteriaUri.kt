@@ -7,6 +7,7 @@ import ru.shapovalov.hysteria.config.ObfuscationOptions
 import ru.shapovalov.hysteria.config.ServerCredentials
 import ru.shapovalov.hysteria.config.TlsOptions
 import ru.shapovalov.hysteria.config.defaultTlsOptions
+import java.net.URLDecoder
 
 /**
  * Parses a Hysteria 2 URI into a [HysteriaConfig].
@@ -25,7 +26,7 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
     }
 
     val uri = raw.toUri()
-    val auth = uri.userInfo.orEmpty()
+    val auth = uri.encodedUserInfo?.let { URLDecoder.decode(it, "UTF-8") }.orEmpty()
 
     val host = requireNotNull(uri.host) { "URI must contain a hostname" }
     val port = uri.port.takeIf { it > 0 } ?: 443
@@ -68,7 +69,11 @@ private fun resolveServerAddress(uri: Uri, parsedHost: String, parsedPort: Int):
     val authority = uri.encodedAuthority ?: return "$parsedHost:$parsedPort"
     val hostPort = if ("@" in authority) authority.substringAfter("@") else authority
 
-    val lastColon = hostPort.lastIndexOf(':')
+    // Skip past a bracketed IPv6 literal before locating the port separator.
+    val portSepStart = if (hostPort.startsWith("[")) hostPort.indexOf(']') + 1 else 0
+    if (portSepStart < 0) return "$parsedHost:$parsedPort"
+
+    val lastColon = hostPort.indexOf(':', startIndex = portSepStart)
     if (lastColon > 0) {
         val portPart = hostPort.substring(lastColon + 1)
         if (',' in portPart || '-' in portPart) {
