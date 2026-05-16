@@ -15,6 +15,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 object HysteriaClientImpl : HysteriaClient {
     private const val TUN_MTU = 1280
 
+    // Single source of truth for the TUN's link-local addressing. The Android
+    // VpnService.Builder and the gVisor stack must agree on these or gVisor
+    // sees packets for addresses it doesn't own and drops them silently.
+    const val TUN_INET4_PREFIX: String = "172.19.0.1/30"
+    const val TUN_INET6_PREFIX: String = "fdfe:dcba:9876::1/126"
+
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
@@ -62,7 +68,7 @@ object HysteriaClientImpl : HysteriaClient {
                 })
 
                 val fd = tun.create(TUN_MTU)
-                Golib.startTUN(fd, TUN_MTU)
+                Golib.startTUN(fd, TUN_MTU, TUN_INET4_PREFIX, TUN_INET6_PREFIX)
                 tunActive.set(true)
             }
         } catch (e: Exception) {

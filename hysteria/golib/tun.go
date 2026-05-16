@@ -22,7 +22,7 @@ var (
 	activeTunCancel context.CancelFunc
 )
 
-func StartTUN(fd int32, mtu int32) error {
+func StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string) error {
 	tunMu.Lock()
 	defer tunMu.Unlock()
 
@@ -42,11 +42,20 @@ func StartTUN(fd int32, mtu int32) error {
 		mtu = 1500
 	}
 
+	inet4, err := netip.ParsePrefix(inet4Prefix)
+	if err != nil {
+		return fmt.Errorf("parse inet4 prefix %q: %w", inet4Prefix, err)
+	}
+	inet6, err := netip.ParsePrefix(inet6Prefix)
+	if err != nil {
+		return fmt.Errorf("parse inet6 prefix %q: %w", inet6Prefix, err)
+	}
+
 	tunOpts := singtun.Options{
 		FileDescriptor: int(fd),
 		MTU:            uint32(mtu),
-		Inet4Address:   []netip.Prefix{netip.MustParsePrefix("172.19.0.1/30")},
-		Inet6Address:   []netip.Prefix{netip.MustParsePrefix("fdfe:dcba:9876::1/126")},
+		Inet4Address:   []netip.Prefix{inet4},
+		Inet6Address:   []netip.Prefix{inet6},
 	}
 
 	tunIface, err := singtun.New(tunOpts)
