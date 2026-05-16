@@ -4,9 +4,15 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
-import android.os.Build
 
+/**
+ * Tracks the system default network (the one apps would use without a VPN).
+ *
+ * Uses [ConnectivityManager.registerDefaultNetworkCallback] — the documented way
+ * to observe the active route, which guarantees an [onAvailable] callback for
+ * whatever network is current at registration time. That avoids the race in
+ * `requestNetwork` where the callback only fires on transitions.
+ */
 class DefaultNetworkListener(
     context: Context,
     private val onChanged: (Network?) -> Unit,
@@ -40,19 +46,7 @@ class DefaultNetworkListener(
     }
 
     fun start() {
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
-            .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            connectivityManager.registerBestMatchingNetworkCallback(
-                request,
-                callback,
-                android.os.Handler(android.os.Looper.getMainLooper())
-            )
-        } else {
-            connectivityManager.requestNetwork(request, callback)
-        }
+        connectivityManager.registerDefaultNetworkCallback(callback)
     }
 
     fun stop() {
