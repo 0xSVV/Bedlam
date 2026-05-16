@@ -99,12 +99,14 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun establishTun(mtu: Int): Int {
+        val (v4Addr, v4Prefix) = parsePrefix(HysteriaClientImpl.TUN_INET4_PREFIX)
+        val (v6Addr, v6Prefix) = parsePrefix(HysteriaClientImpl.TUN_INET6_PREFIX)
         val pfd = Builder()
             .setSession("Bedlam")
             .setMtu(mtu)
             .setMetered(false)
-            .addAddress("172.19.0.1", 30)
-            .addAddress("fdfe:dcba:9876::1", 126)
+            .addAddress(v4Addr, v4Prefix)
+            .addAddress(v6Addr, v6Prefix)
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
             .addDnsServer("1.1.1.1")
@@ -114,6 +116,12 @@ class BedlamVpnService : VpnService() {
             .establish()
             ?: throw IllegalStateException("VpnService.establish() returned null")
         return pfd.detachFd()
+    }
+
+    private fun parsePrefix(cidr: String): Pair<String, Int> {
+        val slash = cidr.lastIndexOf('/')
+        require(slash > 0) { "Invalid CIDR: $cidr" }
+        return cidr.substring(0, slash) to cidr.substring(slash + 1).toInt()
     }
 
     private fun stop() {
