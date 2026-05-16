@@ -35,9 +35,19 @@ func StartClient(configJSON string, handler EventHandler) error {
 
 	log(LogLevelInfo, "Starting client for %s", cfg.Server)
 
+	// Resolve the server once at startup. Reconnects driven by network
+	// handoffs cannot rely on net.LookupHost — by then the TUN is up and
+	// DNS would loop through the broken tunnel. UDP port-hopping has its
+	// own resolver that is safe to re-invoke per reconnect.
+	resolved, err := resolveHost(cfg.Server)
+	if err != nil {
+		return fmt.Errorf("resolve server: %w", err)
+	}
+	log(LogLevelInfo, "Resolved server address: %s", resolved.String())
+
 	client, err := client.NewReconnectableClient(
 		func() (*client.Config, error) {
-			return buildCoreConfig(&cfg)
+			return buildCoreConfig(&cfg, resolved)
 		},
 		func(_ client.Client, info *client.HandshakeInfo, count int) {
 			log(LogLevelInfo, "Connected (UDP: %v, TX: %d, count: %d)", info.UDPEnabled, info.Tx, count)

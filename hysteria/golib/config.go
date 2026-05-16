@@ -98,14 +98,7 @@ func (t *trackedPacketConn) Close() error {
 	return t.PacketConn.Close()
 }
 
-func buildCoreConfig(cfg *clientConfig) (*client.Config, error) {
-	serverAddr, err := resolveHost(cfg.Server)
-	if err != nil {
-		return nil, fmt.Errorf("resolve server: %w", err)
-	}
-
-	log(LogLevelInfo, "Resolved server address: %s", serverAddr.String())
-
+func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr) (*client.Config, error) {
 	coreConfig := &client.Config{
 		ServerAddr: serverAddr,
 		Auth:       cfg.Auth,
