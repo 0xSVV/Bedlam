@@ -45,7 +45,7 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
             tlsInsecure = insecure,
             tlsPinSHA256 = pinSHA256,
             tlsCa = defaultTlsOptions.tlsCa,
-            tlsClientCert = defaultTlsOptions.tlsClientKey,
+            tlsClientCert = defaultTlsOptions.tlsClientCert,
             tlsClientKey = defaultTlsOptions.tlsClientKey,
         ),
         obfuscation = ObfuscationOptions(
