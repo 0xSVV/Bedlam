@@ -140,16 +140,23 @@ func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metad
 	}
 	defer remote.Close()
 
-	done := make(chan struct{}, 2)
+	// Copy both directions to completion. When either side returns we close
+	// the peer so the other goroutine unblocks promptly — this preserves any
+	// trailing bytes the in-flight side has already buffered, unlike a bare
+	// first-wins channel which would drop the second direction on return.
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
-		io.Copy(remote, conn)
-		done <- struct{}{}
+		defer wg.Done()
+		_, _ = io.Copy(remote, conn)
+		_ = remote.Close()
 	}()
 	go func() {
-		io.Copy(conn, remote)
-		done <- struct{}{}
+		defer wg.Done()
+		_, _ = io.Copy(conn, remote)
+		_ = conn.Close()
 	}()
-	<-done
+	wg.Wait()
 	return nil
 }
 
@@ -240,18 +247,21 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 		}
 	}()
 
-	// Local → Remote
+	// Local → Remote. Allocate a fresh buffer per iteration: hysteria's
+	// rc.Send does not document whether it copies the payload before
+	// queueing, so we can't safely reuse a single buffer across iterations.
 	go func() {
-		buffer := buf.NewPacket()
-		defer buffer.Release()
 		for {
-			buffer.Reset()
+			buffer := buf.NewPacket()
 			dest, err := conn.ReadPacket(buffer)
 			if err != nil {
+				buffer.Release()
 				done <- struct{}{}
 				return
 			}
-			if err := rc.Send(buffer.Bytes(), dest.String()); err != nil {
+			err = rc.Send(buffer.Bytes(), dest.String())
+			buffer.Release()
+			if err != nil {
 				done <- struct{}{}
 				return
 			}
