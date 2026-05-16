@@ -33,7 +33,7 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
 
     val sniParam = uri.getQueryParameter("sni").orEmpty()
     val sni = sniParam.ifEmpty { if (isIpLiteral(host)) "" else host }
-    val insecure = uri.getQueryParameter("insecure") == "0"
+    val insecure = uri.getQueryParameter("insecure") == "1"
     val pinSHA256 = uri.getQueryParameter("pinSHA256").orEmpty()
     val obfs = uri.getQueryParameter("obfs").orEmpty()
     val obfsPassword = uri.getQueryParameter("obfs-password").orEmpty()
