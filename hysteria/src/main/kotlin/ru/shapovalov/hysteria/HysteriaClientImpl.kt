@@ -28,13 +28,18 @@ object HysteriaClientImpl : HysteriaClient {
         Golib.setLogHandler { level, message -> listener.onLog(level, message) }
     }
 
+    override fun setMinLogLevel(level: String) {
+        Golib.setMinLogLevel(level)
+    }
+
     override suspend fun start(
         config: HysteriaConfig,
         protector: HysteriaClient.SocketProtector,
         tun: HysteriaClient.TunFactory,
     ) {
-        when (_state.value) {
-            is ConnectionState.Connecting, is ConnectionState.Connected -> return
+        when (val current = _state.value) {
+            is ConnectionState.Connecting, is ConnectionState.Connected ->
+                throw IllegalStateException("client already $current")
             else -> Unit
         }
         _state.value = ConnectionState.Connecting

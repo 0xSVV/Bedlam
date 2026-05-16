@@ -25,6 +25,12 @@ interface HysteriaClient {
     fun setLogListener(listener: LogListener?)
 
     /**
+     * Filters log output below [level] before it crosses the native boundary.
+     * Defaults to `INFO`. Accepts: `DEBUG`, `INFO`, `WARN`, `ERROR`.
+     */
+    fun setMinLogLevel(level: String)
+
+    /**
      * Brings the tunnel up.
      *
      * Suspends until the handshake completes (or fails) and the TUN device is wired
