@@ -18,7 +18,7 @@ decompose = "3.5.0"
 mvikotlin = "4.4.0"
 room = "2.8.4"
 ksp = "2.3.4"
-kotlinInject = "0.7.2"
+kotlinInject = "0.9.0"
 
 [libraries]
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
