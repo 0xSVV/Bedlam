@@ -75,6 +75,10 @@ interface HysteriaClient {
      */
     suspend fun testDnsOverTcp(): String
 
+    fun stats(): TrafficStats
+
+    data class TrafficStats(val txBytes: Long, val rxBytes: Long)
+
     /**
      * Callback interface to bind native sockets to the underlying network.
      *

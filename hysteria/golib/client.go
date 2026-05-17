@@ -34,6 +34,7 @@ func StartClient(configJSON string, handler EventHandler) error {
 	}
 
 	log(LogLevelInfo, "Starting client for %s", cfg.Server)
+	resetStats()
 
 	resolved, err := resolveHost(cfg.Server)
 	if err != nil {

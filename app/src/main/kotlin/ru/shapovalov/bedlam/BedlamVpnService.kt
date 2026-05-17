@@ -12,15 +12,22 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
 import android.os.PowerManager
+import android.text.format.Formatter
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.parseHysteriaUri
+import kotlin.coroutines.coroutineContext
 
 @SuppressLint("VpnServicePolicy")
 class BedlamVpnService : VpnService() {
@@ -29,6 +36,8 @@ class BedlamVpnService : VpnService() {
     private val client: HysteriaClient = HysteriaClientImpl
     private var wakeLock: PowerManager.WakeLock? = null
     private var networkListener: DefaultNetworkListener? = null
+    private var notificationJob: Job? = null
+    private var connectionName: String = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -65,9 +74,15 @@ class BedlamVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stop()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stop()
+                return START_NOT_STICKY
+            }
+            ACTION_RECONNECT -> {
+                scope.launch { runCatching { client.resetConnections() } }
+                return START_STICKY
+            }
         }
 
         val uri = intent?.getStringExtra(EXTRA_URI)
@@ -77,14 +92,23 @@ class BedlamVpnService : VpnService() {
             return START_NOT_STICKY
         }
 
+        val config = try {
+            parseHysteriaUri(uri)
+        } catch (e: Exception) {
+            Log.e(TAG, "Invalid URI", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        connectionName = config.name
+
         startAsForeground()
         acquireWakeLock()
         setUnderlyingNetworks(activeUnderlyingNetwork()?.let { arrayOf(it) })
         startNetworkListener()
+        startNotificationLoop()
 
         scope.launch {
             try {
-                val config = parseHysteriaUri(uri)
                 client.start(
                     config = config,
                     protector = { fd -> protect(fd) },
@@ -103,7 +127,7 @@ class BedlamVpnService : VpnService() {
         val (v4Addr, v4Prefix) = parsePrefix(HysteriaClientImpl.TUN_INET4_PREFIX)
         val (v6Addr, v6Prefix) = parsePrefix(HysteriaClientImpl.TUN_INET6_PREFIX)
         val pfd = Builder()
-            .setSession("Bedlam")
+            .setSession(if (connectionName.isNotEmpty()) connectionName else "Bedlam")
             .setMtu(mtu)
             .setMetered(false)
             .addAddress(v4Addr, v4Prefix)
@@ -126,6 +150,8 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun stop() {
+        notificationJob?.cancel()
+        notificationJob = null
         stopNetworkListener()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -151,11 +177,30 @@ class BedlamVpnService : VpnService() {
         networkListener = null
     }
 
+    private fun startNotificationLoop() {
+        notificationJob?.cancel()
+        val nm = getSystemService(NotificationManager::class.java)
+        notificationJob = scope.launch(Dispatchers.Default) {
+            var prevTx = 0L
+            var prevRx = 0L
+            client.state.collectLatest { state ->
+                while (coroutineContext.isActive) {
+                    val s = client.stats()
+                    val txRate = (s.txBytes - prevTx).coerceAtLeast(0)
+                    val rxRate = (s.rxBytes - prevRx).coerceAtLeast(0)
+                    prevTx = s.txBytes
+                    prevRx = s.rxBytes
+                    nm.notify(NOTIFICATION_ID, buildNotification(state, s, txRate, rxRate))
+                    delay(1000)
+                }
+            }
+        }
+    }
 
     private fun startAsForeground() {
         startForeground(
             NOTIFICATION_ID,
-            buildNotification(),
+            buildNotification(ConnectionState.Connecting, HysteriaClient.TrafficStats(0, 0), 0, 0),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         )
     }
@@ -172,7 +217,14 @@ class BedlamVpnService : VpnService() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(
+        state: ConnectionState,
+        stats: HysteriaClient.TrafficStats,
+        txRate: Long,
+        rxRate: Long,
+    ): Notification {
+        val title = if (connectionName.isNotEmpty()) "Bedlam · $connectionName" else "Bedlam"
+
         val openAppIntent = PendingIntent.getActivity(
             this,
             0,
@@ -183,28 +235,82 @@ class BedlamVpnService : VpnService() {
         )
         val stopPendingIntent = PendingIntent.getService(
             this,
-            0,
+            REQ_STOP,
             Intent(this, BedlamVpnService::class.java).apply { action = ACTION_STOP },
             PendingIntent.FLAG_IMMUTABLE
         )
+        val reconnectPendingIntent = PendingIntent.getService(
+            this,
+            REQ_RECONNECT,
+            Intent(this, BedlamVpnService::class.java).apply { action = ACTION_RECONNECT },
+            PendingIntent.FLAG_IMMUTABLE
+        )
 
-        return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Bedlam")
-            .setContentText("VPN tunnel active")
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+        val builder = Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
+            .setSmallIcon(R.drawable.ic_vpn_tunnel)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
             .setContentIntent(openAppIntent)
-            .addAction(
-                Notification.Action.Builder(null, "Disconnect", stopPendingIntent).build()
-            )
-            .build()
+
+        when (state) {
+            is ConnectionState.Connecting -> {
+                builder.setContentText("Connecting…")
+                builder.addAction(stopAction(stopPendingIntent))
+            }
+            is ConnectionState.Connected -> {
+                builder.setContentText(
+                    "↑ ${formatBytes(stats.txBytes)} · ↓ ${formatBytes(stats.rxBytes)}"
+                )
+                builder.setSubText(
+                    "↑ ${formatRate(txRate)} · ↓ ${formatRate(rxRate)}"
+                )
+                builder.addAction(reconnectAction(reconnectPendingIntent))
+                builder.addAction(stopAction(stopPendingIntent))
+            }
+            is ConnectionState.Error -> {
+                builder.setContentText("Error: ${state.message}")
+                builder.addAction(reconnectAction(reconnectPendingIntent))
+                builder.addAction(stopAction(stopPendingIntent))
+            }
+            is ConnectionState.Disconnected -> {
+                builder.setContentText("Disconnected")
+                builder.addAction(stopAction(stopPendingIntent))
+            }
+        }
+
+        return builder.build()
     }
+
+    private fun stopAction(pi: PendingIntent): Notification.Action =
+        Notification.Action.Builder(
+            android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_action_stop),
+            "Disconnect",
+            pi
+        ).build()
+
+    private fun reconnectAction(pi: PendingIntent): Notification.Action =
+        Notification.Action.Builder(
+            android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_action_refresh),
+            "Reconnect",
+            pi
+        ).build()
+
+    private fun formatBytes(bytes: Long): String =
+        Formatter.formatShortFileSize(this, bytes)
+
+    private fun formatRate(bytesPerSec: Long): String =
+        "${Formatter.formatShortFileSize(this, bytesPerSec)}/s"
 
     companion object {
         private const val TAG = "BedlamVpn"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "bedlam_vpn"
+        private const val REQ_STOP = 1
+        private const val REQ_RECONNECT = 2
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
+        const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_URI = "uri"
     }
 }

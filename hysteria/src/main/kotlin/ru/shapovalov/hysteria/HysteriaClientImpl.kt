@@ -91,6 +91,12 @@ object HysteriaClientImpl : HysteriaClient {
     override suspend fun testDnsOverTcp(): String =
         withContext(Dispatchers.IO) { Golib.testDNSOverTCP() }
 
+    override fun stats(): HysteriaClient.TrafficStats =
+        HysteriaClient.TrafficStats(
+            txBytes = Golib.getTxBytes(),
+            rxBytes = Golib.getRxBytes(),
+        )
+
     private fun cleanup() {
         if (tunActive.compareAndSet(true, false)) {
             runCatching { Golib.stopTUN() }

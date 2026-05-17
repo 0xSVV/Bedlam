@@ -147,16 +147,27 @@ func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metad
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(remote, conn)
+		_, _ = io.Copy(&countingWriter{w: remote, add: addTx}, conn)
 		_ = remote.Close()
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(conn, remote)
+		_, _ = io.Copy(&countingWriter{w: conn, add: addRx}, remote)
 		_ = conn.Close()
 	}()
 	wg.Wait()
 	return nil
+}
+
+type countingWriter struct {
+	w   io.Writer
+	add func(int)
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.add(n)
+	return n, err
 }
 
 func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn, m M.Metadata) error {
@@ -234,6 +245,7 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 				done <- struct{}{}
 				return
 			}
+			addRx(len(data))
 			var dest M.Socksaddr
 			if ap, perr := netip.ParseAddrPort(from); perr == nil {
 				dest = M.SocksaddrFromNetIP(ap)
@@ -254,12 +266,14 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 				done <- struct{}{}
 				return
 			}
+			n := buffer.Len()
 			err = rc.Send(buffer.Bytes(), dest.String())
 			buffer.Release()
 			if err != nil {
 				done <- struct{}{}
 				return
 			}
+			addTx(n)
 		}
 	}()
 
