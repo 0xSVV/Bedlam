@@ -5,11 +5,8 @@ import (
 	"time"
 )
 
-func TestUDP() string {
-	clientMutex.Lock()
-	c := activeClient
-	clientMutex.Unlock()
-
+func (s *Session) TestUDP() string {
+	c := s.currentClient()
 	if c == nil {
 		return "error: client not connected"
 	}
@@ -47,17 +44,14 @@ func TestUDP() string {
 	}
 }
 
-func TestDNSOverTCP() string {
-	clientMutex.Lock()
-	client := activeClient
-	clientMutex.Unlock()
-
-	if client == nil {
+func (s *Session) TestDNSOverTCP() string {
+	c := s.currentClient()
+	if c == nil {
 		return "error: client not connected"
 	}
 
 	log(LogLevelInfo, "TestDNS: sending DNS query to 1.1.1.1:53 via TCP")
-	resp, err := dnsOverTCP(client, "1.1.1.1:53", buildDNSQuery())
+	resp, err := dnsOverTCP(c, "1.1.1.1:53", buildDNSQuery())
 	if err != nil {
 		return fmt.Sprintf("error: %s", err)
 	}

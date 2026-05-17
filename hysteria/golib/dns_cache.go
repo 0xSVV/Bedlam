@@ -30,9 +30,11 @@ type dnsCache struct {
 	sf      singleflight.Group
 }
 
-var globalDNSCache = &dnsCache{
-	entries: make(map[string]*dnsCacheEntry),
-	lru:     list.New(),
+func newDNSCache() *dnsCache {
+	return &dnsCache{
+		entries: make(map[string]*dnsCacheEntry),
+		lru:     list.New(),
+	}
 }
 
 func (c *dnsCache) resolve(hc client.Client, dnsServer string, query []byte) ([]byte, error) {

@@ -35,7 +35,9 @@ import kotlin.coroutines.coroutineContext
 @SuppressLint("VpnServicePolicy")
 class BedlamVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val client: HysteriaClient = HysteriaClientImpl
+    private val client: HysteriaClient by lazy {
+        (application as BedlamApplication).hysteriaClient
+    }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockJob: Job? = null
     private var networkListener: DefaultNetworkListener? = null

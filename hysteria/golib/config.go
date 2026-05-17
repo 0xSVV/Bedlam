@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
@@ -54,50 +53,22 @@ type clientConfig struct {
 }
 
 type connFactory struct {
+	session    *Session
 	newFunc    func(addr net.Addr) (net.PacketConn, error)
 	obfuscator obfs.Obfuscator
 }
 
-var (
-	activeConnsMu sync.Mutex
-	activeConns   = map[net.PacketConn]struct{}{}
-)
-
-func registerActiveConn(c net.PacketConn) {
-	activeConnsMu.Lock()
-	activeConns[c] = struct{}{}
-	activeConnsMu.Unlock()
-}
-
-func unregisterActiveConn(c net.PacketConn) {
-	activeConnsMu.Lock()
-	delete(activeConns, c)
-	activeConnsMu.Unlock()
-}
-
-func closeAllActiveConns() {
-	activeConnsMu.Lock()
-	conns := make([]net.PacketConn, 0, len(activeConns))
-	for c := range activeConns {
-		conns = append(conns, c)
-	}
-	activeConns = map[net.PacketConn]struct{}{}
-	activeConnsMu.Unlock()
-	for _, c := range conns {
-		_ = c.Close()
-	}
-}
-
 type trackedPacketConn struct {
 	net.PacketConn
+	session *Session
 }
 
 func (t *trackedPacketConn) Close() error {
-	unregisterActiveConn(t.PacketConn)
+	t.session.unregisterActiveConn(t.PacketConn)
 	return t.PacketConn.Close()
 }
 
-func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr) (*client.Config, error) {
+func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (*client.Config, error) {
 	coreConfig := &client.Config{
 		ServerAddr: serverAddr,
 		Auth:       cfg.Auth,
@@ -170,7 +141,7 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr) (*client.Config, er
 		coreConfig.BandwidthConfig.MaxRx = uint64(cfg.MaxRxMbps) * 125000
 	}
 
-	if err := setupConnFactory(coreConfig, cfg, serverAddr); err != nil {
+	if err := setupConnFactory(coreConfig, cfg, serverAddr, session); err != nil {
 		return nil, err
 	}
 
@@ -213,10 +184,10 @@ func resolveHost(server string) (net.Addr, error) {
 	}, nil
 }
 
-func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr net.Addr) error {
+func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr net.Addr, session *Session) error {
 	isHop := serverAddr.Network() == "udphop"
 	hasObfs := strings.ToLower(cfg.ObfsType) == "salamander"
-	hasProtect := getFdProtector() != nil
+	hasProtect := session.getProtector() != nil
 
 	if !isHop && !hasObfs && !hasProtect {
 		return nil
@@ -240,7 +211,7 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 		if err != nil {
 			return nil, err
 		}
-		protectPacketConn(conn)
+		session.protectPacketConn(conn)
 		return conn, nil
 	}
 
@@ -259,6 +230,7 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 	}
 
 	coreConfig.ConnFactory = &connFactory{
+		session:    session,
 		newFunc:    newFunc,
 		obfuscator: ob,
 	}
@@ -270,8 +242,8 @@ func (f *connFactory) New(addr net.Addr) (net.PacketConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tracked := &trackedPacketConn{PacketConn: conn}
-	registerActiveConn(conn)
+	tracked := &trackedPacketConn{PacketConn: conn, session: f.session}
+	f.session.registerActiveConn(conn)
 	if f.obfuscator != nil {
 		return obfs.WrapPacketConn(tracked, f.obfuscator), nil
 	}

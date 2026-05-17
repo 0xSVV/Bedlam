@@ -43,14 +43,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ru.shapovalov.hysteria.ConnectionState
-import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.parseHysteriaUri
 
 class MainActivity : ComponentActivity() {
 
-    private val client: HysteriaClient = HysteriaClientImpl
+    private val client: HysteriaClient by lazy {
+        (application as BedlamApplication).hysteriaClient
+    }
 
     private var onVpnReady: (() -> Unit)? = null
 
