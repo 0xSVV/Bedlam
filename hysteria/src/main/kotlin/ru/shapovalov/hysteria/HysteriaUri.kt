@@ -12,10 +12,11 @@ import java.net.URLDecoder
 /**
  * Parses a Hysteria 2 URI into a [HysteriaConfig].
  *
- * Format: `hysteria2://[auth@]hostname[:port]/?[key=value]&...`
+ * Format: `hysteria2://[auth@]hostname[:port]/?[key=value]&...[#name]`
  * Also accepts the `hy2://` scheme.
  *
- * Supported query parameters: sni, insecure, pinSHA256, obfs, obfs-password
+ * Supported query parameters: sni, insecure, pinSHA256, obfs, obfs-password.
+ * Optional fragment is treated as a human-readable connection name.
  *
  * @see <a href="https://v2.hysteria.network/docs/developers/URI-Scheme/">Hysteria 2 URI Scheme</a>
  */
@@ -38,9 +39,11 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
     val pinSHA256 = uri.getQueryParameter("pinSHA256").orEmpty()
     val obfs = uri.getQueryParameter("obfs").orEmpty()
     val obfsPassword = uri.getQueryParameter("obfs-password").orEmpty()
+    val name = uri.encodedFragment?.let { URLDecoder.decode(it, "UTF-8") }.orEmpty()
 
     return HysteriaConfig(
         server = ServerCredentials(server = server, auth = auth),
+        name = name,
         tls = TlsOptions(
             tlsSni = sni,
             tlsInsecure = insecure,
