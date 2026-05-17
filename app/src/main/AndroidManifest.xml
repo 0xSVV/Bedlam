@@ -29,7 +29,7 @@
         </activity>
 
         <service
-            android:name=".BedlamVpnService"
+            android:name=".core.vpn.BedlamVpnService"
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE"

@@ -1,13 +1,13 @@
-package ru.shapovalov.bedlam
+package ru.shapovalov.bedlam.core.vpn
 
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import ru.shapovalov.bedlam.MainActivity
+import ru.shapovalov.bedlam.R
 import java.util.concurrent.TimeUnit
 import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
@@ -32,7 +34,6 @@ import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.DisconnectReason
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.parseHysteriaUri
-import kotlin.coroutines.coroutineContext
 
 @SuppressLint("VpnServicePolicy")
 class BedlamVpnService : VpnService() {
@@ -89,7 +90,7 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun activeUnderlyingNetwork(): Network? {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         return cm.activeNetwork
     }
 
@@ -343,14 +344,14 @@ class BedlamVpnService : VpnService() {
 
     private fun stopAction(pi: PendingIntent): Notification.Action =
         Notification.Action.Builder(
-            android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_action_stop),
+            Icon.createWithResource(this, R.drawable.ic_action_stop),
             getString(R.string.action_disconnect),
             pi
         ).build()
 
     private fun reconnectAction(pi: PendingIntent): Notification.Action =
         Notification.Action.Builder(
-            android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_action_refresh),
+            Icon.createWithResource(this, R.drawable.ic_action_refresh),
             getString(R.string.action_reconnect),
             pi
         ).build()

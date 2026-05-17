@@ -1,4 +1,4 @@
-package ru.shapovalov.bedlam
+package ru.shapovalov.bedlam.core.vpn
 
 import android.content.Context
 import android.net.ConnectivityManager
