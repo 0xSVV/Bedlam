@@ -176,9 +176,15 @@ class BedlamVpnService : VpnService() {
 
     private fun startNetworkListener() {
         if (networkListener != null) return
+        var seenInitial = false
         networkListener = DefaultNetworkListener(this) { network ->
-            Log.i(TAG, "Underlying network changed: $network")
             setUnderlyingNetworks(network?.let { arrayOf(it) })
+            if (!seenInitial) {
+                seenInitial = true
+                Log.i(TAG, "Initial underlying network: $network")
+                return@DefaultNetworkListener
+            }
+            Log.i(TAG, "Underlying network changed: $network")
             if (network != null) {
                 scope.launch { client.resetConnections() }
             }
