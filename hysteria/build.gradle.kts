@@ -92,12 +92,37 @@ fun findGoPath(): String {
         ?: "${System.getProperty("user.home")}/go"
 }
 
+val syncHysteriaSubmodule by tasks.registering(Exec::class) {
+    description = "Initialize the hysteria upstream submodule at its pinned commit"
+    group = "build"
+
+    workingDir = rootProject.projectDir
+    commandLine("git", "submodule", "update", "--init", "--recursive", "hysteria/upstream")
+    isIgnoreExitValue = false
+}
+
+val updateHysteriaCore by tasks.registering(Exec::class) {
+    description = "Fetch the latest commit from hysteria upstream and update the working tree"
+    group = "build"
+
+    workingDir = rootProject.projectDir
+    commandLine(
+        "git", "submodule", "update",
+        "--init", "--remote", "--recursive",
+        "hysteria/upstream"
+    )
+    isIgnoreExitValue = false
+}
+
 val buildGolib by tasks.registering(Exec::class) {
     description = "Build Go mobile bindings (.aar) via gomobile bind"
     group = "build"
 
+    dependsOn(syncHysteriaSubmodule)
+
     workingDir = golibDir.asFile
     inputs.dir(golibDir)
+    inputs.dir(golibDir.asFile.resolve("../upstream"))
     outputs.file(golibAar)
 
     doFirst {
@@ -121,14 +146,6 @@ val buildGolib by tasks.registering(Exec::class) {
                 "gobind is not installed.\n" +
                 "Install it with: go install golang.org/x/mobile/cmd/gobind@latest"
             )
-
-        val submoduleDir = golibDir.asFile.resolve("../upstream/core")
-        if (!submoduleDir.exists()) {
-            error(
-                "Hysteria submodule not found at ${submoduleDir.canonicalPath}\n" +
-                "Initialize it with: git submodule update --init --recursive"
-            )
-        }
 
         val ndkPath = findNdk()
         val sdkPath = System.getenv("ANDROID_HOME")
@@ -163,4 +180,5 @@ tasks.named("clean") {
     doLast {
         delete("libs/golib.aar", "libs/golib-sources.jar")
     }
+    finalizedBy(updateHysteriaCore)
 }
