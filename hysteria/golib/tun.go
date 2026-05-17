@@ -15,25 +15,15 @@ import (
 	N "github.com/sagernet/sing/common/network"
 )
 
-var (
-	tunMu           sync.Mutex
-	activeTunIface  singtun.Tun
-	activeTunStack  singtun.Stack
-	activeTunCancel context.CancelFunc
-)
+func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string) error {
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
 
-func StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string) error {
-	tunMu.Lock()
-	defer tunMu.Unlock()
-
-	if activeTunIface != nil {
+	if s.tunIface != nil {
 		return fmt.Errorf("TUN already running")
 	}
 
-	clientMutex.Lock()
-	c := activeClient
-	clientMutex.Unlock()
-
+	c := s.currentClient()
 	if c == nil {
 		return fmt.Errorf("client not connected")
 	}
@@ -70,7 +60,7 @@ func StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string) error {
 		Tun:        tunIface,
 		TunOptions: tunOpts,
 		UDPTimeout: 300,
-		Handler:    &tunHandler{client: c},
+		Handler:    &tunHandler{session: s, client: c},
 		Logger:     &tunLogger{},
 	})
 	if err != nil {
@@ -85,26 +75,26 @@ func StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string) error {
 		return fmt.Errorf("start TUN stack: %w", err)
 	}
 
-	activeTunIface = tunIface
-	activeTunStack = stack
-	activeTunCancel = cancel
+	s.tunIface = tunIface
+	s.tunStack = stack
+	s.tunCancel = cancel
 
 	log(LogLevelInfo, "TUN started (fd=%d, mtu=%d, stack=gvisor)", fd, mtu)
 	return nil
 }
 
-func StopTUN() error {
-	tunMu.Lock()
-	iface := activeTunIface
-	stack := activeTunStack
-	cancel := activeTunCancel
-	activeTunIface = nil
-	activeTunStack = nil
-	activeTunCancel = nil
-	tunMu.Unlock()
+func (s *Session) StopTUN() error {
+	s.tunMu.Lock()
+	iface := s.tunIface
+	stack := s.tunStack
+	cancel := s.tunCancel
+	s.tunIface = nil
+	s.tunStack = nil
+	s.tunCancel = nil
+	s.tunMu.Unlock()
 
 	if iface == nil {
-		return fmt.Errorf("TUN not running")
+		return nil
 	}
 
 	if cancel != nil {
@@ -147,12 +137,12 @@ func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metad
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(&countingWriter{w: remote, add: addTx}, conn)
+		_, _ = io.Copy(&countingWriter{w: remote, add: h.session.addTx}, conn)
 		_ = remote.Close()
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(&countingWriter{w: conn, add: addRx}, remote)
+		_, _ = io.Copy(&countingWriter{w: conn, add: h.session.addRx}, remote)
 		_ = conn.Close()
 	}()
 	wg.Wait()
@@ -210,7 +200,7 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 		go func() {
 			defer func() { <-sem }()
 
-			resp, err := globalDNSCache.resolve(h.client, dnsAddr, query)
+			resp, err := h.session.dnsCache.resolve(h.client, dnsAddr, query)
 			if err != nil {
 				log(LogLevelWarn, "TUN DNS error: %s: %s", dnsAddr, err)
 				return
@@ -245,7 +235,7 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 				done <- struct{}{}
 				return
 			}
-			addRx(len(data))
+			h.session.addRx(len(data))
 			var dest M.Socksaddr
 			if ap, perr := netip.ParseAddrPort(from); perr == nil {
 				dest = M.SocksaddrFromNetIP(ap)
@@ -273,7 +263,7 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 				done <- struct{}{}
 				return
 			}
-			addTx(n)
+			h.session.addTx(n)
 		}
 	}()
 

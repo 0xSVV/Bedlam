@@ -28,7 +28,8 @@ type LogHandler interface {
 type tunLogger struct{}
 
 type tunHandler struct {
-	client client.Client
+	session *Session
+	client  client.Client
 }
 
 var (
