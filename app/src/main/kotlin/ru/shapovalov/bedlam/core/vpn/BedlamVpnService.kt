@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
 import java.util.concurrent.TimeUnit
@@ -33,12 +34,13 @@ import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.DisconnectReason
 import ru.shapovalov.hysteria.api.HysteriaClient
-import ru.shapovalov.hysteria.parseHysteriaUri
+import ru.shapovalov.hysteria.config.HysteriaConfig
 
 @SuppressLint("VpnServicePolicy")
 class BedlamVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client: HysteriaClient by injected { hysteriaClient }
+    private val json: Json by injected { json }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockJob: Job? = null
     private var networkListener: DefaultNetworkListener? = null
@@ -106,21 +108,21 @@ class BedlamVpnService : VpnService() {
             }
         }
 
-        val uri = intent?.getStringExtra(EXTRA_URI)
-        if (uri.isNullOrEmpty()) {
-            Log.e(TAG, "No URI provided")
+        val configJson = intent?.getStringExtra(EXTRA_CONFIG_JSON)
+        if (configJson.isNullOrEmpty()) {
+            Log.e(TAG, "No config provided")
             stopSelf()
             return START_NOT_STICKY
         }
 
         val config = try {
-            parseHysteriaUri(uri)
+            json.decodeFromString<HysteriaConfig>(configJson)
         } catch (e: Exception) {
-            Log.e(TAG, "Invalid URI", e)
+            Log.e(TAG, "Invalid config JSON", e)
             stopSelf()
             return START_NOT_STICKY
         }
-        connectionName = config.name
+        connectionName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty().ifEmpty { config.name }
 
         startAsForeground()
         acquireWakeLock()
@@ -372,6 +374,7 @@ class BedlamVpnService : VpnService() {
         private val WAKE_LOCK_REFRESH_MS = TimeUnit.MINUTES.toMillis(50)
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
-        const val EXTRA_URI = "uri"
+        const val EXTRA_CONFIG_JSON = "config_json"
+        const val EXTRA_PROFILE_NAME = "profile_name"
     }
 }
