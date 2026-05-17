@@ -1,5 +1,8 @@
 package ru.shapovalov.hysteria.config
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class HysteriaConfig(
     val server: ServerCredentials,
     val tls: TlsOptions,
