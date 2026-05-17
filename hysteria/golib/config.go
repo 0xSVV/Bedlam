@@ -80,7 +80,8 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 	}
 	coreConfig.TLSConfig.InsecureSkipVerify = cfg.TLSInsecure
 
-	if cfg.TLSPinSHA256 != "" {
+	pinned := cfg.TLSPinSHA256 != ""
+	if pinned {
 		pinHash := normalizeCertHash(cfg.TLSPinSHA256)
 		coreConfig.TLSConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
@@ -95,7 +96,8 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 		}
 	}
 
-	if cfg.TLSCA != "" {
+	customCA := cfg.TLSCA != ""
+	if customCA {
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM([]byte(cfg.TLSCA)) {
 			return nil, fmt.Errorf("failed to parse CA PEM")
@@ -103,7 +105,8 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 		coreConfig.TLSConfig.RootCAs = pool
 	}
 
-	if cfg.TLSClientCert != "" && cfg.TLSClientKey != "" {
+	mTLS := cfg.TLSClientCert != "" && cfg.TLSClientKey != ""
+	if mTLS {
 		cert, err := tls.X509KeyPair([]byte(cfg.TLSClientCert), []byte(cfg.TLSClientKey))
 		if err != nil {
 			return nil, fmt.Errorf("parse client certificate: %w", err)
@@ -112,6 +115,11 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 			return &cert, nil
 		}
 	}
+
+	log(LogLevelInfo, srcTLS, "sni=%q insecure=%v pinned=%v custom-ca=%v mtls=%v",
+		coreConfig.TLSConfig.ServerName, cfg.TLSInsecure, pinned, customCA, mTLS)
+	log(LogLevelInfo, srcConfig, "auth=%s fast-open=%v",
+		authSummary(cfg.Auth), cfg.FastOpen)
 
 	coreConfig.QUICConfig = client.QUICConfig{
 		InitialStreamReceiveWindow:     cfg.InitStreamReceiveWindow,
@@ -126,12 +134,20 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 	if cfg.KeepAlivePeriodSec > 0 {
 		coreConfig.QUICConfig.KeepAlivePeriod = time.Duration(cfg.KeepAlivePeriodSec) * time.Second
 	}
+	if anyQUICTuned(cfg) {
+		log(LogLevelInfo, srcTransport,
+			"QUIC: stream-recv=[%d,%d] conn-recv=[%d,%d] idle=%ds keepalive=%ds pmtud-disabled=%v",
+			cfg.InitStreamReceiveWindow, cfg.MaxStreamReceiveWindow,
+			cfg.InitConnReceiveWindow, cfg.MaxConnReceiveWindow,
+			cfg.MaxIdleTimeoutSec, cfg.KeepAlivePeriodSec,
+			cfg.DisablePathMTUDiscovery)
+	}
 
 	if cfg.CongestionType != "" {
 		coreConfig.CongestionConfig.Type = cfg.CongestionType
-	}
-	if cfg.BBRProfile != "" {
 		coreConfig.CongestionConfig.BBRProfile = cfg.BBRProfile
+		log(LogLevelInfo, srcTransport, "Congestion: type=%s bbr-profile=%q",
+			cfg.CongestionType, cfg.BBRProfile)
 	}
 
 	if cfg.MaxTxMbps > 0 {
@@ -140,12 +156,43 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 	if cfg.MaxRxMbps > 0 {
 		coreConfig.BandwidthConfig.MaxRx = uint64(cfg.MaxRxMbps) * 125000
 	}
+	if cfg.MaxTxMbps > 0 || cfg.MaxRxMbps > 0 {
+		log(LogLevelInfo, srcTransport, "Bandwidth caps: tx=%dMbps rx=%dMbps",
+			cfg.MaxTxMbps, cfg.MaxRxMbps)
+	}
 
 	if err := setupConnFactory(coreConfig, cfg, serverAddr, session); err != nil {
 		return nil, err
 	}
 
 	return coreConfig, nil
+}
+
+func anyQUICTuned(cfg *clientConfig) bool {
+	return cfg.InitStreamReceiveWindow != 0 || cfg.MaxStreamReceiveWindow != 0 ||
+		cfg.InitConnReceiveWindow != 0 || cfg.MaxConnReceiveWindow != 0 ||
+		cfg.MaxIdleTimeoutSec != 0 || cfg.KeepAlivePeriodSec != 0 ||
+		cfg.DisablePathMTUDiscovery
+}
+
+func authSummary(auth string) string {
+	if auth == "" {
+		return "absent"
+	}
+	return fmt.Sprintf("present (%d chars)", len(auth))
+}
+
+func x509AppendOK(pem string) bool {
+	pool := x509.NewCertPool()
+	return pool.AppendCertsFromPEM([]byte(pem))
+}
+
+func validateClientKeyPair(cert, key string) error {
+	_, err := tls.X509KeyPair([]byte(cert), []byte(key))
+	if err != nil {
+		return fmt.Errorf("invalid client key pair: %w", err)
+	}
+	return nil
 }
 
 func resolveHost(server string) (net.Addr, error) {
@@ -177,7 +224,7 @@ func resolveHost(server string) (net.Addr, error) {
 			break
 		}
 	}
-	log(LogLevelInfo, "Resolved %s → %s (candidates: %v)", host, pick, ips)
+	log(LogLevelInfo, srcDNS, "Resolved %s → %s (candidates: %v)", host, pick, ips)
 	return &net.UDPAddr{
 		IP:   net.ParseIP(pick),
 		Port: portNum,
@@ -203,7 +250,7 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 		if err != nil {
 			return fmt.Errorf("create salamander obfuscator: %w", err)
 		}
-		log(LogLevelInfo, "Obfuscation: salamander")
+		log(LogLevelInfo, srcTransport, "Obfuscation: salamander")
 	}
 
 	listenUDP := func() (net.PacketConn, error) {
@@ -222,7 +269,9 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 		newFunc = func(addr net.Addr) (net.PacketConn, error) {
 			return udphop.NewUDPHopPacketConn(hopAddr, hopInterval, listenUDP)
 		}
-		log(LogLevelInfo, "Transport: UDP port hopping")
+		log(LogLevelInfo, srcTransport,
+			"UDP port hopping: addr=%s interval=[%s,%s]",
+			hopAddr.String(), hopInterval.Min, hopInterval.Max)
 	} else {
 		newFunc = func(addr net.Addr) (net.PacketConn, error) {
 			return listenUDP()

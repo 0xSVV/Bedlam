@@ -1,9 +1,11 @@
 package ru.shapovalov.hysteria
 
+import android.util.Log
 import golib.EventHandler
 import golib.Golib
 import golib.LogHandler
 import golib.Session
+import golib.TestResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -18,19 +20,27 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import ru.shapovalov.hysteria.api.ConnectionInfo
+import ru.shapovalov.hysteria.api.DiagnosticResult
+import ru.shapovalov.hysteria.api.DisconnectReason
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
 import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.toJson
+import java.util.concurrent.atomic.AtomicReference
 
 class HysteriaClientImpl : HysteriaClient {
 
-    private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+    private val _state = MutableStateFlow<ConnectionState>(
+        ConnectionState.Disconnected(DisconnectReason.NEVER_STARTED)
+    )
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
     private val sessionLock = Mutex()
     @Volatile private var session: Session? = null
+    private val lastConnectInfo = AtomicReference<ConnectionInfo?>(null)
+    @Volatile private var serverAddress: String = ""
 
     override suspend fun start(
         config: HysteriaConfig,
@@ -38,12 +48,13 @@ class HysteriaClientImpl : HysteriaClient {
         tun: HysteriaClient.TunFactory,
     ) = sessionLock.withLock {
         when (val current = _state.value) {
-            is ConnectionState.Connecting, is ConnectionState.Connected ->
+            is ConnectionState.Connecting, is ConnectionState.Connected, is ConnectionState.Reconnecting ->
                 throw IllegalStateException("client already $current")
             else -> Unit
         }
         if (session != null) throw IllegalStateException("session already exists")
         _state.value = ConnectionState.Connecting
+        serverAddress = config.server.server
 
         try {
             withContext(Dispatchers.IO) {
@@ -51,8 +62,10 @@ class HysteriaClientImpl : HysteriaClient {
                     config.toJson(),
                     { fd: Int -> protector.protect(fd) },
                     object : EventHandler {
-                        override fun onConnected(udpEnabled: Boolean) {
-                            _state.value = ConnectionState.Connected(udpEnabled)
+                        override fun onConnected(udpEnabled: Boolean, attempt: Int) {
+                            val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
+                            lastConnectInfo.set(info)
+                            _state.value = ConnectionState.Connected(info)
                         }
 
                         override fun onReconnecting(attempt: Int, reason: String) {
@@ -64,10 +77,14 @@ class HysteriaClientImpl : HysteriaClient {
                         }
                     },
                 )
-
-                val fd = tun.create(TUN_MTU)
-                s.startTUN(fd, TUN_MTU, TUN_INET4_PREFIX, TUN_INET6_PREFIX)
                 session = s
+                try {
+                    val fd = tun.create(TUN_MTU)
+                    s.startTUN(fd, TUN_MTU, TUN_INET4_PREFIX, TUN_INET6_PREFIX)
+                } catch (t: Throwable) {
+                    closeSessionLocked()
+                    throw t
+                }
             }
         } catch (e: Exception) {
             withContext(Dispatchers.IO) { closeSessionLocked() }
@@ -76,11 +93,12 @@ class HysteriaClientImpl : HysteriaClient {
         }
     }
 
-    override suspend fun stop() {
+    override suspend fun stop(reason: DisconnectReason) {
         sessionLock.withLock {
             withContext(Dispatchers.IO) { closeSessionLocked() }
         }
-        _state.value = ConnectionState.Disconnected
+        lastConnectInfo.set(null)
+        _state.value = ConnectionState.Disconnected(reason)
     }
 
     override suspend fun resetConnections() {
@@ -88,20 +106,27 @@ class HysteriaClientImpl : HysteriaClient {
         withContext(Dispatchers.IO) { runCatching { s.resetConnections() } }
     }
 
-    override suspend fun testUdp(): String =
-        withContext(Dispatchers.IO) {
-            session?.testUDP() ?: "error: client not connected"
-        }
-
-    override suspend fun testDnsOverTcp(): String =
-        withContext(Dispatchers.IO) {
-            session?.testDNSOverTCP() ?: "error: client not connected"
-        }
-
-    override fun stats(): HysteriaClient.TrafficStats {
-        val s = session ?: return HysteriaClient.TrafficStats(0, 0)
+    override fun stats(): HysteriaClient.TrafficStats? {
+        val s = session ?: return null
         return HysteriaClient.TrafficStats(txBytes = s.txBytes, rxBytes = s.rxBytes)
     }
+
+    override fun validateConfig(config: HysteriaConfig): Result<Unit> = runCatching {
+        val json = config.toJson()
+        Golib.validateConfig(json)
+    }
+
+    override suspend fun testUdp(): DiagnosticResult =
+        withContext(Dispatchers.IO) {
+            val s = session ?: return@withContext DiagnosticResult.Error("client not connected")
+            s.testUDP().toDiagnosticResult()
+        }
+
+    override suspend fun testDnsOverTcp(): DiagnosticResult =
+        withContext(Dispatchers.IO) {
+            val s = session ?: return@withContext DiagnosticResult.Error("client not connected")
+            s.testDNSOverTCP().toDiagnosticResult()
+        }
 
     override fun logs(minLevel: LogLevel): Flow<LogEntry> = flow {
         LogSink.flow.filter { it.level.ordinal >= minLevel.ordinal }.collect { emit(it) }
@@ -112,19 +137,29 @@ class HysteriaClientImpl : HysteriaClient {
     private fun closeSessionLocked() {
         val s = session ?: return
         session = null
-        runCatching { s.close() }
+        runCatching { s.close() }.onFailure {
+            Log.w(TAG, "Session close failed", it)
+        }
     }
 
     companion object {
+        private const val TAG = "HysteriaClient"
         private const val TUN_MTU = 1280
         const val TUN_INET4_PREFIX: String = "172.19.0.1/30"
         const val TUN_INET6_PREFIX: String = "fdfe:dcba:9876::1/126"
     }
 }
 
+private fun TestResult.toDiagnosticResult(): DiagnosticResult =
+    if (ok) {
+        DiagnosticResult.Ok(bytes = bytes.toInt(), rttMillis = elapsedMs, target = detail)
+    } else {
+        DiagnosticResult.Error(error)
+    }
+
 private object LogSink {
     val flow: MutableSharedFlow<LogEntry> = MutableSharedFlow(
-        replay = 0,
+        replay = 256,
         extraBufferCapacity = 256,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
@@ -133,10 +168,11 @@ private object LogSink {
     private val lock = Any()
 
     init {
-        Golib.setLogHandler(LogHandler { level, message ->
+        Golib.setLogHandler(LogHandler { level, source, message ->
             flow.tryEmit(
                 LogEntry(
                     level = parseLevel(level),
+                    source = source ?: "",
                     message = message,
                     timestampMillis = System.currentTimeMillis(),
                 )
@@ -169,6 +205,10 @@ private object LogSink {
         "DEBUG" -> LogLevel.DEBUG
         "WARN" -> LogLevel.WARN
         "ERROR" -> LogLevel.ERROR
-        else -> LogLevel.INFO
+        "INFO" -> LogLevel.INFO
+        else -> {
+            Log.w("HysteriaLog", "Unknown native log level '$s' — coercing to INFO")
+            LogLevel.INFO
+        }
     }
 }

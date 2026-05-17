@@ -15,13 +15,14 @@ import ru.shapovalov.hysteria.config.HysteriaConfig
  * this surface transport-agnostic.
  *
  * All suspending methods dispatch their blocking work internally; they may
- * be called from any coroutine context, including the main dispatcher.
+ * be called from any coroutine context, including [kotlinx.coroutines.Dispatchers.Main].
  */
 interface HysteriaClient {
 
     /**
-     * Observable connection state. Hot flow, starts at [ConnectionState.Disconnected],
-     * replays the latest value on every new collector.
+     * Observable connection state. Hot flow, starts at [ConnectionState.Disconnected]
+     * with [DisconnectReason.NEVER_STARTED]. StateFlow deduplicates by equality, so
+     * the same value is never emitted twice in a row.
      */
     val state: StateFlow<ConnectionState>
 
@@ -29,13 +30,14 @@ interface HysteriaClient {
      * Brings the tunnel up.
      *
      * Suspends until the QUIC handshake completes (or fails) and the TUN device
-     * is wired to the Hysteria core.
+     * is wired to the Hysteria core. Concurrent calls are rejected.
      *
      * @param config tunnel configuration.
      * @param protector invoked for every UDP socket the native layer opens, on a
      *   native worker thread, before the socket is bound. Typically delegated to
      *   [`VpnService.protect`](https://developer.android.com/reference/android/net/VpnService#protect(int)).
-     *   Without protection, QUIC traffic loops back through the VPN route and stalls.
+     *   Returning `false` is logged (`WARN`) and may indicate a routing loop is
+     *   imminent.
      * @param tun invoked once after the handshake succeeds; must return a raw
      *   file descriptor for an established Android TUN device. Ownership of the
      *   fd transfers to the client and is closed on [stop].
@@ -50,13 +52,14 @@ interface HysteriaClient {
     )
 
     /**
-     * Tears the tunnel down.
+     * Tears the tunnel down. Idempotent and safe to call from any dispatcher.
+     * Returns when teardown is complete or a 3-second cleanup timeout elapses.
      *
-     * Idempotent and safe to call from any dispatcher (the blocking native cleanup
-     * is dispatched internally). Returns when teardown is complete or a 3-second
-     * cleanup timeout elapses, whichever is sooner.
+     * @param reason recorded in the [ConnectionState.Disconnected] emission that
+     *   follows. Defaults to [DisconnectReason.USER]; pass [DisconnectReason.REVOKED]
+     *   from a `VpnService.onRevoke()` handler.
      */
-    suspend fun stop()
+    suspend fun stop(reason: DisconnectReason = DisconnectReason.USER)
 
     /**
      * Forces live upstream sockets to close so the core re-dials on the
@@ -68,41 +71,43 @@ interface HysteriaClient {
     suspend fun resetConnections()
 
     /**
-     * Cumulative byte counters for the current session.
-     *
-     * Counters reset on every successful [start]; they survive QUIC reconnects.
-     * Returns zeros when no tunnel has been started this process lifetime.
+     * Cumulative byte counters for the current session, or `null` if no
+     * session is active. Counters reset on every successful [start]; they
+     * survive QUIC reconnects.
      */
-    fun stats(): TrafficStats
+    fun stats(): TrafficStats?
 
     /**
      * Cold flow of log events from the native layer at or above [minLevel].
      *
-     * Subscribers are reference-counted: while at least one collector with
-     * [LogLevel.DEBUG] is active, the native side emits debug-level events.
-     * When the last debug collector cancels, the native floor automatically
-     * rises so cheap chatter doesn't cross the JNI boundary.
+     * Subscribers are reference-counted: while at least one collector wants
+     * a more verbose level, the JNI floor follows the most permissive
+     * subscriber. When the last subscriber at that level cancels, the floor
+     * rises automatically.
      *
-     * Each call returns a distinct flow that completes only when the consumer
-     * cancels collection.
+     * The underlying buffer replays the most recent 256 events to every new
+     * collector, so a late-attached log viewer immediately sees recent
+     * context.
      */
     fun logs(minLevel: LogLevel = LogLevel.INFO): Flow<LogEntry>
 
     /**
-     * Diagnostic: send a DNS query through the QUIC-datagram UDP relay and
-     * wait for the response. Returns a human-readable status line.
-     *
-     * Useful for distinguishing "UDP forwarding broken at the server" from
-     * "tunnel works overall" — fails when TCP-relay diagnostics succeed
-     * if the server's host blocks outbound UDP.
+     * Validates [config] without dialing or doing DNS. Returns success if the
+     * configuration is structurally sound (well-formed server address, parseable
+     * TLS material, supported obfuscation type, etc.). Cheap to call from a
+     * config editor on every keystroke.
      */
-    suspend fun testUdp(): String
+    fun validateConfig(config: HysteriaConfig): Result<Unit>
 
     /**
-     * Diagnostic: send a DNS query through a hysteria TCP stream and wait
-     * for the response. Returns a human-readable status line.
+     * Diagnostic: send a DNS query through the QUIC-datagram UDP relay and
+     * wait for the response. Distinguishes "UDP forwarding broken at the
+     * server" from "tunnel works overall".
      */
-    suspend fun testDnsOverTcp(): String
+    suspend fun testUdp(): DiagnosticResult
+
+    /** Diagnostic: send a DNS query through a hysteria TCP stream. */
+    suspend fun testDnsOverTcp(): DiagnosticResult
 
     /** Cumulative TX/RX byte counters for the current session. */
     data class TrafficStats(val txBytes: Long, val rxBytes: Long)
@@ -110,16 +115,21 @@ interface HysteriaClient {
     /** A single log event delivered from the native layer. */
     data class LogEntry(
         val level: LogLevel,
+        val source: String,
         val message: String,
         val timestampMillis: Long,
     )
 
-    /** Severity levels, ordered from most verbose ([DEBUG]) to most severe ([ERROR]). */
+    /**
+     * Severity levels, ordered from most verbose ([DEBUG]) to most severe
+     * ([ERROR]). Comparison uses [Enum.ordinal] — do not reorder.
+     */
     enum class LogLevel { DEBUG, INFO, WARN, ERROR }
 
     /**
      * Binds native sockets to the underlying network so they don't route
-     * through the VPN. Typically delegated to `VpnService.protect()`.
+     * through the VPN. Called from a native goroutine, before the socket
+     * is bound. Typically delegated to `VpnService.protect()`.
      *
      * @return `true` if the socket was successfully protected.
      */
@@ -134,4 +144,40 @@ interface HysteriaClient {
     fun interface TunFactory {
         fun create(mtu: Int): Int
     }
+}
+
+/** Snapshot of negotiated connection parameters, exposed in [ConnectionState.Connected]. */
+data class ConnectionInfo(
+    /** Server address as the client resolved and dialed it. */
+    val serverAddress: String,
+    /** Whether the server advertised UDP-relay support in the handshake. */
+    val udpEnabled: Boolean,
+    /** Number of failed attempts that preceded this successful connect (0 on first connect). */
+    val attempt: Int,
+)
+
+/** Why a session ended. Recorded in [ConnectionState.Disconnected]. */
+enum class DisconnectReason {
+    /** No session has been started yet in this process. */
+    NEVER_STARTED,
+
+    /** User invoked [HysteriaClient.stop]. */
+    USER,
+
+    /** Android revoked the VPN permission. */
+    REVOKED,
+
+    /** A previous [HysteriaClient.start] failed and rolled back. */
+    FAILED,
+}
+
+/** Outcome of a connectivity diagnostic ([HysteriaClient.testUdp] / [HysteriaClient.testDnsOverTcp]). */
+sealed interface DiagnosticResult {
+    data class Ok(
+        val bytes: Int,
+        val rttMillis: Long,
+        val target: String,
+    ) : DiagnosticResult
+
+    data class Error(val reason: String) : DiagnosticResult
 }

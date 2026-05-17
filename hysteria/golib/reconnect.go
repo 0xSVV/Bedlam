@@ -1,8 +1,10 @@
 package golib
 
 import (
+	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
@@ -18,10 +20,11 @@ type reconnectClient struct {
 	mu      sync.Mutex
 	inner   client.Client
 	closed  bool
-	attempt int32
+	attempt atomic.Int32
 
 	dialMu       sync.Mutex
 	stopWatchdog chan struct{}
+	watchdogDone chan struct{}
 }
 
 func newReconnectClient(cf func() (*client.Config, error), h EventHandler) (*reconnectClient, error) {
@@ -29,8 +32,10 @@ func newReconnectClient(cf func() (*client.Config, error), h EventHandler) (*rec
 		configFunc:   cf,
 		handler:      h,
 		stopWatchdog: make(chan struct{}),
+		watchdogDone: make(chan struct{}),
 	}
 	if err := rc.dial(); err != nil {
+		close(rc.watchdogDone)
 		return nil, err
 	}
 	go rc.watchdog()
@@ -67,15 +72,15 @@ func (rc *reconnectClient) dial() error {
 		return coreErrs.ClosedError{}
 	}
 	rc.inner = cli
-	rc.attempt = 0
+	prevAttempt := rc.attempt.Swap(0)
 	rc.mu.Unlock()
 	if rc.handler != nil {
-		rc.handler.OnConnected(info.UDPEnabled)
+		rc.handler.OnConnected(info.UDPEnabled, prevAttempt)
 	}
 	return nil
 }
 
-func (rc *reconnectClient) markDead(err error) {
+func (rc *reconnectClient) markDead(err error, source string) {
 	rc.mu.Lock()
 	if rc.closed || rc.inner == nil {
 		rc.mu.Unlock()
@@ -83,16 +88,15 @@ func (rc *reconnectClient) markDead(err error) {
 	}
 	old := rc.inner
 	rc.inner = nil
-	rc.attempt++
-	attempt := rc.attempt
 	rc.mu.Unlock()
+	attempt := rc.attempt.Add(1)
 	_ = old.Close()
 	if rc.handler != nil {
-		rc.handler.OnReconnecting(attempt, err.Error())
+		rc.handler.OnReconnecting(attempt, fmt.Sprintf("[%s] %s", source, err.Error()))
 	}
 }
 
-func (rc *reconnectClient) currentClient() (client.Client, error) {
+func (rc *reconnectClient) currentClient(callerSource string) (client.Client, error) {
 	rc.mu.Lock()
 	if rc.closed {
 		rc.mu.Unlock()
@@ -105,12 +109,9 @@ func (rc *reconnectClient) currentClient() (client.Client, error) {
 	}
 	rc.mu.Unlock()
 	if err := rc.dial(); err != nil {
+		attempt := rc.attempt.Add(1)
 		if rc.handler != nil {
-			rc.mu.Lock()
-			rc.attempt++
-			attempt := rc.attempt
-			rc.mu.Unlock()
-			rc.handler.OnReconnecting(attempt, err.Error())
+			rc.handler.OnReconnecting(attempt, fmt.Sprintf("[%s] dial: %s", callerSource, err.Error()))
 		}
 		return nil, err
 	}
@@ -124,25 +125,25 @@ func (rc *reconnectClient) currentClient() (client.Client, error) {
 }
 
 func (rc *reconnectClient) TCP(addr string) (net.Conn, error) {
-	c, err := rc.currentClient()
+	c, err := rc.currentClient(srcStream)
 	if err != nil {
 		return nil, err
 	}
 	conn, err := c.TCP(addr)
 	if isReconnectable(err) {
-		rc.markDead(err)
+		rc.markDead(err, srcStream)
 	}
 	return conn, err
 }
 
 func (rc *reconnectClient) UDP() (client.HyUDPConn, error) {
-	c, err := rc.currentClient()
+	c, err := rc.currentClient(srcStream)
 	if err != nil {
 		return nil, err
 	}
 	udp, err := c.UDP()
 	if isReconnectable(err) {
-		rc.markDead(err)
+		rc.markDead(err, srcStream)
 	}
 	return udp, err
 }
@@ -157,7 +158,10 @@ func (rc *reconnectClient) Close() error {
 	inner := rc.inner
 	rc.inner = nil
 	rc.mu.Unlock()
+
 	close(rc.stopWatchdog)
+	<-rc.watchdogDone
+
 	if inner != nil {
 		return inner.Close()
 	}
@@ -165,6 +169,7 @@ func (rc *reconnectClient) Close() error {
 }
 
 func (rc *reconnectClient) watchdog() {
+	defer close(rc.watchdogDone)
 	ticker := time.NewTicker(watchdogInterval)
 	defer ticker.Stop()
 	for {
@@ -188,14 +193,16 @@ func (rc *reconnectClient) probe() {
 	if c == nil {
 		return
 	}
+	log(LogLevelDebug, srcWatchdog, "Probing connection liveness")
 	udp, err := c.UDP()
 	if isReconnectable(err) {
-		rc.markDead(err)
+		rc.markDead(err, srcWatchdog)
 		return
 	}
 	if udp != nil {
 		_ = udp.Close()
 	}
+	log(LogLevelDebug, srcWatchdog, "Probe ok")
 }
 
 func isReconnectable(err error) bool {

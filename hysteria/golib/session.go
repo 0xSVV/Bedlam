@@ -13,6 +13,12 @@ import (
 	singtun "github.com/sagernet/sing-tun"
 )
 
+const statsLogInterval = 5 * time.Minute
+
+// Session owns the lifecycle of one Hysteria 2 tunnel: the QUIC connection,
+// the gVisor TUN stack, DNS cache, byte counters and the underlying-socket
+// protector. Each NewSession produces an independent state container; the
+// only process-wide state still in this package is the log sink.
 type Session struct {
 	closed atomic.Bool
 
@@ -34,26 +40,39 @@ type Session struct {
 
 	txBytes atomic.Int64
 	rxBytes atomic.Int64
+
+	statsStop chan struct{}
+	statsDone chan struct{}
 }
 
+// NewSession builds and connects a hysteria client, returning a Session ready
+// to have StartTUN called on it. The protector is captured at construction and
+// applied to every UDP socket the client opens, including reconnects. The
+// handler receives all post-handshake lifecycle events.
+//
+// If the initial handshake fails, the returned error wraps the underlying
+// cause and the handler's OnError is invoked exactly once.
 func NewSession(configJSON string, protector FdProtector, handler EventHandler) (*Session, error) {
 	var cfg clientConfig
 	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
 		return nil, fmt.Errorf("invalid config JSON: %w", err)
 	}
 
-	log(LogLevelInfo, "Starting client for %s", cfg.Server)
+	log(LogLevelInfo, srcTunnel, "Starting client for %s (auth=%s)",
+		cfg.Server, authSummary(cfg.Auth))
 
 	resolved, err := resolveHost(cfg.Server)
 	if err != nil {
 		return nil, fmt.Errorf("resolve server: %w", err)
 	}
-	log(LogLevelInfo, "Resolved server address: %s", resolved.String())
+	log(LogLevelInfo, srcTunnel, "Resolved server address: %s", resolved.String())
 
 	s := &Session{
 		protector:   protector,
 		activeConns: map[net.PacketConn]struct{}{},
 		dnsCache:    newDNSCache(),
+		statsStop:   make(chan struct{}),
+		statsDone:   make(chan struct{}),
 	}
 
 	wrappedHandler := &loggingHandler{inner: handler}
@@ -64,22 +83,66 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 		wrappedHandler,
 	)
 	if err != nil {
-		log(LogLevelError, "Connection failed: %s", err.Error())
+		log(LogLevelError, srcTunnel, "Connection failed: %s", err.Error())
 		if handler != nil {
 			handler.OnError(err.Error())
 		}
 		return nil, fmt.Errorf("connect: %w", err)
 	}
 	s.client = rc
+	go s.statsLogger()
 	return s, nil
 }
 
+// ValidateConfig parses configJSON and runs the same structural checks as
+// NewSession without dialing or resolving DNS. Returns nil if the config is
+// usable, an error otherwise.
+func ValidateConfig(configJSON string) error {
+	var cfg clientConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return fmt.Errorf("invalid config JSON: %w", err)
+	}
+	if cfg.Server == "" {
+		return fmt.Errorf("server address required")
+	}
+	if _, _, err := net.SplitHostPort(cfg.Server); err != nil {
+		return fmt.Errorf("invalid server address %q: %w", cfg.Server, err)
+	}
+	if cfg.TLSCA != "" {
+		if !x509AppendOK(cfg.TLSCA) {
+			return fmt.Errorf("invalid CA PEM")
+		}
+	}
+	if (cfg.TLSClientCert != "") != (cfg.TLSClientKey != "") {
+		return fmt.Errorf("client cert and key must be set together")
+	}
+	if cfg.TLSClientCert != "" {
+		if err := validateClientKeyPair(cfg.TLSClientCert, cfg.TLSClientKey); err != nil {
+			return err
+		}
+	}
+	if cfg.ObfsType != "" && cfg.ObfsType != "salamander" {
+		return fmt.Errorf("unsupported obfs type %q", cfg.ObfsType)
+	}
+	if cfg.ObfsType == "salamander" && cfg.ObfsPassword == "" {
+		return fmt.Errorf("obfs password required for salamander")
+	}
+	return nil
+}
+
+// Close tears the session down. Idempotent: subsequent calls return nil.
+// Bounded by a 3-second timeout on the underlying client close.
 func (s *Session) Close() error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
 
-	log(LogLevelInfo, "Closing session...")
+	log(LogLevelInfo, srcTunnel, "Closing session...")
+
+	if s.statsStop != nil {
+		close(s.statsStop)
+		<-s.statsDone
+	}
 
 	_ = s.StopTUN()
 
@@ -92,6 +155,7 @@ func (s *Session) Close() error {
 	s.dnsCache.clear()
 
 	if c == nil {
+		log(LogLevelInfo, srcTunnel, "Session closed")
 		return nil
 	}
 
@@ -103,20 +167,26 @@ func (s *Session) Close() error {
 	case err = <-done:
 	case <-time.After(3 * time.Second):
 		err = fmt.Errorf("client close timed out")
-		log(LogLevelWarn, "Client close timed out; continuing")
+		log(LogLevelWarn, srcTunnel, "Client close timed out; continuing")
 	}
 
-	log(LogLevelInfo, "Session closed")
+	log(LogLevelInfo, srcTunnel, "Session closed (tx=%dB rx=%dB)",
+		s.txBytes.Load(), s.rxBytes.Load())
 	return err
 }
 
+// ResetConnections closes all live upstream UDP packet conns so the next
+// stream call triggers a fresh dial. Use on network handoff.
 func (s *Session) ResetConnections() {
-	log(LogLevelInfo, "Resetting upstream connections")
+	log(LogLevelInfo, srcTunnel, "Resetting upstream connections")
 	s.closeAllActiveConns()
 	s.dnsCache.clear()
 }
 
+// GetTxBytes returns cumulative bytes sent through the TUN since this Session started.
 func (s *Session) GetTxBytes() int64 { return s.txBytes.Load() }
+
+// GetRxBytes returns cumulative bytes received through the TUN since this Session started.
 func (s *Session) GetRxBytes() int64 { return s.rxBytes.Load() }
 
 func (s *Session) addTx(n int) {
@@ -148,12 +218,25 @@ func (s *Session) protectPacketConn(conn net.PacketConn) {
 	if p == nil {
 		return
 	}
-	if udpConn, ok := conn.(*net.UDPConn); ok {
-		if rawConn, err := udpConn.SyscallConn(); err == nil {
-			_ = rawConn.Control(func(fd uintptr) {
-				p.Protect(int32(fd))
-			})
-		}
+	udpConn, ok := conn.(*net.UDPConn)
+	if !ok {
+		return
+	}
+	rawConn, err := udpConn.SyscallConn()
+	if err != nil {
+		log(LogLevelWarn, srcTransport, "Could not access raw socket for protect(): %s", err)
+		return
+	}
+	var protected bool
+	var seenFd int32
+	_ = rawConn.Control(func(fd uintptr) {
+		seenFd = int32(fd)
+		protected = p.Protect(seenFd)
+	})
+	if !protected {
+		log(LogLevelWarn, srcTransport,
+			"VpnService.protect(fd=%d) returned false — traffic may loop through VPN",
+			seenFd)
 	}
 }
 
@@ -179,5 +262,20 @@ func (s *Session) closeAllActiveConns() {
 	s.activeConnsMu.Unlock()
 	for _, c := range conns {
 		_ = c.Close()
+	}
+}
+
+func (s *Session) statsLogger() {
+	defer close(s.statsDone)
+	ticker := time.NewTicker(statsLogInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.statsStop:
+			return
+		case <-ticker.C:
+			log(LogLevelDebug, srcStats, "tx=%dB rx=%dB",
+				s.txBytes.Load(), s.rxBytes.Load())
+		}
 	}
 }
