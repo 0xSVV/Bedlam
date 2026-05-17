@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
+import android.os.Build
 import android.os.PowerManager
 import android.text.format.Formatter
 import android.util.Log
@@ -31,7 +32,6 @@ import kotlin.coroutines.coroutineContext
 
 @SuppressLint("VpnServicePolicy")
 class BedlamVpnService : VpnService() {
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client: HysteriaClient = HysteriaClientImpl
     private var wakeLock: PowerManager.WakeLock? = null
@@ -127,7 +127,7 @@ class BedlamVpnService : VpnService() {
         val (v4Addr, v4Prefix) = parsePrefix(HysteriaClientImpl.TUN_INET4_PREFIX)
         val (v6Addr, v6Prefix) = parsePrefix(HysteriaClientImpl.TUN_INET6_PREFIX)
         val pfd = Builder()
-            .setSession(if (connectionName.isNotEmpty()) connectionName else "Bedlam")
+            .setSession(connectionName.ifEmpty { getString(R.string.vpn_session_default) })
             .setMtu(mtu)
             .setMetered(false)
             .addAddress(v4Addr, v4Prefix)
@@ -198,20 +198,30 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun startAsForeground() {
-        startForeground(
-            NOTIFICATION_ID,
-            buildNotification(ConnectionState.Connecting, HysteriaClient.TrafficStats(0, 0), 0, 0),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        val notification = buildNotification(
+            ConnectionState.Connecting,
+            HysteriaClient.TrafficStats(0, 0),
+            0,
+            0,
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "VPN status",
+            getString(R.string.notification_channel_name),
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Bedlam VPN tunnel status"
+            description = getString(R.string.notification_channel_description)
             setShowBadge(false)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -223,7 +233,11 @@ class BedlamVpnService : VpnService() {
         txRate: Long,
         rxRate: Long,
     ): Notification {
-        val title = if (connectionName.isNotEmpty()) "Bedlam · $connectionName" else "Bedlam"
+        val title = if (connectionName.isNotEmpty()) {
+            getString(R.string.notification_title_named, connectionName)
+        } else {
+            getString(R.string.notification_title)
+        }
 
         val openAppIntent = PendingIntent.getActivity(
             this,
@@ -256,26 +270,36 @@ class BedlamVpnService : VpnService() {
 
         when (state) {
             is ConnectionState.Connecting -> {
-                builder.setContentText("Connecting…")
+                builder.setContentText(getString(R.string.notification_state_connecting))
                 builder.addAction(stopAction(stopPendingIntent))
             }
             is ConnectionState.Connected -> {
                 builder.setContentText(
-                    "↑ ${formatBytes(stats.txBytes)} · ↓ ${formatBytes(stats.rxBytes)}"
+                    getString(
+                        R.string.notification_traffic_total,
+                        formatBytes(stats.txBytes),
+                        formatBytes(stats.rxBytes),
+                    )
                 )
                 builder.setSubText(
-                    "↑ ${formatRate(txRate)} · ↓ ${formatRate(rxRate)}"
+                    getString(
+                        R.string.notification_traffic_rate,
+                        formatRate(txRate),
+                        formatRate(rxRate),
+                    )
                 )
                 builder.addAction(reconnectAction(reconnectPendingIntent))
                 builder.addAction(stopAction(stopPendingIntent))
             }
             is ConnectionState.Error -> {
-                builder.setContentText("Error: ${state.message}")
+                builder.setContentText(
+                    getString(R.string.notification_state_error, state.message)
+                )
                 builder.addAction(reconnectAction(reconnectPendingIntent))
                 builder.addAction(stopAction(stopPendingIntent))
             }
             is ConnectionState.Disconnected -> {
-                builder.setContentText("Disconnected")
+                builder.setContentText(getString(R.string.notification_state_disconnected))
                 builder.addAction(stopAction(stopPendingIntent))
             }
         }
@@ -286,14 +310,14 @@ class BedlamVpnService : VpnService() {
     private fun stopAction(pi: PendingIntent): Notification.Action =
         Notification.Action.Builder(
             android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_action_stop),
-            "Disconnect",
+            getString(R.string.action_disconnect),
             pi
         ).build()
 
     private fun reconnectAction(pi: PendingIntent): Notification.Action =
         Notification.Action.Builder(
             android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_action_refresh),
-            "Reconnect",
+            getString(R.string.action_reconnect),
             pi
         ).build()
 
@@ -301,7 +325,7 @@ class BedlamVpnService : VpnService() {
         Formatter.formatShortFileSize(this, bytes)
 
     private fun formatRate(bytesPerSec: Long): String =
-        "${Formatter.formatShortFileSize(this, bytesPerSec)}/s"
+        getString(R.string.rate_per_second, Formatter.formatShortFileSize(this, bytesPerSec))
 
     companion object {
         private const val TAG = "BedlamVpn"
