@@ -50,7 +50,7 @@ import ru.shapovalov.hysteria.parseHysteriaUri
 class MainActivity : ComponentActivity() {
 
     private val client: HysteriaClient by lazy {
-        (application as BedlamApplication).hysteriaClient
+        (application as BedlamApplication).component.hysteriaClient
     }
 
     private var onVpnReady: (() -> Unit)? = null

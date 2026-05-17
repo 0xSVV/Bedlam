@@ -18,6 +18,7 @@ decompose = "3.5.0"
 mvikotlin = "4.4.0"
 room = "2.8.4"
 ksp = "2.3.4"
+kotlinInject = "0.7.2"
 
 [libraries]
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
@@ -47,6 +48,9 @@ androidx-room-runtime = { group = "androidx.room", name = "room-runtime", versio
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-paging = { group = "androidx.room", name = "room-paging", version.ref = "room" }
+
+kotlin-inject-runtime = { group = "me.tatarka.inject", name = "kotlin-inject-runtime", version.ref = "kotlinInject" }
+kotlin-inject-compiler = { group = "me.tatarka.inject", name = "kotlin-inject-compiler-ksp", version.ref = "kotlinInject" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
