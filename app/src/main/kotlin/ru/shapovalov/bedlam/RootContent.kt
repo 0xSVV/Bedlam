@@ -1,0 +1,68 @@
+package ru.shapovalov.bedlam
+
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.arkivanov.decompose.extensions.compose.stack.Children
+import com.arkivanov.decompose.extensions.compose.stack.animation.fade
+import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
+import com.arkivanov.decompose.extensions.compose.subscribeAsState
+import ru.shapovalov.bedlam.feature.dashboard.ui.DashboardContent
+import ru.shapovalov.bedlam.feature.settings.ui.SettingsContent
+import ru.shapovalov.bedlam.navigation.RootComponent
+import ru.shapovalov.bedlam.navigation.RootComponent.Child
+import ru.shapovalov.bedlam.navigation.RootComponent.Tab
+
+@Composable
+fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
+    val stack by component.childStack.subscribeAsState()
+    val activeTab = stack.active.instance.tab
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        bottomBar = {
+            NavigationBar {
+                Tab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = activeTab == tab,
+                        onClick = { component.onTabSelected(tab) },
+                        icon = { Icon(tab.icon(), contentDescription = null) },
+                        label = { Text(tab.label()) },
+                    )
+                }
+            }
+        },
+    ) { padding ->
+        Children(
+            stack = stack,
+            modifier = Modifier.fillMaxSize().padding(padding),
+            animation = stackAnimation(fade()),
+        ) { created ->
+            when (val child = created.instance) {
+                is Child.Dashboard -> DashboardContent(child.component)
+                is Child.Settings -> SettingsContent(child.component)
+            }
+        }
+    }
+}
+
+private fun Tab.label(): String = when (this) {
+    Tab.Dashboard -> "Home"
+    Tab.Settings -> "Settings"
+}
+
+private fun Tab.icon(): ImageVector = when (this) {
+    Tab.Dashboard -> Icons.Default.Home
+    Tab.Settings -> Icons.Default.Settings
+}
