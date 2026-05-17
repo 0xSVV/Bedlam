@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
@@ -152,7 +153,11 @@ class BedlamVpnService : VpnService() {
 
 
     private fun startAsForeground() {
-        startForeground(NOTIFICATION_ID, buildNotification())
+        startForeground(
+            NOTIFICATION_ID,
+            buildNotification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        )
     }
 
     private fun createNotificationChannel() {
