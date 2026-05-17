@@ -20,6 +20,7 @@ type reconnectClient struct {
 	closed  bool
 	attempt int32
 
+	dialMu       sync.Mutex
 	stopWatchdog chan struct{}
 }
 
@@ -37,6 +38,20 @@ func newReconnectClient(cf func() (*client.Config, error), h EventHandler) (*rec
 }
 
 func (rc *reconnectClient) dial() error {
+	rc.dialMu.Lock()
+	defer rc.dialMu.Unlock()
+
+	rc.mu.Lock()
+	if rc.closed {
+		rc.mu.Unlock()
+		return coreErrs.ClosedError{}
+	}
+	if rc.inner != nil {
+		rc.mu.Unlock()
+		return nil
+	}
+	rc.mu.Unlock()
+
 	cfg, err := rc.configFunc()
 	if err != nil {
 		return err
