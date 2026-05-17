@@ -144,6 +144,7 @@ val buildGolib by tasks.registering(Exec::class) {
         ?: sdkDirFromLocalProperties()
         ?: ""
     val aarPath = golibAar.asFile.absolutePath
+    val androidApi = libs.versions.minSdk.get()
     val pathEnv = listOf(
         File(goExe).parent,
         File(gomobileExe).parent,
@@ -162,7 +163,7 @@ val buildGolib by tasks.registering(Exec::class) {
     commandLine(
         gomobileExe, "bind",
         "-target=android/arm64",
-        "-androidapi", "29",
+        "-androidapi", androidApi,
         "-tags", "with_gvisor",
         "-o", aarPath,
         "."
