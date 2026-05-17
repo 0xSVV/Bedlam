@@ -26,6 +26,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
+import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.DisconnectReason
@@ -36,9 +37,7 @@ import kotlin.coroutines.coroutineContext
 @SuppressLint("VpnServicePolicy")
 class BedlamVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val client: HysteriaClient by lazy {
-        (application as BedlamApplication).component.hysteriaClient
-    }
+    private val client: HysteriaClient by injected { hysteriaClient }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockJob: Job? = null
     private var networkListener: DefaultNetworkListener? = null
