@@ -62,6 +62,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.decompose)
     implementation(libs.decompose.extensions.compose)
