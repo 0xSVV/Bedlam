@@ -55,8 +55,8 @@ object HysteriaClientImpl : HysteriaClient {
                         _state.value = ConnectionState.Connected(udpEnabled)
                     }
 
-                    override fun onDisconnected(reason: String) {
-                        _state.value = ConnectionState.Disconnected
+                    override fun onReconnecting(attempt: Int, reason: String) {
+                        _state.value = ConnectionState.Reconnecting(attempt, reason)
                     }
 
                     override fun onError(message: String) {

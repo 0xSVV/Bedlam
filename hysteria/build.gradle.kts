@@ -120,56 +120,53 @@ val buildGolib by tasks.registering(Exec::class) {
 
     dependsOn(syncHysteriaSubmodule)
 
+    val goPath = findGoPath()
+    val goExe = findExecutable("go", listOf("$goPath/bin", "/usr/local/go/bin", "/opt/homebrew/bin"))
+        ?: error(
+            "Go is not installed or not in PATH.\n" +
+            "Install it from: https://go.dev/dl/"
+        )
+    val gomobileExe = findExecutable("gomobile", listOf("$goPath/bin"))
+        ?: error(
+            "gomobile is not installed.\n" +
+            "Install it with:\n" +
+            "  go install golang.org/x/mobile/cmd/gomobile@latest\n" +
+            "  go install golang.org/x/mobile/cmd/gobind@latest"
+        )
+    findExecutable("gobind", listOf("$goPath/bin"))
+        ?: error(
+            "gobind is not installed.\n" +
+            "Install it with: go install golang.org/x/mobile/cmd/gobind@latest"
+        )
+    val ndkPath = findNdk()
+    val sdkPath = System.getenv("ANDROID_HOME")
+        ?: System.getenv("ANDROID_SDK_ROOT")
+        ?: sdkDirFromLocalProperties()
+        ?: ""
+    val aarPath = golibAar.asFile.absolutePath
+    val pathEnv = listOf(
+        File(goExe).parent,
+        File(gomobileExe).parent,
+        System.getenv("PATH")
+    ).joinToString(File.pathSeparator)
+
     workingDir = golibDir.asFile
     inputs.dir(golibDir)
     inputs.dir(golibDir.asFile.resolve("../upstream"))
     outputs.file(golibAar)
 
-    doFirst {
-        val goPath = findGoPath()
-        val goExe = findExecutable("go", listOf("$goPath/bin", "/usr/local/go/bin", "/opt/homebrew/bin"))
-            ?: error(
-                "Go is not installed or not in PATH.\n" +
-                "Install it from: https://go.dev/dl/"
-            )
+    environment("ANDROID_HOME", sdkPath)
+    environment("ANDROID_NDK_HOME", ndkPath)
+    environment("PATH", pathEnv)
 
-        val gomobileExe = findExecutable("gomobile", listOf("$goPath/bin"))
-            ?: error(
-                "gomobile is not installed.\n" +
-                "Install it with:\n" +
-                "  go install golang.org/x/mobile/cmd/gomobile@latest\n" +
-                "  go install golang.org/x/mobile/cmd/gobind@latest"
-            )
-
-        findExecutable("gobind", listOf("$goPath/bin"))
-            ?: error(
-                "gobind is not installed.\n" +
-                "Install it with: go install golang.org/x/mobile/cmd/gobind@latest"
-            )
-
-        val ndkPath = findNdk()
-        val sdkPath = System.getenv("ANDROID_HOME")
-            ?: System.getenv("ANDROID_SDK_ROOT")
-            ?: sdkDirFromLocalProperties()
-            ?: ""
-
-        environment("ANDROID_HOME", sdkPath)
-        environment("ANDROID_NDK_HOME", ndkPath)
-        environment("PATH", listOf(
-            File(goExe).parent,
-            File(gomobileExe).parent,
-            System.getenv("PATH")
-        ).joinToString(File.pathSeparator))
-
-        commandLine(
-            gomobileExe, "bind",
-            "-target=android/arm64",
-            "-androidapi", "29",
-            "-tags", "with_gvisor",
-            "-o", golibAar.asFile.absolutePath,
-            "."
-        )
-    }
+    commandLine(
+        gomobileExe, "bind",
+        "-target=android/arm64",
+        "-androidapi", "29",
+        "-tags", "with_gvisor",
+        "-o", aarPath,
+        "."
+    )
 }
 
 tasks.named("preBuild") {

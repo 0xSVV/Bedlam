@@ -326,5 +326,6 @@ private fun ConnectionState.display(): String = when (this) {
     is ConnectionState.Disconnected -> "Disconnected"
     is ConnectionState.Connecting -> "Connecting..."
     is ConnectionState.Connected -> "Connected (UDP=${if (udpEnabled) "on" else "off"})"
+    is ConnectionState.Reconnecting -> "Reconnecting #$attempt: $reason"
     is ConnectionState.Error -> "Error: $message"
 }

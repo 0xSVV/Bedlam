@@ -11,7 +11,7 @@ import (
 
 type EventHandler interface {
 	OnConnected(udpEnabled bool)
-	OnDisconnected(reason string)
+	OnReconnecting(attempt int32, reason string)
 	OnError(message string)
 }
 
@@ -42,24 +42,47 @@ func StartClient(configJSON string, handler EventHandler) error {
 	}
 	log(LogLevelInfo, "Resolved server address: %s", resolved.String())
 
-	client, err := client.NewReconnectableClient(
+	wrappedHandler := &loggingHandler{inner: handler}
+	rc, err := newReconnectClient(
 		func() (*client.Config, error) {
 			return buildCoreConfig(&cfg, resolved)
 		},
-		func(_ client.Client, info *client.HandshakeInfo, count int) {
-			log(LogLevelInfo, "Connected (UDP: %v, TX: %d, count: %d)", info.UDPEnabled, info.Tx, count)
-			if handler != nil {
-				handler.OnConnected(info.UDPEnabled)
-			}
-		},
-		cfg.Lazy,
+		wrappedHandler,
 	)
 	if err != nil {
 		log(LogLevelError, "Connection failed: %s", err.Error())
+		if handler != nil {
+			handler.OnError(err.Error())
+		}
 		return fmt.Errorf("connect: %w", err)
 	}
-	activeClient = client
+	activeClient = rc
 	return nil
+}
+
+type loggingHandler struct {
+	inner EventHandler
+}
+
+func (h *loggingHandler) OnConnected(udpEnabled bool) {
+	log(LogLevelInfo, "Connected (UDP: %v)", udpEnabled)
+	if h.inner != nil {
+		h.inner.OnConnected(udpEnabled)
+	}
+}
+
+func (h *loggingHandler) OnReconnecting(attempt int32, reason string) {
+	log(LogLevelWarn, "Reconnecting (attempt %d): %s", attempt, reason)
+	if h.inner != nil {
+		h.inner.OnReconnecting(attempt, reason)
+	}
+}
+
+func (h *loggingHandler) OnError(message string) {
+	log(LogLevelError, "Tunnel error: %s", message)
+	if h.inner != nil {
+		h.inner.OnError(message)
+	}
 }
 
 func StopClient() error {

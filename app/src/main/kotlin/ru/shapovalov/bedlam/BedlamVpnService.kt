@@ -304,6 +304,14 @@ class BedlamVpnService : VpnService() {
                 builder.addAction(reconnectAction(reconnectPendingIntent))
                 builder.addAction(stopAction(stopPendingIntent))
             }
+            is ConnectionState.Reconnecting -> {
+                builder.setContentText(
+                    getString(R.string.notification_state_reconnecting, state.attempt)
+                )
+                builder.setSubText(state.reason)
+                builder.addAction(reconnectAction(reconnectPendingIntent))
+                builder.addAction(stopAction(stopPendingIntent))
+            }
             is ConnectionState.Error -> {
                 builder.setContentText(
                     getString(R.string.notification_state_error, state.message)

@@ -8,6 +8,7 @@
     <string name="notification_title_named">Bedlam · %1$s</string>
 
     <string name="notification_state_connecting">Connecting…</string>
+    <string name="notification_state_reconnecting">Reconnecting (attempt %1$d)…</string>
     <string name="notification_state_disconnected">Disconnected</string>
     <string name="notification_state_error">Error: %1$s</string>
     <string name="notification_traffic_total">↑ %1$s · ↓ %2$s</string>

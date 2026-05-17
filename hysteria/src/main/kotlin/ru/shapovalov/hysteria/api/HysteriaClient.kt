@@ -19,6 +19,8 @@ interface HysteriaClient {
      */
     val state: StateFlow<ConnectionState>
 
+    data class TrafficStats(val txBytes: Long, val rxBytes: Long)
+
     /**
      * Attaches a [LogListener] to act as a log sink. Pass `null` to detach.
      */
@@ -75,10 +77,6 @@ interface HysteriaClient {
      */
     suspend fun testDnsOverTcp(): String
 
-    fun stats(): TrafficStats
-
-    data class TrafficStats(val txBytes: Long, val rxBytes: Long)
-
     /**
      * Callback interface to bind native sockets to the underlying network.
      *
@@ -108,4 +106,6 @@ interface HysteriaClient {
     interface LogListener {
         fun onLog(level: String, message: String)
     }
+
+    fun stats(): TrafficStats
 }
