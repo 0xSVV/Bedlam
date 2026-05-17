@@ -1,0 +1,12 @@
+package ru.shapovalov.bedlam.di
+
+import me.tatarka.inject.annotations.Provides
+import ru.shapovalov.bedlam.core.profile.data.ProfileRepositoryImpl
+import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
+
+interface ProfileModule {
+
+    @AppScope
+    @Provides
+    fun bindProfileRepository(impl: ProfileRepositoryImpl): ProfileRepository = impl
+}
