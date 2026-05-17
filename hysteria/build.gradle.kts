@@ -176,9 +176,7 @@ tasks.named("preBuild") {
     dependsOn(buildGolib)
 }
 
-tasks.named("clean") {
-    doLast {
-        delete("libs/golib.aar", "libs/golib-sources.jar")
-    }
-    finalizedBy(updateHysteriaCore)
+tasks.named<Delete>("clean") {
+    delete("libs/golib.aar", "libs/golib-sources.jar")
+    finalizedBy("updateHysteriaCore")
 }
