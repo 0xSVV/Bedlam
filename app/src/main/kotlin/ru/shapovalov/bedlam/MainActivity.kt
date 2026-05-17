@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.api.HysteriaClient
@@ -49,9 +50,7 @@ import ru.shapovalov.hysteria.parseHysteriaUri
 
 class MainActivity : ComponentActivity() {
 
-    private val client: HysteriaClient by lazy {
-        (application as BedlamApplication).component.hysteriaClient
-    }
+    private val client: HysteriaClient by injected { hysteriaClient }
 
     private var onVpnReady: (() -> Unit)? = null
 
