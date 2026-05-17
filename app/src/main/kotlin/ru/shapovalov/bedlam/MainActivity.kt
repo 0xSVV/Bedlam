@@ -31,7 +31,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -136,14 +136,11 @@ private fun MainScreen(
         logText = "$logText\n$msg".trimStart()
     }
 
-    DisposableEffect(Unit) {
-        client.setLogListener(object : HysteriaClient.LogListener {
-            override fun onLog(level: String, message: String) {
-                Log.d("Bedlam/Go", "[$level] $message")
-                logText = "$logText\n[$level] $message".trimStart()
-            }
-        })
-        onDispose { client.setLogListener(null) }
+    LaunchedEffect(Unit) {
+        client.logs(HysteriaClient.LogLevel.INFO).collect { entry ->
+            Log.d("Bedlam/Go", "[${entry.level}] ${entry.message}")
+            logText = "$logText\n[${entry.level}] ${entry.message}".trimStart()
+        }
     }
 
     Scaffold(
