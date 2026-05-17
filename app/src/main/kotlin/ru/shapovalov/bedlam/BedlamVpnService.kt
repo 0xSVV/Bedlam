@@ -24,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.HysteriaClient
@@ -35,6 +36,7 @@ class BedlamVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client: HysteriaClient = HysteriaClientImpl
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockJob: Job? = null
     private var networkListener: DefaultNetworkListener? = null
     private var notificationJob: Job? = null
     private var connectionName: String = ""
@@ -53,17 +55,28 @@ class BedlamVpnService : VpnService() {
         super.onDestroy()
     }
 
-    @SuppressLint("WakelockTimeout")
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
         val pm = getSystemService(POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bedlam:vpn").apply {
+        val lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bedlam:vpn").apply {
             setReferenceCounted(false)
-            acquire()
+            acquire(WAKE_LOCK_TIMEOUT_MS)
+        }
+        wakeLock = lock
+        wakeLockJob?.cancel()
+        wakeLockJob = scope.launch {
+            while (isActive) {
+                delay(WAKE_LOCK_REFRESH_MS)
+                val wl = wakeLock ?: return@launch
+                if (wl.isHeld) wl.release()
+                wl.acquire(WAKE_LOCK_TIMEOUT_MS)
+            }
         }
     }
 
     private fun releaseWakeLock() {
+        wakeLockJob?.cancel()
+        wakeLockJob = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
     }
@@ -333,6 +346,8 @@ class BedlamVpnService : VpnService() {
         private const val CHANNEL_ID = "bedlam_vpn"
         private const val REQ_STOP = 1
         private const val REQ_RECONNECT = 2
+        private val WAKE_LOCK_TIMEOUT_MS = TimeUnit.HOURS.toMillis(1)
+        private val WAKE_LOCK_REFRESH_MS = TimeUnit.MINUTES.toMillis(50)
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_URI = "uri"
