@@ -139,8 +139,9 @@ private fun MainScreen(
 
     LaunchedEffect(Unit) {
         client.logs(HysteriaClient.LogLevel.INFO).collect { entry ->
-            Log.d("Bedlam/Go", "[${entry.level}] ${entry.message}")
-            logText = "$logText\n[${entry.level}] ${entry.message}".trimStart()
+            val tag = if (entry.source.isNotEmpty()) "[${entry.level}/${entry.source}]" else "[${entry.level}]"
+            Log.d("Bedlam/Go", "$tag ${entry.message}")
+            logText = "$logText\n$tag ${entry.message}".trimStart()
         }
     }
 
@@ -215,8 +216,7 @@ private fun MainScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            val result = client.testUdp()
-                            log("UDP test: $result")
+                            log("UDP test: ${client.testUdp().display()}")
                         }
                     }, enabled = isConnected, modifier = Modifier.weight(1f)
                 ) {
@@ -226,8 +226,7 @@ private fun MainScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            val result = client.testDnsOverTcp()
-                            log("DNS/TCP test: $result")
+                            log("DNS/TCP test: ${client.testDnsOverTcp().display()}")
                         }
                     }, enabled = isConnected, modifier = Modifier.weight(1f)
                 ) {
@@ -321,9 +320,15 @@ private fun ConfigRow(label: String, value: String?) {
 }
 
 private fun ConnectionState.display(): String = when (this) {
-    is ConnectionState.Disconnected -> "Disconnected"
+    is ConnectionState.Disconnected -> "Disconnected (${reason.name.lowercase()})"
     is ConnectionState.Connecting -> "Connecting..."
-    is ConnectionState.Connected -> "Connected (UDP=${if (udpEnabled) "on" else "off"})"
+    is ConnectionState.Connected -> "Connected to ${info.serverAddress} (UDP=${if (info.udpEnabled) "on" else "off"})"
     is ConnectionState.Reconnecting -> "Reconnecting #$attempt: $reason"
     is ConnectionState.Error -> "Error: $message"
+}
+
+private fun ru.shapovalov.hysteria.api.DiagnosticResult.display(): String = when (this) {
+    is ru.shapovalov.hysteria.api.DiagnosticResult.Ok ->
+        "ok — $bytes B from $target in ${rttMillis}ms"
+    is ru.shapovalov.hysteria.api.DiagnosticResult.Error -> "error: $reason"
 }

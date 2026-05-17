@@ -79,7 +79,7 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string)
 	s.tunStack = stack
 	s.tunCancel = cancel
 
-	log(LogLevelInfo, "TUN started (fd=%d, mtu=%d, stack=gvisor)", fd, mtu)
+	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor)", fd, mtu)
 	return nil
 }
 
@@ -113,10 +113,10 @@ func (s *Session) StopTUN() error {
 	case err = <-done:
 	case <-time.After(3 * time.Second):
 		err = fmt.Errorf("TUN close timed out")
-		log(LogLevelWarn, "TUN close timed out; continuing")
+		log(LogLevelWarn, srcTun, "TUN close timed out; continuing")
 	}
 
-	log(LogLevelInfo, "TUN stopped")
+	log(LogLevelInfo, srcTun, "TUN stopped")
 	return err
 }
 
@@ -124,11 +124,13 @@ func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metad
 	defer conn.Close()
 
 	target := m.Destination.String()
-	log(LogLevelDebug, "TUN TCP: %s → %s", m.Source, target)
+	log(LogLevelDebug, srcTun, "TCP: %s → %s", m.Source, target)
 
 	remote, err := h.client.TCP(target)
 	if err != nil {
-		log(LogLevelWarn, "TUN TCP dial error: %s → %s: %s", m.Source, target, err)
+		if tcpDialErrLimiter.allow(target) {
+			log(LogLevelWarn, srcTun, "TCP dial error: %s → %s: %s", m.Source, target, err)
+		}
 		return err
 	}
 	defer remote.Close()
@@ -164,7 +166,7 @@ func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn,
 	defer conn.Close()
 
 	dest := m.Destination.String()
-	log(LogLevelDebug, "TUN UDP session: %s → %s", m.Source, dest)
+	log(LogLevelDebug, srcTun, "UDP session: %s → %s", m.Source, dest)
 
 	if isDNSPort(dest) {
 		return h.handleDNSOverTCP(conn, dest)
@@ -194,7 +196,7 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 			dnsAddr = defaultDest
 		}
 
-		log(LogLevelDebug, "TUN DNS-over-TCP: %s (%d bytes)", dnsAddr, len(query))
+		log(LogLevelDebug, srcDNS, "DNS-over-TCP: %s (%d bytes)", dnsAddr, len(query))
 
 		sem <- struct{}{}
 		go func() {
@@ -202,17 +204,19 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 
 			resp, err := h.session.dnsCache.resolve(h.client, dnsAddr, query)
 			if err != nil {
-				log(LogLevelWarn, "TUN DNS error: %s: %s", dnsAddr, err)
+				if dnsErrLimiter.allow(dnsAddr) {
+					log(LogLevelWarn, srcDNS, "DNS error: %s: %s", dnsAddr, err)
+				}
 				return
 			}
-			log(LogLevelDebug, "TUN DNS response: %d bytes from %s", len(resp), dnsAddr)
+			log(LogLevelDebug, srcDNS, "DNS response: %d bytes from %s", len(resp), dnsAddr)
 
 			var src M.Socksaddr
 			if ap, perr := netip.ParseAddrPort(dnsAddr); perr == nil {
 				src = M.SocksaddrFromNetIP(ap)
 			}
 			if werr := conn.WritePacket(buf.As(resp), src); werr != nil {
-				log(LogLevelDebug, "TUN DNS write to local error: %s", werr)
+				log(LogLevelDebug, srcDNS, "DNS write to local error: %s", werr)
 			}
 		}()
 	}
@@ -221,7 +225,7 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) error {
 	rc, err := h.client.UDP()
 	if err != nil {
-		log(LogLevelError, "TUN UDP session open failed: %s", err)
+		log(LogLevelWarn, srcTun, "UDP session open failed: %s", err)
 		return err
 	}
 	defer rc.Close()
@@ -276,5 +280,10 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 }
 
 func (h *tunHandler) NewError(ctx context.Context, err error) {
-	log(LogLevelWarn, "TUN handler error: %s", err)
+	log(LogLevelDebug, srcTun, "Handler error: %s", err)
 }
+
+var (
+	tcpDialErrLimiter = newRateLimiter(2 * time.Second)
+	dnsErrLimiter     = newRateLimiter(2 * time.Second)
+)

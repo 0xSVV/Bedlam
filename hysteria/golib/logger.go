@@ -2,7 +2,9 @@ package golib
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
 )
@@ -21,8 +23,22 @@ const (
 	logLevelErrorN = 3
 )
 
+const (
+	srcTunnel    = "tunnel"
+	srcTun       = "tun"
+	srcTunStack  = "tun-stack"
+	srcWatchdog  = "watchdog"
+	srcDNS       = "dns"
+	srcTLS       = "tls"
+	srcTransport = "transport"
+	srcStream    = "stream"
+	srcDial      = "dial"
+	srcStats     = "stats"
+	srcConfig    = "config"
+)
+
 type LogHandler interface {
-	OnLog(level string, message string)
+	OnLog(level string, source string, message string)
 }
 
 type tunLogger struct{}
@@ -68,7 +84,7 @@ func levelN(level string) int {
 	}
 }
 
-func log(level, format string, args ...interface{}) {
+func log(level, source, format string, args ...interface{}) {
 	if levelN(level) < int(minLevel.Load()) {
 		return
 	}
@@ -76,17 +92,38 @@ func log(level, format string, args ...interface{}) {
 	if box == nil || box.h == nil {
 		return
 	}
-	box.h.OnLog(level, fmt.Sprintf(format, args...))
+	box.h.OnLog(level, source, fmt.Sprintf(format, args...))
 }
 
-func (l *tunLogger) Trace(args ...any) { log(LogLevelDebug, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Debug(args ...any) { log(LogLevelDebug, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Info(args ...any)  { log(LogLevelInfo, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Warn(args ...any)  { log(LogLevelWarn, "TUN stack: %v", fmt.Sprint(args...)) }
-func (l *tunLogger) Error(args ...any) { log(LogLevelError, "TUN stack: %v", fmt.Sprint(args...)) }
+type rateLimiter struct {
+	interval time.Duration
+	mu       sync.Mutex
+	last     map[string]time.Time
+}
+
+func newRateLimiter(interval time.Duration) *rateLimiter {
+	return &rateLimiter{interval: interval, last: make(map[string]time.Time)}
+}
+
+func (r *rateLimiter) allow(key string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	if t, ok := r.last[key]; ok && now.Sub(t) < r.interval {
+		return false
+	}
+	r.last[key] = now
+	return true
+}
+
+func (l *tunLogger) Trace(args ...any) { log(LogLevelDebug, srcTunStack, "%v", fmt.Sprint(args...)) }
+func (l *tunLogger) Debug(args ...any) { log(LogLevelDebug, srcTunStack, "%v", fmt.Sprint(args...)) }
+func (l *tunLogger) Info(args ...any)  { log(LogLevelInfo, srcTunStack, "%v", fmt.Sprint(args...)) }
+func (l *tunLogger) Warn(args ...any)  { log(LogLevelWarn, srcTunStack, "%v", fmt.Sprint(args...)) }
+func (l *tunLogger) Error(args ...any) { log(LogLevelError, srcTunStack, "%v", fmt.Sprint(args...)) }
 func (l *tunLogger) Fatal(args ...any) {
-	log(LogLevelError, "TUN stack fatal: %v", fmt.Sprint(args...))
+	log(LogLevelError, srcTunStack, "fatal: %v", fmt.Sprint(args...))
 }
 func (l *tunLogger) Panic(args ...any) {
-	log(LogLevelError, "TUN stack panic: %v", fmt.Sprint(args...))
+	log(LogLevelError, srcTunStack, "panic: %v", fmt.Sprint(args...))
 }

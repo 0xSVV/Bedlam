@@ -28,6 +28,7 @@ import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.HysteriaClientImpl
+import ru.shapovalov.hysteria.api.DisconnectReason
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.parseHysteriaUri
 import kotlin.coroutines.coroutineContext
@@ -49,7 +50,7 @@ class BedlamVpnService : VpnService() {
         createNotificationChannel()
     }
 
-    override fun onRevoke() = stop()
+    override fun onRevoke() = stop(DisconnectReason.REVOKED)
 
     override fun onDestroy() {
         notificationJob?.cancel()
@@ -57,7 +58,7 @@ class BedlamVpnService : VpnService() {
         stopNetworkListener()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        runBlocking { runCatching { client.stop() } }
+        runBlocking { runCatching { client.stop(DisconnectReason.USER) } }
         scope.cancel()
         super.onDestroy()
     }
@@ -169,14 +170,14 @@ class BedlamVpnService : VpnService() {
         return cidr.substring(0, slash) to cidr.substring(slash + 1).toInt()
     }
 
-    private fun stop() {
+    private fun stop(reason: DisconnectReason = DisconnectReason.USER) {
         notificationJob?.cancel()
         notificationJob = null
         stopNetworkListener()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         scope.launch {
-            runCatching { client.stop() }
+            runCatching { client.stop(reason) }
             stopSelf()
         }
     }
@@ -211,7 +212,7 @@ class BedlamVpnService : VpnService() {
             var prevRx = 0L
             client.state.collectLatest { state ->
                 while (coroutineContext.isActive) {
-                    val s = client.stats()
+                    val s = client.stats() ?: HysteriaClient.TrafficStats(0, 0)
                     val txRate = (s.txBytes - prevTx).coerceAtLeast(0)
                     val rxRate = (s.rxBytes - prevRx).coerceAtLeast(0)
                     prevTx = s.txBytes

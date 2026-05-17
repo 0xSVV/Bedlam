@@ -1,25 +1,39 @@
 package golib
 
 import (
-	"fmt"
 	"time"
 )
 
-func (s *Session) TestUDP() string {
+// TestResult is the outcome of a connectivity diagnostic. Exactly one of
+// Ok or Error carries meaningful data: when Ok is true, Bytes/ElapsedMs/Detail
+// describe the successful round-trip; when Ok is false, Error explains the
+// failure.
+type TestResult struct {
+	Ok        bool
+	Bytes     int32
+	ElapsedMs int64
+	Detail    string
+	Error     string
+}
+
+// TestUDP sends a small DNS query through hysteria's QUIC-datagram UDP relay
+// and waits for a response. Returns within ~10 seconds.
+func (s *Session) TestUDP() *TestResult {
 	c := s.currentClient()
 	if c == nil {
-		return "error: client not connected"
+		return &TestResult{Error: "client not connected"}
 	}
 
 	rc, err := c.UDP()
 	if err != nil {
-		return fmt.Sprintf("error: UDP session failed: %s", err)
+		return &TestResult{Error: "UDP session failed: " + err.Error()}
 	}
 	defer rc.Close()
 
-	log(LogLevelInfo, "TestUDP: sending DNS query to 1.1.1.1:53 via QUIC datagram")
+	log(LogLevelInfo, srcDNS, "TestUDP: sending DNS query to 1.1.1.1:53 via QUIC datagram")
+	start := time.Now()
 	if err := rc.Send(buildDNSQuery(), "1.1.1.1:53"); err != nil {
-		return fmt.Sprintf("error: send failed: %s", err)
+		return &TestResult{Error: "send failed: " + err.Error()}
 	}
 
 	type result struct {
@@ -35,27 +49,42 @@ func (s *Session) TestUDP() string {
 
 	select {
 	case r := <-ch:
+		elapsed := time.Since(start).Milliseconds()
 		if r.err != nil {
-			return fmt.Sprintf("error: receive failed: %s", r.err)
+			return &TestResult{Error: "receive failed: " + r.err.Error()}
 		}
-		return fmt.Sprintf("ok: %d bytes from %s", len(r.data), r.from)
+		return &TestResult{
+			Ok:        true,
+			Bytes:     int32(len(r.data)),
+			ElapsedMs: elapsed,
+			Detail:    r.from,
+		}
 	case <-time.After(10 * time.Second):
-		return "error: timeout (outbound UDP port most likely blocked)"
+		return &TestResult{Error: "timeout (outbound UDP port most likely blocked)"}
 	}
 }
 
-func (s *Session) TestDNSOverTCP() string {
+// TestDNSOverTCP sends a small DNS query through a hysteria TCP stream and
+// waits for the response.
+func (s *Session) TestDNSOverTCP() *TestResult {
 	c := s.currentClient()
 	if c == nil {
-		return "error: client not connected"
+		return &TestResult{Error: "client not connected"}
 	}
 
-	log(LogLevelInfo, "TestDNS: sending DNS query to 1.1.1.1:53 via TCP")
+	log(LogLevelInfo, srcDNS, "TestDNS: sending DNS query to 1.1.1.1:53 via TCP")
+	start := time.Now()
 	resp, err := dnsOverTCP(c, "1.1.1.1:53", buildDNSQuery())
+	elapsed := time.Since(start).Milliseconds()
 	if err != nil {
-		return fmt.Sprintf("error: %s", err)
+		return &TestResult{Error: err.Error()}
 	}
-	return fmt.Sprintf("ok: %d bytes", len(resp))
+	return &TestResult{
+		Ok:        true,
+		Bytes:     int32(len(resp)),
+		ElapsedMs: elapsed,
+		Detail:    "1.1.1.1:53",
+	}
 }
 
 func buildDNSQuery() []byte {
