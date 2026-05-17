@@ -2,12 +2,22 @@ package ru.shapovalov.hysteria
 
 import golib.EventHandler
 import golib.Golib
+import golib.LogHandler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
 import ru.shapovalov.hysteria.api.HysteriaClient
+import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
+import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.toJson
 import java.util.concurrent.atomic.AtomicBoolean
@@ -23,16 +33,25 @@ object HysteriaClientImpl : HysteriaClient {
 
     private val tunActive = AtomicBoolean(false)
 
-    override fun setLogListener(listener: HysteriaClient.LogListener?) {
-        if (listener == null) {
-            Golib.setLogHandler(null)
-            return
-        }
-        Golib.setLogHandler { level, message -> listener.onLog(level, message) }
-    }
+    private val logSink = MutableSharedFlow<LogEntry>(
+        replay = 0,
+        extraBufferCapacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    private val subscriberFloors = mutableMapOf<LogLevel, Int>()
+    private val subscriberLock = Any()
 
-    override fun setMinLogLevel(level: String) {
-        Golib.setMinLogLevel(level)
+    init {
+        Golib.setLogHandler(LogHandler { level, message ->
+            logSink.tryEmit(
+                LogEntry(
+                    level = parseLevel(level),
+                    message = message,
+                    timestampMillis = System.currentTimeMillis(),
+                )
+            )
+        })
+        Golib.setMinLogLevel(LogLevel.INFO.name)
     }
 
     override suspend fun start(
@@ -69,14 +88,14 @@ object HysteriaClientImpl : HysteriaClient {
                 tunActive.set(true)
             }
         } catch (e: Exception) {
-            cleanup()
+            withContext(Dispatchers.IO) { cleanup() }
             _state.value = ConnectionState.Error(e.message ?: "Start failed")
             throw e
         }
     }
 
-    override fun stop() {
-        cleanup()
+    override suspend fun stop() {
+        withContext(Dispatchers.IO) { cleanup() }
         _state.value = ConnectionState.Disconnected
     }
 
@@ -97,11 +116,45 @@ object HysteriaClientImpl : HysteriaClient {
             rxBytes = Golib.getRxBytes(),
         )
 
+    override fun logs(minLevel: LogLevel): Flow<LogEntry> = flow {
+        logSink.filter { it.level.ordinal >= minLevel.ordinal }.collect { emit(it) }
+    }
+        .onStart { registerSubscriber(minLevel) }
+        .onCompletion { unregisterSubscriber(minLevel) }
+
+    private fun registerSubscriber(level: LogLevel) {
+        synchronized(subscriberLock) {
+            subscriberFloors[level] = (subscriberFloors[level] ?: 0) + 1
+            applyNativeFloor()
+        }
+    }
+
+    private fun unregisterSubscriber(level: LogLevel) {
+        synchronized(subscriberLock) {
+            val count = (subscriberFloors[level] ?: 0) - 1
+            if (count <= 0) subscriberFloors.remove(level)
+            else subscriberFloors[level] = count
+            applyNativeFloor()
+        }
+    }
+
+    private fun applyNativeFloor() {
+        val floor = subscriberFloors.keys.minByOrNull { it.ordinal } ?: LogLevel.INFO
+        Golib.setMinLogLevel(floor.name)
+    }
+
     private fun cleanup() {
         if (tunActive.compareAndSet(true, false)) {
             runCatching { Golib.stopTUN() }
         }
         runCatching { Golib.stopClient() }
         Golib.setFdProtector(null)
+    }
+
+    private fun parseLevel(s: String): LogLevel = when (s) {
+        "DEBUG" -> LogLevel.DEBUG
+        "WARN" -> LogLevel.WARN
+        "ERROR" -> LogLevel.ERROR
+        else -> LogLevel.INFO
     }
 }

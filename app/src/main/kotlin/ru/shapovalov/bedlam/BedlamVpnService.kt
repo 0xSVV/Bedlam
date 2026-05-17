@@ -24,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.HysteriaClientImpl
@@ -49,8 +50,12 @@ class BedlamVpnService : VpnService() {
     override fun onRevoke() = stop()
 
     override fun onDestroy() {
+        notificationJob?.cancel()
+        notificationJob = null
+        stopNetworkListener()
         releaseWakeLock()
-        stop()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        runBlocking { runCatching { client.stop() } }
         scope.cancel()
         super.onDestroy()
     }
@@ -168,10 +173,10 @@ class BedlamVpnService : VpnService() {
         stopNetworkListener()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        Thread({
+        scope.launch {
             runCatching { client.stop() }
             stopSelf()
-        }, "BedlamVpnStop").start()
+        }
     }
 
     private fun startNetworkListener() {
