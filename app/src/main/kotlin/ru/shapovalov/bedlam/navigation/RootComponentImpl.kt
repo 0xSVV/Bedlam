@@ -8,7 +8,6 @@ import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.serializer
 import me.tatarka.inject.annotations.Assisted
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
@@ -34,7 +33,7 @@ class RootComponentImpl(
 
     override val childStack: Value<ChildStack<*, RootComponent.Child>> = childStack(
         source = navigation,
-        serializer = serializer<Config>(),
+        serializer = Config.serializer(),
         initialConfiguration = Config.Dashboard,
         handleBackButton = false,
         childFactory = { config, ctx ->
