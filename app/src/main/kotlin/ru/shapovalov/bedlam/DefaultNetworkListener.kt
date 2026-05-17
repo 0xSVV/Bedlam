@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 
 class DefaultNetworkListener(
     context: Context,
@@ -12,33 +13,38 @@ class DefaultNetworkListener(
     private val connectivityManager = context.applicationContext
         .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
+    private val available = linkedSetOf<Network>()
     private var active: Network? = null
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            update(network)
-        }
-
-        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-            update(network)
+            synchronized(this@DefaultNetworkListener) {
+                available.add(network)
+                if (active == null) {
+                    active = network
+                    onChanged(network)
+                }
+            }
         }
 
         override fun onLost(network: Network) {
-            if (active == network) {
-                active = null
-                onChanged(null)
+            synchronized(this@DefaultNetworkListener) {
+                available.remove(network)
+                if (active == network) {
+                    val next = available.firstOrNull()
+                    active = next
+                    onChanged(next)
+                }
             }
         }
     }
 
-    private fun update(network: Network) {
-        if (active == network) return
-        active = network
-        onChanged(network)
-    }
-
     fun start() {
-        connectivityManager.registerDefaultNetworkCallback(callback)
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        connectivityManager.registerNetworkCallback(request, callback)
     }
 
     fun stop() {
@@ -47,6 +53,9 @@ class DefaultNetworkListener(
         } catch (_: IllegalArgumentException) {
             // already unregistered
         }
-        active = null
+        synchronized(this) {
+            available.clear()
+            active = null
+        }
     }
 }
