@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.core.database
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
@@ -11,7 +12,8 @@ import ru.shapovalov.bedlam.core.profile.data.local.ProfileEntity
 
 @Database(
     entities = [ProfileEntity::class, AppSettingsEntity::class],
-    version = 1,
+    version = 2,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
     exportSchema = true,
 )
 @TypeConverters(HysteriaConfigConverter::class)

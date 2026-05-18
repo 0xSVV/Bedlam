@@ -14,6 +14,12 @@ interface AppSettingsDao {
     @Query("SELECT activeProfileId FROM app_settings WHERE id = 0")
     suspend fun getActiveProfileId(): String?
 
+    @Query("SELECT * FROM app_settings WHERE id = 0")
+    fun observe(): Flow<AppSettingsEntity?>
+
+    @Query("SELECT * FROM app_settings WHERE id = 0")
+    suspend fun get(): AppSettingsEntity?
+
     @Upsert
     suspend fun upsert(entity: AppSettingsEntity)
 }
