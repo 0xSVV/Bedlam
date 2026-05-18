@@ -15,7 +15,7 @@ import com.arkivanov.decompose.defaultComponentContext
 import ru.shapovalov.bedlam.core.vpn.BedlamVpnService
 import ru.shapovalov.bedlam.di.appComponent
 import ru.shapovalov.bedlam.navigation.RootComponent
-import ru.shapovalov.bedlam.ui.theme.AppTheme
+import ru.shapovalov.bedlam.ui.theme.BedlamTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
             RootComponent.OnStopVpn { stopVpnService() },
         )
 
-        setContent { AppTheme { RootContent(root) } }
+        setContent { BedlamTheme { RootContent(root) } }
     }
 
     private fun startVpnService(configJson: String, profileName: String) {

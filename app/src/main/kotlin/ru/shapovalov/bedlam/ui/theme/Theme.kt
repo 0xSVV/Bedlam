@@ -87,9 +87,9 @@ private val darkScheme = darkColorScheme(
 )
 
 @Composable
-fun AppTheme(
+fun BedlamTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {
@@ -103,7 +103,7 @@ fun AppTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = AppTypography,
+        typography = BedlamTypography,
         content = content,
     )
 }
