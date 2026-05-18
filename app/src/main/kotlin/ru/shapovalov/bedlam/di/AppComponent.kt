@@ -6,6 +6,7 @@ import com.arkivanov.decompose.ComponentContext
 import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Component
 import me.tatarka.inject.annotations.Provides
+import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.navigation.RootComponent
 import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.HysteriaClient
@@ -14,10 +15,11 @@ import ru.shapovalov.hysteria.api.HysteriaClient
 @Component
 abstract class AppComponent(
     @get:Provides val application: Application,
-) : DatabaseModule, ProfileModule, PresentationModule {
+) : DatabaseModule, ProfileModule, PresentationModule, AppFilterModule {
 
     abstract val hysteriaClient: HysteriaClient
     abstract val json: Json
+    abstract val appFilterRepository: AppFilterRepository
 
     abstract val rootComponentFactory: (ComponentContext, RootComponent.OnStartVpn, RootComponent.OnStopVpn) -> RootComponent
 
