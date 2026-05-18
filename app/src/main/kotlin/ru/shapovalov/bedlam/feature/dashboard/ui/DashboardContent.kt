@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
+import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.ConnectionState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +65,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     val state by component.state.collectAsState()
     val clipboard = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val spacing = MaterialTheme.spacing
 
     LaunchedEffect(state.errorMessage) {
         val msg = state.errorMessage ?: return@LaunchedEffect
@@ -84,7 +86,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 isImporting = state.isImporting,
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(spacing.small))
 
             ConnectionHero(
                 connectionState = state.connectionState,
@@ -93,7 +95,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 onToggle = component::onToggleConnection,
             )
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(spacing.xLarge))
 
             ProfilesCard(
                 profiles = state.profiles,
@@ -102,7 +104,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 onDelete = component::onDeleteProfile,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = spacing.large),
             )
         }
 
@@ -118,10 +120,11 @@ private fun DashboardTopBar(
     onImport: () -> Unit,
     isImporting: Boolean,
 ) {
+    val spacing = MaterialTheme.spacing
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = spacing.large, vertical = spacing.medium),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -156,6 +159,7 @@ private fun ConnectionHero(
     hasActiveProfile: Boolean,
     onToggle: () -> Unit,
 ) {
+    val spacing = MaterialTheme.spacing
     val isConnected = connectionState is ConnectionState.Connected
     val isConnecting = connectionState is ConnectionState.Connecting ||
         connectionState is ConnectionState.Reconnecting
@@ -175,7 +179,7 @@ private fun ConnectionHero(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = spacing.large),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -183,7 +187,7 @@ private fun ConnectionHero(
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(spacing.xSmall))
         Text(
             text = formatDuration(elapsedSeconds.value),
             style = MaterialTheme.typography.displayMedium.copy(
@@ -192,11 +196,11 @@ private fun ConnectionHero(
             ),
             color = MaterialTheme.colorScheme.onSurface,
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(spacing.large))
 
         LargeFloatingActionButton(
             onClick = onToggle,
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(spacing.xLarge),
             containerColor = when {
                 isConnected -> MaterialTheme.colorScheme.primaryContainer
                 else -> MaterialTheme.colorScheme.surfaceContainerHigh
@@ -219,7 +223,7 @@ private fun ConnectionHero(
                 )
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(spacing.medium))
         AssistChip(
             onClick = {},
             label = { Text(connectionState.display()) },
@@ -232,7 +236,7 @@ private fun ConnectionHero(
             ),
         )
         if (!hasActiveProfile && connectionState is ConnectionState.Disconnected) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(spacing.small))
             Text(
                 text = "Import a profile from clipboard to get started",
                 style = MaterialTheme.typography.bodySmall,
@@ -251,14 +255,15 @@ private fun ProfilesCard(
     modifier: Modifier = Modifier,
 ) {
     if (profiles.isEmpty()) return
+    val spacing = MaterialTheme.spacing
 
     ElevatedCard(modifier = modifier) {
-        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Column(modifier = Modifier.padding(vertical = spacing.small)) {
             Text(
                 text = "LOCAL PROFILES",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small),
             )
             LazyColumn {
                 items(profiles, key = Profile::id) { profile ->
@@ -270,7 +275,7 @@ private fun ProfilesCard(
                     )
                     if (profile != profiles.last()) {
                         HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
+                            modifier = Modifier.padding(horizontal = spacing.large),
                             color = MaterialTheme.colorScheme.outlineVariant,
                         )
                     }
@@ -287,11 +292,12 @@ private fun ProfileRow(
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val spacing = MaterialTheme.spacing
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = spacing.large, vertical = spacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -303,7 +309,7 @@ private fun ProfileRow(
                     else Color.Transparent
                 ),
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(spacing.medium))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = profile.name,
@@ -334,7 +340,7 @@ private fun ProfileRow(
 private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
