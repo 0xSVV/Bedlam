@@ -17,6 +17,32 @@
 
     <string name="action_disconnect">Disconnect</string>
     <string name="action_reconnect">Reconnect</string>
+    <string name="action_connect">Connect</string>
 
     <string name="vpn_session_default">Bedlam</string>
+
+    <string name="nav_tab_home">Home</string>
+    <string name="nav_tab_settings">Settings</string>
+
+    <string name="dashboard_action_import_cd">Import from clipboard</string>
+    <string name="dashboard_connection_time">Connection Time</string>
+    <string name="dashboard_empty_hint">Import a profile from clipboard to get started</string>
+    <string name="dashboard_profiles_section">LOCAL PROFILES</string>
+    <string name="dashboard_action_delete_cd">Delete profile</string>
+
+    <string name="dashboard_state_disconnected">Disconnected</string>
+    <string name="dashboard_state_connecting">Connecting…</string>
+    <string name="dashboard_state_connected">Connected</string>
+    <string name="dashboard_state_reconnecting">Reconnecting (#%1$d)</string>
+    <string name="dashboard_state_error">Error: %1$s</string>
+
+    <string name="dashboard_error_no_profile">Select a profile first</string>
+    <string name="dashboard_error_clipboard_empty">Clipboard is empty</string>
+    <string name="dashboard_error_import_failed">Failed to import profile</string>
+
+    <string name="profile_protocol_hysteria">HYSTERIA</string>
+    <string name="profile_subtitle">%1$s · %2$s</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_coming_soon">Coming soon</string>
 </resources>
