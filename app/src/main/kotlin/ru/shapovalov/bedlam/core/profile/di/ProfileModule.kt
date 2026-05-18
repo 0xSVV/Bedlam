@@ -1,8 +1,9 @@
-package ru.shapovalov.bedlam.di
+package ru.shapovalov.bedlam.core.profile.di
 
 import me.tatarka.inject.annotations.Provides
 import ru.shapovalov.bedlam.core.profile.data.ProfileRepositoryImpl
 import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
+import ru.shapovalov.bedlam.di.AppScope
 
 interface ProfileModule {
 

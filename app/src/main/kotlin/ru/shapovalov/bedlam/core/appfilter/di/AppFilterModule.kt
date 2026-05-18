@@ -1,10 +1,11 @@
-package ru.shapovalov.bedlam.di
+package ru.shapovalov.bedlam.core.appfilter.di
 
 import me.tatarka.inject.annotations.Provides
 import ru.shapovalov.bedlam.core.appfilter.data.AppFilterRepositoryImpl
 import ru.shapovalov.bedlam.core.appfilter.data.InstalledAppsRepositoryImpl
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.InstalledAppsRepository
+import ru.shapovalov.bedlam.di.AppScope
 
 interface AppFilterModule {
 
