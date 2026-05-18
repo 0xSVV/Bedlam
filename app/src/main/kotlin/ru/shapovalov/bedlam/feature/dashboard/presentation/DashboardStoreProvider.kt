@@ -45,7 +45,7 @@ class DashboardStoreProvider(
         data class ConnectionChanged(val state: ConnectionState, val connectedSinceMillis: Long?) : Msg
         data object ImportStarted : Msg
         data object ImportFinished : Msg
-        data class ErrorRaised(val message: String) : Msg
+        data class ErrorRaised(val reason: DashboardStore.ErrorReason) : Msg
         data object ErrorDismissed : Msg
     }
 
@@ -104,7 +104,7 @@ class DashboardStoreProvider(
                 else -> {
                     val active = s.activeProfile
                     if (active == null) {
-                        dispatch(Msg.ErrorRaised("Select a profile first"))
+                        dispatch(Msg.ErrorRaised(DashboardStore.ErrorReason.NoActiveProfile))
                     } else {
                         publish(Label.RequestStartVpn(active))
                     }
@@ -115,7 +115,7 @@ class DashboardStoreProvider(
         private fun handleImport(uri: String) {
             val trimmed = uri.trim()
             if (trimmed.isEmpty()) {
-                dispatch(Msg.ErrorRaised("Clipboard is empty"))
+                dispatch(Msg.ErrorRaised(DashboardStore.ErrorReason.ClipboardEmpty))
                 return
             }
             dispatch(Msg.ImportStarted)
@@ -129,7 +129,7 @@ class DashboardStoreProvider(
                         }
                     }
                     .onFailure { e ->
-                        dispatch(Msg.ErrorRaised(e.message ?: "Failed to import profile"))
+                        dispatch(Msg.ErrorRaised(DashboardStore.ErrorReason.ImportFailed(e.message)))
                     }
             }
         }
@@ -142,10 +142,10 @@ class DashboardStoreProvider(
                 connectionState = msg.state,
                 connectedSinceMillis = msg.connectedSinceMillis,
             )
-            Msg.ImportStarted -> copy(isImporting = true, errorMessage = null)
+            Msg.ImportStarted -> copy(isImporting = true, error = null)
             Msg.ImportFinished -> copy(isImporting = false)
-            is Msg.ErrorRaised -> copy(errorMessage = msg.message)
-            Msg.ErrorDismissed -> copy(errorMessage = null)
+            is Msg.ErrorRaised -> copy(error = msg.reason)
+            Msg.ErrorDismissed -> copy(error = null)
         }
     }
 }
