@@ -20,9 +20,15 @@ interface DashboardStore : Store<DashboardStore.Intent, DashboardStore.State, Da
         val connectionState: ConnectionState = ConnectionState.Disconnected(),
         val connectedSinceMillis: Long? = null,
         val isImporting: Boolean = false,
-        val errorMessage: String? = null,
+        val error: ErrorReason? = null,
     ) {
         val activeProfile: Profile? get() = profiles.firstOrNull { it.id == activeProfileId }
+    }
+
+    sealed interface ErrorReason {
+        data object NoActiveProfile : ErrorReason
+        data object ClipboardEmpty : ErrorReason
+        data class ImportFailed(val cause: String?) : ErrorReason
     }
 
     sealed interface Label {
