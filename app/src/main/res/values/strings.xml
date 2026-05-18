@@ -45,4 +45,17 @@
 
     <string name="settings_title">Settings</string>
     <string name="settings_coming_soon">Coming soon</string>
+
+    <string name="settings_apps_title">Apps to proxy</string>
+    <string name="settings_apps_subtitle">Choose which apps route through the tunnel</string>
+
+    <string name="action_back">Back</string>
+
+    <string name="app_selection_title">Apps to proxy</string>
+    <string name="app_selection_search_hint">Search apps</string>
+    <string name="app_selection_all_hint">All apps will route through the tunnel.</string>
+
+    <string name="app_filter_mode_all">All apps</string>
+    <string name="app_filter_mode_allowlist">Only selected</string>
+    <string name="app_filter_mode_blocklist">All except selected</string>
 </resources>
