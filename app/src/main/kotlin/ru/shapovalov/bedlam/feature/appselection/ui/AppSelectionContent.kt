@@ -1,4 +1,4 @@
-package ru.shapovalov.bedlam.feature.settings.appselection.ui
+package ru.shapovalov.bedlam.feature.appselection.ui
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.dp
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
 import ru.shapovalov.bedlam.core.appfilter.domain.model.InstalledApp
-import ru.shapovalov.bedlam.feature.settings.appselection.presentation.AppSelectionComponent
+import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
 
 @OptIn(ExperimentalMaterial3Api::class)

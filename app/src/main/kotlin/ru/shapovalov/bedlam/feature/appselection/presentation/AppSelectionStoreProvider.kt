@@ -1,4 +1,4 @@
-package ru.shapovalov.bedlam.feature.settings.appselection.presentation
+package ru.shapovalov.bedlam.feature.appselection.presentation
 
 import com.arkivanov.mvikotlin.core.store.Reducer
 import com.arkivanov.mvikotlin.core.store.Store
@@ -13,8 +13,8 @@ import ru.shapovalov.bedlam.core.appfilter.domain.usecase.GetInstalledAppsUseCas
 import ru.shapovalov.bedlam.core.appfilter.domain.usecase.ObserveAppFilterUseCase
 import ru.shapovalov.bedlam.core.appfilter.domain.usecase.SetAppFilterModeUseCase
 import ru.shapovalov.bedlam.core.appfilter.domain.usecase.ToggleAppFilterPackageUseCase
-import ru.shapovalov.bedlam.feature.settings.appselection.presentation.AppSelectionStore.Intent
-import ru.shapovalov.bedlam.feature.settings.appselection.presentation.AppSelectionStore.State
+import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionStore.Intent
+import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionStore.State
 
 @Inject
 class AppSelectionStoreProvider(

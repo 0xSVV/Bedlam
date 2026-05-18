@@ -27,7 +27,7 @@ import com.arkivanov.decompose.extensions.compose.stack.animation.slide
 import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import ru.shapovalov.bedlam.R
-import ru.shapovalov.bedlam.feature.settings.appselection.ui.AppSelectionContent
+import ru.shapovalov.bedlam.feature.appselection.ui.AppSelectionContent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child
 import ru.shapovalov.bedlam.ui.theme.spacing
