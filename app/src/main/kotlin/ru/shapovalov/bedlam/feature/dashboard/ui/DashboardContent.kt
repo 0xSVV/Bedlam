@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -57,8 +58,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
+import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardStore
 import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.ConnectionState
 
@@ -72,8 +75,9 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     val snackbarHostState = remember { SnackbarHostState() }
     val spacing = MaterialTheme.spacing
 
-    LaunchedEffect(state.errorMessage) {
-        val msg = state.errorMessage ?: return@LaunchedEffect
+    val errorText = state.error?.resolve()
+    LaunchedEffect(errorText) {
+        val msg = errorText ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(msg)
         component.onDismissError()
     }
@@ -142,7 +146,7 @@ private fun DashboardTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "Bedlam",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -159,7 +163,10 @@ private fun DashboardTopBar(
                     strokeWidth = 2.dp,
                 )
             } else {
-                Icon(Icons.Default.Add, contentDescription = "Import from clipboard")
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = stringResource(R.string.dashboard_action_import_cd),
+                )
             }
         }
     }
@@ -196,7 +203,7 @@ private fun ConnectionHero(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Connection Time",
+            text = stringResource(R.string.dashboard_connection_time),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -211,6 +218,9 @@ private fun ConnectionHero(
         )
         Spacer(Modifier.height(spacing.large))
 
+        val toggleCd = stringResource(
+            if (isConnected) R.string.action_disconnect else R.string.action_connect
+        )
         LargeFloatingActionButton(
             onClick = onToggle,
             shape = RoundedCornerShape(spacing.xLarge),
@@ -220,7 +230,7 @@ private fun ConnectionHero(
             },
             modifier = Modifier
                 .size(96.dp)
-                .semantics { contentDescription = if (isConnected) "Disconnect" else "Connect" },
+                .semantics { contentDescription = toggleCd },
         ) {
             when {
                 isConnecting -> CircularProgressIndicator(modifier = Modifier.size(40.dp))
@@ -239,7 +249,7 @@ private fun ConnectionHero(
         Spacer(Modifier.height(spacing.medium))
         AssistChip(
             onClick = {},
-            label = { Text(connectionState.display()) },
+            label = { Text(connectionState.displayText()) },
             colors = AssistChipDefaults.assistChipColors(
                 labelColor = when (connectionState) {
                     is ConnectionState.Connected -> MaterialTheme.colorScheme.primary
@@ -251,7 +261,7 @@ private fun ConnectionHero(
         if (!hasActiveProfile && connectionState is ConnectionState.Disconnected) {
             Spacer(Modifier.height(spacing.small))
             Text(
-                text = "Import a profile from clipboard to get started",
+                text = stringResource(R.string.dashboard_empty_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -273,7 +283,7 @@ private fun ProfilesCard(
     ElevatedCard(modifier = modifier) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
             Text(
-                text = "LOCAL PROFILES",
+                text = stringResource(R.string.dashboard_profiles_section),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small),
@@ -332,7 +342,11 @@ private fun ProfileRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "HYSTERIA · ${profile.config.server.server}",
+                text = stringResource(
+                    R.string.profile_subtitle,
+                    stringResource(R.string.profile_protocol_hysteria),
+                    profile.config.server.server,
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -342,7 +356,7 @@ private fun ProfileRow(
         IconButton(onClick = onDelete) {
             Icon(
                 Icons.Default.Delete,
-                contentDescription = "Delete profile",
+                contentDescription = stringResource(R.string.dashboard_action_delete_cd),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -373,12 +387,21 @@ private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier) {
     }
 }
 
-private fun ConnectionState.display(): String = when (this) {
-    is ConnectionState.Disconnected -> "Disconnected"
-    ConnectionState.Connecting -> "Connecting…"
-    is ConnectionState.Connected -> "Connected"
-    is ConnectionState.Reconnecting -> "Reconnecting (#$attempt)"
-    is ConnectionState.Error -> "Error: $message"
+@Composable
+private fun ConnectionState.displayText(): String = when (this) {
+    is ConnectionState.Disconnected -> stringResource(R.string.dashboard_state_disconnected)
+    ConnectionState.Connecting -> stringResource(R.string.dashboard_state_connecting)
+    is ConnectionState.Connected -> stringResource(R.string.dashboard_state_connected)
+    is ConnectionState.Reconnecting -> stringResource(R.string.dashboard_state_reconnecting, attempt)
+    is ConnectionState.Error -> stringResource(R.string.dashboard_state_error, message)
+}
+
+@Composable
+private fun DashboardStore.ErrorReason.resolve(): String = when (this) {
+    DashboardStore.ErrorReason.NoActiveProfile -> stringResource(R.string.dashboard_error_no_profile)
+    DashboardStore.ErrorReason.ClipboardEmpty -> stringResource(R.string.dashboard_error_clipboard_empty)
+    is DashboardStore.ErrorReason.ImportFailed ->
+        cause ?: stringResource(R.string.dashboard_error_import_failed)
 }
 
 private fun formatDuration(totalSeconds: Long): String {

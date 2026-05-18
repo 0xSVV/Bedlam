@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import com.arkivanov.decompose.extensions.compose.stack.Children
 import com.arkivanov.decompose.extensions.compose.stack.animation.fade
 import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
@@ -38,7 +39,7 @@ fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
                         selected = activeTab == tab,
                         onClick = { component.onTabSelected(tab) },
                         icon = { Icon(tab.icon(), contentDescription = null) },
-                        label = { Text(tab.label()) },
+                        label = { Text(stringResource(tab.labelRes())) },
                     )
                 }
             }
@@ -57,9 +58,9 @@ fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
     }
 }
 
-private fun Tab.label(): String = when (this) {
-    Tab.Dashboard -> "Home"
-    Tab.Settings -> "Settings"
+private fun Tab.labelRes(): Int = when (this) {
+    Tab.Dashboard -> R.string.nav_tab_home
+    Tab.Settings -> R.string.nav_tab_settings
 }
 
 private fun Tab.icon(): ImageVector = when (this) {
