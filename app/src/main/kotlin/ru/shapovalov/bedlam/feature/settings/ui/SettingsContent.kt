@@ -9,17 +9,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
+import ru.shapovalov.bedlam.ui.theme.spacing
 
 @Composable
 @Suppress("UNUSED_PARAMETER")
 fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier) {
+    val spacing = MaterialTheme.spacing
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            .padding(spacing.xLarge),
+        verticalArrangement = Arrangement.spacedBy(spacing.small, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
