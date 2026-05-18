@@ -1,4 +1,4 @@
-package ru.shapovalov.bedlam.feature.settings.appselection.presentation
+package ru.shapovalov.bedlam.feature.appselection.presentation
 
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.essenty.lifecycle.doOnDestroy

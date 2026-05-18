@@ -10,7 +10,7 @@ import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
 import me.tatarka.inject.annotations.Assisted
 import me.tatarka.inject.annotations.Inject
-import ru.shapovalov.bedlam.feature.settings.appselection.presentation.AppSelectionComponent
+import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
 
 @Inject
 class SettingsComponent(

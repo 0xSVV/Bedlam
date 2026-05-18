@@ -1,4 +1,4 @@
-package ru.shapovalov.bedlam.feature.settings.appselection.presentation
+package ru.shapovalov.bedlam.feature.appselection.presentation
 
 import com.arkivanov.mvikotlin.core.store.Store
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
