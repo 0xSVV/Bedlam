@@ -7,7 +7,6 @@ import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Component
 import me.tatarka.inject.annotations.Provides
 import ru.shapovalov.bedlam.navigation.RootComponent
-import ru.shapovalov.bedlam.navigation.RootComponentImpl
 import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.HysteriaClient
 
@@ -20,7 +19,7 @@ abstract class AppComponent(
     abstract val hysteriaClient: HysteriaClient
     abstract val json: Json
 
-    abstract val rootComponentFactory: (ComponentContext, RootComponent.OnStartVpn, RootComponent.OnStopVpn) -> RootComponentImpl
+    abstract val rootComponentFactory: (ComponentContext, RootComponent.OnStartVpn, RootComponent.OnStopVpn) -> RootComponent
 
     @get:Provides
     val context: Context
