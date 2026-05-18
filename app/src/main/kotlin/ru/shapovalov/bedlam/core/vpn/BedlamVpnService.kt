@@ -29,6 +29,9 @@ import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
 import java.util.concurrent.TimeUnit
+import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilter
+import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
+import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.HysteriaClientImpl
@@ -41,6 +44,8 @@ class BedlamVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client: HysteriaClient by injected { hysteriaClient }
     private val json: Json by injected { json }
+    private val appFilterRepository: AppFilterRepository by injected { appFilterRepository }
+    private var currentAppFilter: AppFilter = AppFilter()
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockJob: Job? = null
     private var networkListener: DefaultNetworkListener? = null
@@ -123,6 +128,7 @@ class BedlamVpnService : VpnService() {
             return START_NOT_STICKY
         }
         connectionName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty().ifEmpty { config.name }
+        currentAppFilter = runBlocking { appFilterRepository.get() }
 
         startAsForeground()
         acquireWakeLock()
@@ -161,9 +167,31 @@ class BedlamVpnService : VpnService() {
             .addDnsServer("1.0.0.1")
             .addDnsServer("2606:4700:4700::1111")
             .addDnsServer("2606:4700:4700::1001")
+            .applyAppFilter(currentAppFilter)
             .establish()
             ?: throw IllegalStateException("VpnService.establish() returned null")
         return pfd.detachFd()
+    }
+
+    private fun Builder.applyAppFilter(filter: AppFilter): Builder {
+        when (filter.mode) {
+            AppFilterMode.All -> Unit
+            AppFilterMode.Allowlist -> filter.packages.forEach { pkg ->
+                try {
+                    addAllowedApplication(pkg)
+                } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+                    Log.w(TAG, "Allowlist package not installed: $pkg")
+                }
+            }
+            AppFilterMode.Blocklist -> filter.packages.forEach { pkg ->
+                try {
+                    addDisallowedApplication(pkg)
+                } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+                    Log.w(TAG, "Blocklist package not installed: $pkg")
+                }
+            }
+        }
+        return this
     }
 
     private fun parsePrefix(cidr: String): Pair<String, Int> {
