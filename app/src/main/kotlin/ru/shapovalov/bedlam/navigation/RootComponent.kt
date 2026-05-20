@@ -8,24 +8,19 @@ import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import me.tatarka.inject.annotations.Assisted
-import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
+import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponentFactory
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
+import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponentFactory
 
-@Inject
 class RootComponent(
-    dashboardFactory: (
-        ComponentContext,
-        DashboardComponent.OnStartVpn,
-        DashboardComponent.OnStopVpn,
-    ) -> DashboardComponent,
-    settingsFactory: (ComponentContext) -> SettingsComponent,
+    componentContext: ComponentContext,
+    private val dashboardFactory: DashboardComponentFactory,
+    private val settingsFactory: SettingsComponentFactory,
     private val json: Json,
-    @Assisted componentContext: ComponentContext,
-    @Assisted private val onStartVpn: OnStartVpn,
-    @Assisted private val onStopVpn: OnStopVpn,
+    private val onStartVpn: OnStartVpn,
+    private val onStopVpn: OnStopVpn,
 ) : ComponentContext by componentContext {
 
     private val navigation = StackNavigation<Config>()
@@ -38,14 +33,14 @@ class RootComponent(
         childFactory = { config, ctx ->
             when (config) {
                 Config.Dashboard -> Child.Dashboard(
-                    dashboardFactory(
+                    dashboardFactory.create(
                         ctx,
                         DashboardComponent.OnStartVpn { profile -> dispatchStartVpn(profile) },
                         DashboardComponent.OnStopVpn { onStopVpn.invoke() },
                     )
                 )
 
-                Config.Settings -> Child.Settings(settingsFactory(ctx))
+                Config.Settings -> Child.Settings(settingsFactory.create(ctx))
             }
         },
     )

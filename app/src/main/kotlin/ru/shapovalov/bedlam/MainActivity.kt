@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
         ensureNotificationPermission()
 
         val rootContext = defaultComponentContext()
-        val root = appComponent.rootComponentFactory(
+        val root = appComponent.rootComponentFactory.create(
             rootContext,
             RootComponent.OnStartVpn { _, configJson, profileName ->
                 requestVpnPermissionThen { startVpnService(configJson, profileName) }

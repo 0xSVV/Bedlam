@@ -8,14 +8,12 @@ import com.arkivanov.decompose.router.stack.pop
 import com.arkivanov.decompose.router.stack.pushNew
 import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
-import me.tatarka.inject.annotations.Assisted
-import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
+import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponentFactory
 
-@Inject
 class SettingsComponent(
-    appSelectionFactory: (ComponentContext, AppSelectionComponent.OnBack) -> AppSelectionComponent,
-    @Assisted componentContext: ComponentContext,
+    componentContext: ComponentContext,
+    private val appSelectionFactory: AppSelectionComponentFactory,
 ) : ComponentContext by componentContext {
 
     private val navigation = StackNavigation<Config>()
@@ -29,7 +27,7 @@ class SettingsComponent(
             when (config) {
                 Config.Root -> Child.Root
                 Config.AppSelection -> Child.AppSelection(
-                    appSelectionFactory(ctx, AppSelectionComponent.OnBack { navigation.pop() })
+                    appSelectionFactory.create(ctx, AppSelectionComponent.OnBack { navigation.pop() })
                 )
             }
         },

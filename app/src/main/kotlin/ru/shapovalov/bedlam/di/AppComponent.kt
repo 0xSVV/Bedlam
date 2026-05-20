@@ -2,14 +2,13 @@ package ru.shapovalov.bedlam.di
 
 import android.app.Application
 import android.content.Context
-import com.arkivanov.decompose.ComponentContext
 import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Component
 import me.tatarka.inject.annotations.Provides
 import ru.shapovalov.bedlam.core.appfilter.di.AppFilterModule
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.core.profile.di.ProfileModule
-import ru.shapovalov.bedlam.navigation.RootComponent
+import ru.shapovalov.bedlam.navigation.RootComponentFactory
 import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.HysteriaClient
 
@@ -23,7 +22,7 @@ abstract class AppComponent(
     abstract val json: Json
     abstract val appFilterRepository: AppFilterRepository
 
-    abstract val rootComponentFactory: (ComponentContext, RootComponent.OnStartVpn, RootComponent.OnStopVpn) -> RootComponent
+    abstract val rootComponentFactory: RootComponentFactory
 
     @get:Provides
     val context: Context
@@ -32,5 +31,4 @@ abstract class AppComponent(
     @AppScope
     @Provides
     fun provideHysteriaClient(): HysteriaClient = HysteriaClientImpl()
-
 }
