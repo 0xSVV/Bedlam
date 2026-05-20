@@ -11,19 +11,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import me.tatarka.inject.annotations.Assisted
-import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 
-@Inject
 class DashboardComponent(
-    storeProviderProvider: () -> DashboardStoreProvider,
-    @Assisted componentContext: ComponentContext,
-    @Assisted private val onStartVpn: OnStartVpn,
-    @Assisted private val onStopVpn: OnStopVpn,
+    componentContext: ComponentContext,
+    storeFactory: DashboardStoreFactory,
+    private val onStartVpn: OnStartVpn,
+    private val onStopVpn: OnStopVpn,
 ) : ComponentContext by componentContext {
 
-    private val store = instanceKeeper.getStore { storeProviderProvider().provide() }
+    private val store = instanceKeeper.getStore { storeFactory.create() }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val state: StateFlow<DashboardStore.State> = store.stateFlow(scope)
