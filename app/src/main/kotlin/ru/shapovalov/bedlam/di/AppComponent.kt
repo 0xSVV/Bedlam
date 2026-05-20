@@ -8,6 +8,7 @@ import me.tatarka.inject.annotations.Provides
 import ru.shapovalov.bedlam.core.appfilter.di.AppFilterModule
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.core.profile.di.ProfileModule
+import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
 import ru.shapovalov.bedlam.feature.session.di.SessionModule
 import ru.shapovalov.bedlam.navigation.RootComponentFactory
 import ru.shapovalov.hysteria.HysteriaClientImpl
@@ -22,6 +23,7 @@ abstract class AppComponent(
     abstract val hysteriaClient: HysteriaClient
     abstract val json: Json
     abstract val appFilterRepository: AppFilterRepository
+    abstract val logBuffer: LogBuffer
 
     abstract val rootComponentFactory: RootComponentFactory
 

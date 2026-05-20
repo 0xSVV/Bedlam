@@ -12,5 +12,6 @@ class BedlamApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         component = AppComponent::class.create(this)
+        component.logBuffer
     }
 }

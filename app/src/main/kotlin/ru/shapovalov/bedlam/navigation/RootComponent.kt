@@ -12,6 +12,8 @@ import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponentFactory
+import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponent
+import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponentFactory
 import ru.shapovalov.bedlam.feature.session.presentation.SessionComponent
 import ru.shapovalov.bedlam.feature.session.presentation.SessionComponentFactory
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
@@ -22,6 +24,7 @@ class RootComponent(
     private val dashboardFactory: DashboardComponentFactory,
     private val settingsFactory: SettingsComponentFactory,
     private val sessionFactory: SessionComponentFactory,
+    private val logsFactory: LogsComponentFactory,
     private val json: Json,
     private val onStartVpn: OnStartVpn,
     private val onStopVpn: OnStopVpn,
@@ -47,6 +50,8 @@ class RootComponent(
 
                 Config.Settings -> Child.Settings(settingsFactory.create(ctx))
 
+                Config.Logs -> Child.Logs(logsFactory.create(ctx))
+
                 Config.Session -> Child.Session(
                     sessionFactory.create(ctx, SessionComponent.OnBack { navigation.pop() })
                 )
@@ -58,6 +63,7 @@ class RootComponent(
         val target = when (tab) {
             Tab.Dashboard -> Config.Dashboard
             Tab.Settings -> Config.Settings
+            Tab.Logs -> Config.Logs
         }
         navigation.bringToFront(target)
     }
@@ -78,12 +84,16 @@ class RootComponent(
             override val tab: Tab get() = Tab.Settings
         }
 
+        data class Logs(val component: LogsComponent) : Child {
+            override val tab: Tab get() = Tab.Logs
+        }
+
         data class Session(val component: SessionComponent) : Child {
             override val tab: Tab get() = Tab.Dashboard
         }
     }
 
-    enum class Tab { Dashboard, Settings }
+    enum class Tab { Dashboard, Settings, Logs }
 
     fun interface OnStartVpn { fun invoke(profileId: String, configJson: String, profileName: String) }
     fun interface OnStopVpn { fun invoke() }
@@ -95,6 +105,9 @@ class RootComponent(
 
         @Serializable
         data object Settings : Config
+
+        @Serializable
+        data object Logs : Config
 
         @Serializable
         data object Session : Config
