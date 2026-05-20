@@ -9,18 +9,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
-import me.tatarka.inject.annotations.Assisted
-import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
 
-@Inject
 class AppSelectionComponent(
-    storeProviderProvider: () -> AppSelectionStoreProvider,
-    @Assisted componentContext: ComponentContext,
-    @Assisted private val onBack: OnBack,
+    componentContext: ComponentContext,
+    storeFactory: AppSelectionStoreFactory,
+    private val onBack: OnBack,
 ) : ComponentContext by componentContext {
 
-    private val store = instanceKeeper.getStore { storeProviderProvider().provide() }
+    private val store = instanceKeeper.getStore { storeFactory.create() }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val state: StateFlow<AppSelectionStore.State> = store.stateFlow(scope)
