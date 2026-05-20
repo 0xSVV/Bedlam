@@ -58,4 +58,25 @@
     <string name="app_filter_mode_all">All apps</string>
     <string name="app_filter_mode_allowlist">Only selected</string>
     <string name="app_filter_mode_blocklist">All except selected</string>
+
+    <string name="dashboard_open_session_cd">Open session details</string>
+
+    <string name="session_title">Session</string>
+    <string name="session_action_refresh_cd">Refresh</string>
+    <string name="session_action_retry">Retry</string>
+    <string name="session_error_title">Could not load session</string>
+    <string name="session_ip_explainer">Your IP address is a unique identifier associated with your online activity, similar to a return address on a letter.</string>
+
+    <string name="session_field_ipv4">IPv4</string>
+    <string name="session_field_ipv6">IPv6</string>
+    <string name="session_field_asn">ASN</string>
+    <string name="session_field_as_org">AS Organization</string>
+    <string name="session_field_country">Country</string>
+    <string name="session_field_city">City</string>
+    <string name="session_field_region">Region</string>
+    <string name="session_field_latitude">Latitude</string>
+    <string name="session_field_longitude">Longitude</string>
+
+    <string name="session_speed_test_title">Speed Test</string>
+    <string name="session_speed_test_subtitle">Test your Internet connection.</string>
 </resources>

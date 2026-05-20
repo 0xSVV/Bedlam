@@ -11,5 +11,12 @@ class DashboardComponentFactory(
         componentContext: ComponentContext,
         onStartVpn: DashboardComponent.OnStartVpn,
         onStopVpn: DashboardComponent.OnStopVpn,
-    ): DashboardComponent = DashboardComponent(componentContext, storeFactory, onStartVpn, onStopVpn)
+        onOpenSession: DashboardComponent.OnOpenSession,
+    ): DashboardComponent = DashboardComponent(
+        componentContext,
+        storeFactory,
+        onStartVpn,
+        onStopVpn,
+        onOpenSession,
+    )
 }

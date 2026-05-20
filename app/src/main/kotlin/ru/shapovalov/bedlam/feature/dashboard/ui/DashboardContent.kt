@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
@@ -110,6 +111,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 connectedSinceMillis = state.connectedSinceMillis,
                 hasActiveProfile = state.activeProfile != null,
                 onToggle = component::onToggleConnection,
+                onOpenSession = component::onOpenSession,
             )
 
             Spacer(Modifier.height(spacing.xLarge))
@@ -178,6 +180,7 @@ private fun ConnectionHero(
     connectedSinceMillis: Long?,
     hasActiveProfile: Boolean,
     onToggle: () -> Unit,
+    onOpenSession: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     val isConnected = connectionState is ConnectionState.Connected
@@ -247,16 +250,25 @@ private fun ConnectionHero(
             }
         }
         Spacer(Modifier.height(spacing.medium))
+        val chipLabelColor = when (connectionState) {
+            is ConnectionState.Connected -> MaterialTheme.colorScheme.primary
+            is ConnectionState.Error -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        val openSessionCd = stringResource(R.string.dashboard_open_session_cd)
         AssistChip(
-            onClick = {},
+            onClick = onOpenSession,
             label = { Text(connectionState.displayText()) },
-            colors = AssistChipDefaults.assistChipColors(
-                labelColor = when (connectionState) {
-                    is ConnectionState.Connected -> MaterialTheme.colorScheme.primary
-                    is ConnectionState.Error -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            ),
+            trailingIcon = {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = chipLabelColor,
+                    modifier = Modifier.size(18.dp),
+                )
+            },
+            colors = AssistChipDefaults.assistChipColors(labelColor = chipLabelColor),
+            modifier = Modifier.semantics { contentDescription = openSessionCd },
         )
         if (!hasActiveProfile && connectionState is ConnectionState.Disconnected) {
             Spacer(Modifier.height(spacing.small))

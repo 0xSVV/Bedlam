@@ -5,12 +5,15 @@ import com.arkivanov.decompose.router.stack.ChildStack
 import com.arkivanov.decompose.router.stack.StackNavigation
 import com.arkivanov.decompose.router.stack.bringToFront
 import com.arkivanov.decompose.router.stack.childStack
+import com.arkivanov.decompose.router.stack.pop
 import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponentFactory
+import ru.shapovalov.bedlam.feature.session.presentation.SessionComponent
+import ru.shapovalov.bedlam.feature.session.presentation.SessionComponentFactory
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponentFactory
 
@@ -18,6 +21,7 @@ class RootComponent(
     componentContext: ComponentContext,
     private val dashboardFactory: DashboardComponentFactory,
     private val settingsFactory: SettingsComponentFactory,
+    private val sessionFactory: SessionComponentFactory,
     private val json: Json,
     private val onStartVpn: OnStartVpn,
     private val onStopVpn: OnStopVpn,
@@ -37,10 +41,15 @@ class RootComponent(
                         ctx,
                         DashboardComponent.OnStartVpn { profile -> dispatchStartVpn(profile) },
                         DashboardComponent.OnStopVpn { onStopVpn.invoke() },
+                        DashboardComponent.OnOpenSession { navigation.bringToFront(Config.Session) },
                     )
                 )
 
                 Config.Settings -> Child.Settings(settingsFactory.create(ctx))
+
+                Config.Session -> Child.Session(
+                    sessionFactory.create(ctx, SessionComponent.OnBack { navigation.pop() })
+                )
             }
         },
     )
@@ -68,6 +77,10 @@ class RootComponent(
         data class Settings(val component: SettingsComponent) : Child {
             override val tab: Tab get() = Tab.Settings
         }
+
+        data class Session(val component: SessionComponent) : Child {
+            override val tab: Tab get() = Tab.Dashboard
+        }
     }
 
     enum class Tab { Dashboard, Settings }
@@ -82,5 +95,8 @@ class RootComponent(
 
         @Serializable
         data object Settings : Config
+
+        @Serializable
+        data object Session : Config
     }
 }

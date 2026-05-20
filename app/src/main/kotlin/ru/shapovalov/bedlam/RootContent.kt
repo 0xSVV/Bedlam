@@ -20,6 +20,7 @@ import com.arkivanov.decompose.extensions.compose.stack.animation.fade
 import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import ru.shapovalov.bedlam.feature.dashboard.ui.DashboardContent
+import ru.shapovalov.bedlam.feature.session.ui.SessionContent
 import ru.shapovalov.bedlam.feature.settings.ui.SettingsContent
 import ru.shapovalov.bedlam.navigation.RootComponent
 import ru.shapovalov.bedlam.navigation.RootComponent.Child
@@ -53,6 +54,7 @@ fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
             when (val child = created.instance) {
                 is Child.Dashboard -> DashboardContent(child.component)
                 is Child.Settings -> SettingsContent(child.component)
+                is Child.Session -> SessionContent(child.component)
             }
         }
     }
