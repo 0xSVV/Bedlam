@@ -46,10 +46,10 @@ class MainActivity : ComponentActivity() {
         val rootContext = defaultComponentContext()
         val root = appComponent.rootComponentFactory.create(
             rootContext,
-            RootComponent.OnStartVpn { _, configJson, profileName ->
+            { _, configJson, profileName ->
                 requestVpnPermissionThen { startVpnService(configJson, profileName) }
             },
-            RootComponent.OnStopVpn { stopVpnService() },
+            { stopVpnService() },
         )
 
         setContent { BedlamTheme { RootContent(root) } }
