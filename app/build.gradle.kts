@@ -82,4 +82,13 @@ dependencies {
 
     implementation(libs.kotlin.inject.runtime)
     ksp(libs.kotlin.inject.compiler)
+
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.junit.jupiter.params)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    testImplementation(libs.kotlinx.coroutines.test)
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
