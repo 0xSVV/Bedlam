@@ -26,6 +26,7 @@ import ru.shapovalov.hysteria.api.DisconnectReason
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
 import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
+import ru.shapovalov.hysteria.api.TunConfig
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.toJson
 import java.util.concurrent.atomic.AtomicReference
@@ -44,6 +45,7 @@ class HysteriaClientImpl : HysteriaClient {
 
     override suspend fun start(
         config: HysteriaConfig,
+        tunConfig: TunConfig,
         protector: HysteriaClient.SocketProtector,
         tun: HysteriaClient.TunFactory,
     ) = sessionLock.withLock {
@@ -79,8 +81,8 @@ class HysteriaClientImpl : HysteriaClient {
                 )
                 session = s
                 try {
-                    val fd = tun.create(TUN_MTU)
-                    s.startTUN(fd, TUN_MTU, TUN_INET4_PREFIX, TUN_INET6_PREFIX)
+                    val fd = tun.create(tunConfig.mtu)
+                    s.startTUN(fd, tunConfig.mtu, tunConfig.ipv4Prefix, tunConfig.ipv6Prefix)
                 } catch (t: Throwable) {
                     closeSessionLocked()
                     throw t
@@ -144,9 +146,6 @@ class HysteriaClientImpl : HysteriaClient {
 
     companion object {
         private const val TAG = "HysteriaClient"
-        private const val TUN_MTU = 1280
-        const val TUN_INET4_PREFIX: String = "172.19.0.1/30"
-        const val TUN_INET6_PREFIX: String = "fdfe:dcba:9876::1/126"
     }
 }
 

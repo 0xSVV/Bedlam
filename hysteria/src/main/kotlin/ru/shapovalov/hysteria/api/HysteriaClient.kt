@@ -47,6 +47,7 @@ interface HysteriaClient {
      */
     suspend fun start(
         config: HysteriaConfig,
+        tunConfig: TunConfig = TunConfig.Default,
         protector: SocketProtector,
         tun: TunFactory,
     )

@@ -34,9 +34,9 @@ import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
-import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.DisconnectReason
 import ru.shapovalov.hysteria.api.HysteriaClient
+import ru.shapovalov.hysteria.api.TunConfig
 import ru.shapovalov.hysteria.config.HysteriaConfig
 
 @SuppressLint("VpnServicePolicy")
@@ -140,6 +140,7 @@ class BedlamVpnService : VpnService() {
             try {
                 client.start(
                     config = config,
+                    tunConfig = TunConfig.Default,
                     protector = { fd -> protect(fd) },
                     tun = { mtu -> establishTun(mtu) },
                 )
@@ -153,8 +154,8 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun establishTun(mtu: Int): Int {
-        val (v4Addr, v4Prefix) = parsePrefix(HysteriaClientImpl.TUN_INET4_PREFIX)
-        val (v6Addr, v6Prefix) = parsePrefix(HysteriaClientImpl.TUN_INET6_PREFIX)
+        val (v4Addr, v4Prefix) = parsePrefix(TunConfig.DEFAULT_IPV4_PREFIX)
+        val (v6Addr, v6Prefix) = parsePrefix(TunConfig.DEFAULT_IPV6_PREFIX)
         val pfd = Builder()
             .setSession(connectionName.ifEmpty { getString(R.string.vpn_session_default) })
             .setMtu(mtu)
