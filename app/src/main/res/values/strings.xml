@@ -50,7 +50,55 @@
     <string name="settings_apps_title">Apps to proxy</string>
     <string name="settings_apps_subtitle">Choose which apps route through the tunnel</string>
 
+    <string name="settings_routing_title">Routing</string>
+    <string name="settings_routing_subtitle">LAN bypass, IPv6, DNS, direct routes and GeoIP bypass</string>
+
     <string name="action_back">Back</string>
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_done">Done</string>
+
+    <string name="routing_title">Routing</string>
+    <string name="routing_reconnect_hint">Changes take effect on the next tunnel start.</string>
+
+    <string name="routing_bypass_lan_title">Bypass LAN</string>
+    <string name="routing_bypass_lan_subtitle">RFC1918, link-local and multicast skip the tunnel.</string>
+
+    <string name="routing_ipv6_title">IPv6</string>
+    <string name="routing_ipv6_enabled">Enabled</string>
+    <string name="routing_ipv6_disabled">Disabled</string>
+    <string name="routing_ipv6_bypass_only">Bypass-only</string>
+
+    <string name="routing_dns_title">DNS</string>
+    <string name="routing_dns_system">System</string>
+    <string name="routing_dns_cloudflare">Cloudflare</string>
+    <string name="routing_dns_google">Google</string>
+    <string name="routing_dns_custom">Custom</string>
+    <string name="routing_dns_system_warning">System DNS bypasses the tunnel — your LAN and ISP can see queries.</string>
+    <string name="routing_dns_custom_label">DNS servers</string>
+    <string name="routing_dns_custom_placeholder">9.9.9.9, 149.112.112.112</string>
+
+    <string name="routing_direct_routes_title">Direct routes</string>
+    <string name="routing_direct_routes_hint">CIDRs that always skip the tunnel.</string>
+    <string name="routing_direct_routes_empty">No direct routes yet.</string>
+    <string name="routing_direct_route_add_cd">Add direct route</string>
+    <string name="routing_direct_route_delete_cd">Delete direct route</string>
+    <string name="routing_direct_route_add_title">Add direct route</string>
+    <string name="routing_direct_route_edit_title">Edit direct route</string>
+    <string name="routing_direct_route_cidr_label">CIDR</string>
+    <string name="routing_direct_route_comment_label">Comment</string>
+
+    <string name="routing_geo_title">Bypass by country</string>
+    <string name="routing_geo_hint">Skip the tunnel for IPs in selected countries (v2fly GeoIP).</string>
+    <string name="routing_geo_download">Download GeoIP database</string>
+    <string name="routing_geo_update">Update</string>
+    <string name="routing_geo_remove">Remove</string>
+    <string name="routing_geo_version">Version</string>
+    <string name="routing_geo_size">Size</string>
+    <string name="routing_geo_failed">Update failed: %1$s</string>
+    <string name="routing_geo_countries_title">Countries</string>
+    <string name="routing_geo_countries_none">None selected</string>
+    <string name="routing_geo_countries_empty">Database is empty.</string>
 
     <string name="app_selection_title">Apps to proxy</string>
     <string name="app_selection_search_hint">Search apps</string>

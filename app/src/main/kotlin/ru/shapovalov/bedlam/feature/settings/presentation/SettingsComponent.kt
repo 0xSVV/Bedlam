@@ -10,10 +10,13 @@ import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
 import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
 import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponentFactory
+import ru.shapovalov.bedlam.feature.routing.presentation.RoutingComponent
+import ru.shapovalov.bedlam.feature.routing.presentation.RoutingComponentFactory
 
 class SettingsComponent(
     componentContext: ComponentContext,
     private val appSelectionFactory: AppSelectionComponentFactory,
+    private val routingFactory: RoutingComponentFactory,
 ) : ComponentContext by componentContext {
 
     private val navigation = StackNavigation<Config>()
@@ -29,6 +32,9 @@ class SettingsComponent(
                 Config.AppSelection -> Child.AppSelection(
                     appSelectionFactory.create(ctx, AppSelectionComponent.OnBack { navigation.pop() })
                 )
+                Config.Routing -> Child.Routing(
+                    routingFactory.create(ctx, RoutingComponent.OnBack { navigation.pop() })
+                )
             }
         },
     )
@@ -37,9 +43,14 @@ class SettingsComponent(
         navigation.pushNew(Config.AppSelection)
     }
 
+    fun onOpenRouting() {
+        navigation.pushNew(Config.Routing)
+    }
+
     sealed interface Child {
         data object Root : Child
         data class AppSelection(val component: AppSelectionComponent) : Child
+        data class Routing(val component: RoutingComponent) : Child
     }
 
     @Serializable
@@ -49,5 +60,8 @@ class SettingsComponent(
 
         @Serializable
         data object AppSelection : Config
+
+        @Serializable
+        data object Routing : Config
     }
 }
