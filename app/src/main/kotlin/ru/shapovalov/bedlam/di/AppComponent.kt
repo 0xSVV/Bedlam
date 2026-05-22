@@ -9,6 +9,7 @@ import ru.shapovalov.bedlam.core.appfilter.di.AppFilterModule
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.core.geoip.di.GeoIpModule
 import ru.shapovalov.bedlam.core.geoip.domain.repository.GeoIpDatabase
+import ru.shapovalov.bedlam.core.geoip.domain.repository.GeoIpUpdater
 import ru.shapovalov.bedlam.core.profile.di.ProfileModule
 import ru.shapovalov.bedlam.core.routing.di.RoutingModule
 import ru.shapovalov.bedlam.core.routing.domain.repository.RoutingRepository
@@ -39,6 +40,7 @@ abstract class AppComponent(
     abstract val buildRoutePlan: BuildRoutePlanUseCase
     abstract val routePlanApplier: RoutePlanApplier
     abstract val geoIpDatabase: GeoIpDatabase
+    abstract val geoIpUpdater: GeoIpUpdater
     abstract val logBuffer: LogBuffer
 
     abstract val rootComponentFactory: RootComponentFactory
