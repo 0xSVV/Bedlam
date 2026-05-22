@@ -1,10 +1,14 @@
 package ru.shapovalov.bedlam.feature.routing.ui
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +17,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -116,41 +123,73 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
             )
         },
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = spacing.large, vertical = spacing.medium),
+                .padding(padding),
+            contentPadding = PaddingValues(
+                horizontal = spacing.large,
+                vertical = spacing.medium,
+            ),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
-            BasicsCard(
-                bypassLan = state.config.bypassLan,
-                ipv6Mode = state.config.ipv6Mode,
-                dnsMode = state.config.dnsMode,
-                customDns = state.config.customDns,
-                onSetBypassLan = component::onSetBypassLan,
-                onSetIpv6Mode = component::onSetIpv6Mode,
-                onSetDnsMode = component::onSetDnsMode,
-                onSetCustomDns = component::onSetCustomDns,
-            )
+            item(key = "basics") {
+                BasicsCard(
+                    modifier = Modifier.animateItem(),
+                    bypassLan = state.config.bypassLan,
+                    ipv6Mode = state.config.ipv6Mode,
+                    dnsMode = state.config.dnsMode,
+                    customDns = state.config.customDns,
+                    onSetBypassLan = component::onSetBypassLan,
+                    onSetIpv6Mode = component::onSetIpv6Mode,
+                    onSetDnsMode = component::onSetDnsMode,
+                    onSetCustomDns = component::onSetCustomDns,
+                )
+            }
 
-            SourcesCard(
-                sources = state.config.sources,
-                isRefreshing = state.isRefreshing,
-                onAdd = { showAddSource = true },
-                onPresets = { showPresets = true },
-                onToggle = component::onSetSourceEnabled,
-                onDelete = component::onRemoveSource,
-            )
+            item(key = "sources-header") {
+                SourcesHeaderCard(
+                    modifier = Modifier.animateItem(),
+                    onAdd = { showAddSource = true },
+                    onPresets = { showPresets = true },
+                )
+            }
 
-            Text(
-                text = stringResource(R.string.routing_reconnect_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = spacing.small),
-            )
-            Spacer(Modifier.height(spacing.large))
+            if (state.config.sources.isEmpty()) {
+                item(key = "sources-empty") {
+                    EmptySourcesRow(modifier = Modifier.animateItem())
+                }
+            } else {
+                items(
+                    items = state.config.sources,
+                    key = { it.source.id },
+                ) { resolved ->
+                    SwipeableSourceCard(
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = tween(220),
+                            fadeOutSpec = tween(180),
+                            placementSpec = tween(220),
+                        ),
+                        resolved = resolved,
+                        isRefreshing = state.isRefreshing,
+                        onToggle = component::onSetSourceEnabled,
+                        onDelete = component::onRemoveSource,
+                    )
+                }
+            }
+
+            item(key = "reconnect-hint") {
+                Text(
+                    text = stringResource(R.string.routing_reconnect_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .animateItem()
+                        .padding(horizontal = spacing.small),
+                )
+            }
+
+            item(key = "trailing-space") { Spacer(Modifier.height(spacing.large)) }
         }
     }
 
@@ -181,6 +220,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
 
 @Composable
 private fun BasicsCard(
+    modifier: Modifier = Modifier,
     bypassLan: Boolean,
     ipv6Mode: Ipv6Mode,
     dnsMode: DnsMode,
@@ -194,7 +234,7 @@ private fun BasicsCard(
     val ipv6Options = remember { Ipv6Mode.entries.toList() }
     val dnsOptions = remember { DnsMode.entries.toList() }
 
-    ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
+    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
             ToggleRow(
                 title = stringResource(R.string.routing_bypass_lan_title),
@@ -228,16 +268,13 @@ private fun BasicsCard(
 }
 
 @Composable
-private fun SourcesCard(
-    sources: List<ResolvedSource>,
-    isRefreshing: Boolean,
+private fun SourcesHeaderCard(
+    modifier: Modifier = Modifier,
     onAdd: () -> Unit,
     onPresets: () -> Unit,
-    onToggle: (String, Boolean) -> Unit,
-    onDelete: (String) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
-    ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
+    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
             Row(
                 modifier = Modifier
@@ -261,42 +298,33 @@ private fun SourcesCard(
                     Icon(Icons.Default.Add, contentDescription = stringResource(R.string.routing_sources_add_cd))
                 }
             }
-
             Row(
                 modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.xSmall),
                 horizontalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
                 AssistChip(onClick = onPresets, label = { Text(stringResource(R.string.routing_presets_chip)) })
             }
-
-            if (sources.isEmpty()) {
-                Text(
-                    stringResource(R.string.routing_sources_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(spacing.large),
-                )
-            } else {
-                Spacer(Modifier.height(spacing.xSmall))
-                sources.forEachIndexed { idx, resolved ->
-                    key(resolved.source.id) {
-                        SwipeableSourceRow(
-                            resolved = resolved,
-                            isRefreshing = isRefreshing,
-                            onToggle = onToggle,
-                            onDelete = onDelete,
-                        )
-                    }
-                    if (idx != sources.lastIndex) DividerRow()
-                }
-            }
         }
+    }
+}
+
+@Composable
+private fun EmptySourcesRow(modifier: Modifier = Modifier) {
+    val spacing = MaterialTheme.spacing
+    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
+        Text(
+            stringResource(R.string.routing_sources_empty),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(spacing.large),
+        )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeableSourceRow(
+private fun SwipeableSourceCard(
+    modifier: Modifier = Modifier,
     resolved: ResolvedSource,
     isRefreshing: Boolean,
     onToggle: (String, Boolean) -> Unit,
@@ -329,11 +357,16 @@ private fun SwipeableSourceRow(
         positionalThreshold = { totalDistance -> totalDistance * 0.45f },
     )
 
-    SwipeToDismissBox(
-        state = state,
-        backgroundContent = { SwipeBackground(state.dismissDirection, resolved.source.enabled) },
-        content = { SourceRowContent(resolved, isRefreshing) },
-    )
+    ElevatedCard(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        SwipeToDismissBox(
+            state = state,
+            backgroundContent = { SwipeBackground(state.dismissDirection, resolved.source.enabled) },
+            content = { SourceRowContent(resolved, isRefreshing) },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
