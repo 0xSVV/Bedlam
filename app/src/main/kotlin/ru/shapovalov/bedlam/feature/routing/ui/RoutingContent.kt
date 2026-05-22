@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -43,12 +44,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -301,17 +302,25 @@ private fun SwipeableSourceRow(
     onToggle: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
 ) {
+    // rememberSwipeToDismissBoxState captures `confirmValueChange` once via
+    // rememberSaveable. To see live values inside that pinned closure we route
+    // them through rememberUpdatedState — the lambda reads State refs that
+    // always point at the most recent props.
+    val latestResolved by rememberUpdatedState(resolved)
+    val latestOnToggle by rememberUpdatedState(onToggle)
+    val latestOnDelete by rememberUpdatedState(onDelete)
+
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> {
-                    // Swipe right → delete
-                    onDelete(resolved.source.id)
+                SwipeToDismissBoxValue.EndToStart -> {
+                    // Swipe LEFT → delete (commit dismissal)
+                    latestOnDelete(latestResolved.source.id)
                     true
                 }
-                SwipeToDismissBoxValue.EndToStart -> {
-                    // Swipe left → toggle, then snap back
-                    onToggle(resolved.source.id, !resolved.source.enabled)
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    // Swipe RIGHT → toggle, snap back
+                    latestOnToggle(latestResolved.source.id, !latestResolved.source.enabled)
                     false
                 }
                 SwipeToDismissBoxValue.Settled -> false
@@ -319,13 +328,6 @@ private fun SwipeableSourceRow(
         },
         positionalThreshold = { totalDistance -> totalDistance * 0.45f },
     )
-
-    // After a toggle, the state needs to be reset to Settled (since we returned false).
-    LaunchedEffect(resolved.source.enabled) {
-        if (state.currentValue != SwipeToDismissBoxValue.Settled) {
-            state.reset()
-        }
-    }
 
     SwipeToDismissBox(
         state = state,
@@ -338,21 +340,23 @@ private fun SwipeableSourceRow(
 @Composable
 private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled: Boolean) {
     val spacing = MaterialTheme.spacing
-    val (bg, fg, icon, label, align) = when (direction) {
+    val spec: SwipeBgSpec = when (direction) {
+        // Swipe RIGHT — content moves right, background reveals on the LEFT.
         SwipeToDismissBoxValue.StartToEnd -> SwipeBgSpec(
+            bg = MaterialTheme.colorScheme.tertiaryContainer,
+            fg = MaterialTheme.colorScheme.onTertiaryContainer,
+            icon = if (currentlyEnabled) Icons.Default.Clear else Icons.Default.Check,
+            label = stringResource(
+                if (currentlyEnabled) R.string.routing_swipe_disable else R.string.routing_swipe_enable
+            ),
+            align = Alignment.CenterStart,
+        )
+        // Swipe LEFT — content moves left, background reveals on the RIGHT.
+        SwipeToDismissBoxValue.EndToStart -> SwipeBgSpec(
             bg = MaterialTheme.colorScheme.errorContainer,
             fg = MaterialTheme.colorScheme.onErrorContainer,
             icon = Icons.Default.Delete,
             label = stringResource(R.string.routing_sources_delete_cd),
-            align = Alignment.CenterStart,
-        )
-        SwipeToDismissBoxValue.EndToStart -> SwipeBgSpec(
-            bg = MaterialTheme.colorScheme.tertiaryContainer,
-            fg = MaterialTheme.colorScheme.onTertiaryContainer,
-            icon = if (currentlyEnabled) Icons.Default.Refresh else Icons.Default.Check,
-            label = stringResource(
-                if (currentlyEnabled) R.string.routing_swipe_disable else R.string.routing_swipe_enable
-            ),
             align = Alignment.CenterEnd,
         )
         SwipeToDismissBoxValue.Settled -> return
@@ -360,14 +364,14 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(bg)
+            .background(spec.bg)
             .padding(horizontal = spacing.large),
-        contentAlignment = align,
+        contentAlignment = spec.align,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = fg)
+            Icon(spec.icon, contentDescription = null, tint = spec.fg)
             Spacer(Modifier.width(spacing.small))
-            Text(label, style = MaterialTheme.typography.labelLarge, color = fg)
+            Text(spec.label, style = MaterialTheme.typography.labelLarge, color = spec.fg)
         }
     }
 }
@@ -384,7 +388,10 @@ private data class SwipeBgSpec(
 private fun SourceRowContent(resolved: ResolvedSource, isRefreshing: Boolean) {
     val spacing = MaterialTheme.spacing
     val dimmed = !resolved.source.enabled
-    val baseColor = MaterialTheme.colorScheme.surface
+    // Matches ElevatedCard's default containerColor so the row is opaque
+    // (covers the swipe-action background when at rest) yet blends with
+    // the surrounding card.
+    val baseColor = MaterialTheme.colorScheme.surfaceContainerLow
     Row(
         modifier = Modifier
             .fillMaxWidth()
