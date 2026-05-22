@@ -9,8 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
-import ru.shapovalov.bedlam.core.routing.domain.model.CountryCode
-import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteRule
+import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 
@@ -34,13 +33,12 @@ class RoutingComponent(
     fun onSetIpv6Mode(m: Ipv6Mode) = store.accept(RoutingStore.Intent.SetIpv6Mode(m))
     fun onSetDnsMode(m: DnsMode) = store.accept(RoutingStore.Intent.SetDnsMode(m))
     fun onSetCustomDns(servers: List<String>) = store.accept(RoutingStore.Intent.SetCustomDns(servers))
-    fun onUpsertDirectRoute(rule: DirectRouteRule) = store.accept(RoutingStore.Intent.UpsertDirectRoute(rule))
-    fun onRemoveDirectRoute(id: String) = store.accept(RoutingStore.Intent.RemoveDirectRoute(id))
-    fun onSetDirectRouteEnabled(id: String, enabled: Boolean) =
-        store.accept(RoutingStore.Intent.SetDirectRouteEnabled(id, enabled))
-    fun onToggleGeoCountry(c: CountryCode) = store.accept(RoutingStore.Intent.ToggleGeoCountry(c))
-    fun onDownloadGeoIp() = store.accept(RoutingStore.Intent.DownloadGeoIp)
-    fun onRemoveGeoIp() = store.accept(RoutingStore.Intent.RemoveGeoIp)
+    fun onAddSource(source: DirectRouteSource) = store.accept(RoutingStore.Intent.AddSource(source))
+    fun onRemoveSource(id: String) = store.accept(RoutingStore.Intent.RemoveSource(id))
+    fun onSetSourceEnabled(id: String, enabled: Boolean) =
+        store.accept(RoutingStore.Intent.SetSourceEnabled(id, enabled))
+    fun onAddPreset(presetId: String) = store.accept(RoutingStore.Intent.AddPreset(presetId))
+    fun onRefreshAll() = store.accept(RoutingStore.Intent.RefreshAll)
 
     fun interface OnBack { fun invoke() }
 }

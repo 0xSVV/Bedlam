@@ -51,7 +51,7 @@
     <string name="settings_apps_subtitle">Choose which apps route through the tunnel</string>
 
     <string name="settings_routing_title">Routing</string>
-    <string name="settings_routing_subtitle">LAN bypass, IPv6, DNS, direct routes and GeoIP bypass</string>
+    <string name="settings_routing_subtitle">LAN bypass, IPv6, DNS, direct routes by IP/ASN/domain</string>
 
     <string name="action_back">Back</string>
     <string name="action_save">Save</string>
@@ -78,27 +78,28 @@
     <string name="routing_dns_custom_label">DNS servers</string>
     <string name="routing_dns_custom_placeholder">9.9.9.9, 149.112.112.112</string>
 
-    <string name="routing_direct_routes_title">Direct routes</string>
-    <string name="routing_direct_routes_hint">CIDRs that always skip the tunnel.</string>
-    <string name="routing_direct_routes_empty">No direct routes yet.</string>
-    <string name="routing_direct_route_add_cd">Add direct route</string>
-    <string name="routing_direct_route_delete_cd">Delete direct route</string>
-    <string name="routing_direct_route_add_title">Add direct route</string>
-    <string name="routing_direct_route_edit_title">Edit direct route</string>
-    <string name="routing_direct_route_cidr_label">CIDR</string>
-    <string name="routing_direct_route_comment_label">Comment</string>
+    <string name="routing_sources_title">Direct routes</string>
+    <string name="routing_sources_hint">CIDRs, ASNs, or domains that skip the tunnel. ASNs and domains are re-resolved daily.</string>
+    <string name="routing_sources_empty">No direct routes yet. Add an IP/ASN/domain or pick a preset.</string>
+    <string name="routing_sources_add_cd">Add source</string>
+    <string name="routing_sources_delete_cd">Delete source</string>
+    <string name="routing_sources_add_title">Add direct route</string>
+    <string name="routing_sources_add_value_label">Value</string>
+    <string name="routing_sources_add_comment_label">Comment</string>
+    <string name="routing_refresh_cd">Refresh all sources</string>
+    <string name="routing_presets_chip">Add preset…</string>
+    <string name="routing_presets_title">Curated presets</string>
+    <string name="routing_preset_asn_count">%1$d ASNs</string>
 
-    <string name="routing_geo_title">Bypass by country</string>
-    <string name="routing_geo_hint">Skip the tunnel for IPs in selected countries (v2fly GeoIP).</string>
-    <string name="routing_geo_download">Download GeoIP database</string>
-    <string name="routing_geo_update">Update</string>
-    <string name="routing_geo_remove">Remove</string>
-    <string name="routing_geo_version">Version</string>
-    <string name="routing_geo_size">Size</string>
-    <string name="routing_geo_failed">Update failed: %1$s</string>
-    <string name="routing_geo_countries_title">Countries</string>
-    <string name="routing_geo_countries_none">None selected</string>
-    <string name="routing_geo_countries_empty">Database is empty.</string>
+    <string name="routing_kind_cidr">CIDR</string>
+    <string name="routing_kind_asn">ASN</string>
+    <string name="routing_kind_domain">Domain</string>
+
+    <string name="routing_source_resolving">Resolving…</string>
+    <string name="routing_source_pending">Awaiting first resolution</string>
+    <string name="routing_source_count">%1$d CIDRs</string>
+    <string name="routing_source_count_with_time">%1$d CIDRs · %2$s</string>
+    <string name="routing_source_error">Resolution failed: %1$s</string>
 
     <string name="app_selection_title">Apps to proxy</string>
     <string name="app_selection_search_hint">Search apps</string>

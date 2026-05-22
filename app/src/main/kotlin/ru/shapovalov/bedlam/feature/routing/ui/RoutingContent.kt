@@ -19,18 +19,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -52,12 +53,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.shapovalov.bedlam.R
-import ru.shapovalov.bedlam.core.geoip.domain.model.GeoIpUpdateState
+import ru.shapovalov.bedlam.core.routing.data.RoutePresets
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
-import ru.shapovalov.bedlam.core.routing.domain.model.CountryCode
-import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteRule
+import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
+import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
 import ru.shapovalov.bedlam.feature.routing.presentation.RoutingComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
 import java.util.UUID
@@ -67,9 +68,8 @@ import java.util.UUID
 fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
-    var editingRule by remember { mutableStateOf<DirectRouteRule?>(null) }
-    var creatingRule by remember { mutableStateOf(false) }
-    var showCountryPicker by remember { mutableStateOf(false) }
+    var showAddSource by remember { mutableStateOf(false) }
+    var showPresets by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -81,6 +81,17 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.action_back),
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = component::onRefreshAll,
+                        enabled = !state.isRefreshing && state.config.sources.isNotEmpty(),
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.routing_refresh_cd),
                         )
                     }
                 },
@@ -105,21 +116,16 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                 onSetDnsMode = component::onSetDnsMode,
                 onSetCustomDns = component::onSetCustomDns,
             )
-            DirectRoutesCard(
-                rules = state.config.directRoutes,
-                onToggle = component::onSetDirectRouteEnabled,
-                onEdit = { editingRule = it },
-                onAdd = { creatingRule = true },
-                onDelete = component::onRemoveDirectRoute,
+
+            SourcesCard(
+                sources = state.config.sources,
+                isRefreshing = state.isRefreshing,
+                onAdd = { showAddSource = true },
+                onPresets = { showPresets = true },
+                onToggle = component::onSetSourceEnabled,
+                onDelete = component::onRemoveSource,
             )
-            GeoBypassCard(
-                info = state.geoIpInfo,
-                updateState = state.geoIpUpdateState,
-                selected = state.config.geoDirectCountries,
-                onDownload = component::onDownloadGeoIp,
-                onRemove = component::onRemoveGeoIp,
-                onOpenPicker = { showCountryPicker = true },
-            )
+
             Text(
                 text = stringResource(R.string.routing_reconnect_hint),
                 style = MaterialTheme.typography.bodySmall,
@@ -130,24 +136,23 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
         }
     }
 
-    if (editingRule != null || creatingRule) {
-        DirectRouteEditorDialog(
-            existing = editingRule,
-            onDismiss = { editingRule = null; creatingRule = false },
-            onSave = {
-                component.onUpsertDirectRoute(it)
-                editingRule = null
-                creatingRule = false
+    if (showAddSource) {
+        AddSourceDialog(
+            onDismiss = { showAddSource = false },
+            onSave = { source ->
+                component.onAddSource(source)
+                showAddSource = false
             },
         )
     }
 
-    if (showCountryPicker) {
-        CountryPickerDialog(
-            available = state.availableCountries,
-            selected = state.config.geoDirectCountries,
-            onToggle = component::onToggleGeoCountry,
-            onDismiss = { showCountryPicker = false },
+    if (showPresets) {
+        PresetsDialog(
+            onDismiss = { showPresets = false },
+            onPick = {
+                component.onAddPreset(it)
+                showPresets = false
+            },
         )
     }
 }
@@ -164,10 +169,7 @@ private fun BasicsCard(
     onSetCustomDns: (List<String>) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-    ) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
             ToggleRow(
                 title = stringResource(R.string.routing_bypass_lan_title),
@@ -185,10 +187,8 @@ private fun BasicsCard(
             DividerRow()
             DropdownRow(
                 title = stringResource(R.string.routing_dns_title),
-                subtitle = if (dnsMode == DnsMode.System) {
-                    stringResource(R.string.routing_dns_system_warning)
-                } else null,
                 value = dnsMode.label(),
+                subtitle = if (dnsMode == DnsMode.System) stringResource(R.string.routing_dns_system_warning) else null,
                 options = DnsMode.entries.map { it to it.label() },
                 onPick = onSetDnsMode,
             )
@@ -197,6 +197,172 @@ private fun BasicsCard(
                 CustomDnsEditor(servers = customDns, onChange = onSetCustomDns)
             }
         }
+    }
+}
+
+@Composable
+private fun SourcesCard(
+    sources: List<ResolvedSource>,
+    isRefreshing: Boolean,
+    onAdd: () -> Unit,
+    onPresets: () -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    val spacing = MaterialTheme.spacing
+    ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
+        Column(modifier = Modifier.padding(vertical = spacing.small)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.large, vertical = spacing.small),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.routing_sources_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(Modifier.height(spacing.xSmall))
+                    Text(
+                        stringResource(R.string.routing_sources_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onAdd) {
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.routing_sources_add_cd))
+                }
+            }
+
+            Row(
+                modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.xSmall),
+                horizontalArrangement = Arrangement.spacedBy(spacing.small),
+            ) {
+                AssistChip(onClick = onPresets, label = { Text(stringResource(R.string.routing_presets_chip)) })
+            }
+
+            if (sources.isEmpty()) {
+                Text(
+                    stringResource(R.string.routing_sources_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(spacing.large),
+                )
+            } else {
+                sources.forEachIndexed { idx, resolved ->
+                    SourceRow(
+                        resolved = resolved,
+                        isRefreshing = isRefreshing,
+                        onToggle = { onToggle(resolved.source.id, it) },
+                        onDelete = { onDelete(resolved.source.id) },
+                    )
+                    if (idx != sources.lastIndex) DividerRow()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceRow(
+    resolved: ResolvedSource,
+    isRefreshing: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+) {
+    val spacing = MaterialTheme.spacing
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.large, vertical = spacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Switch(checked = resolved.source.enabled, onCheckedChange = onToggle)
+        Spacer(Modifier.width(spacing.medium))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                KindChip(resolved.source)
+                Spacer(Modifier.width(spacing.small))
+                Text(
+                    resolved.source.label(),
+                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (resolved.source.comment.isNotBlank()) {
+                Spacer(Modifier.height(spacing.xSmall))
+                Text(
+                    resolved.source.comment,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.height(spacing.xSmall))
+            Text(
+                resolutionSummary(resolved, isRefreshing),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (resolved.lastError != null) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = stringResource(R.string.routing_sources_delete_cd),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun KindChip(source: DirectRouteSource) {
+    val (label, color) = when (source) {
+        is DirectRouteSource.Cidr -> "CIDR" to MaterialTheme.colorScheme.primary
+        is DirectRouteSource.Asn -> "ASN" to MaterialTheme.colorScheme.tertiary
+        is DirectRouteSource.Domain -> "DNS" to MaterialTheme.colorScheme.secondary
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.18f))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = color,
+        )
+    }
+}
+
+@Composable
+private fun resolutionSummary(resolved: ResolvedSource, isRefreshing: Boolean): String {
+    val count = resolved.cidrs.size
+    if (isRefreshing && resolved.source !is DirectRouteSource.Cidr) {
+        return stringResource(R.string.routing_source_resolving)
+    }
+    resolved.lastError?.let { return stringResource(R.string.routing_source_error, it) }
+    if (count == 0 && resolved.source !is DirectRouteSource.Cidr) {
+        return stringResource(R.string.routing_source_pending)
+    }
+    val updated = resolved.lastResolvedMillis?.let { formatRelative(it) }
+    return if (updated != null) stringResource(R.string.routing_source_count_with_time, count, updated)
+    else stringResource(R.string.routing_source_count, count)
+}
+
+private fun formatRelative(millis: Long): String {
+    val delta = System.currentTimeMillis() - millis
+    val minutes = delta / 60_000
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "$minutes min ago"
+        minutes < 24 * 60 -> "${minutes / 60} h ago"
+        else -> "${minutes / 60 / 24} d ago"
     }
 }
 
@@ -218,11 +384,7 @@ private fun ToggleRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(spacing.xSmall))
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(spacing.medium))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
@@ -251,27 +413,16 @@ private fun <T> DropdownRow(
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 if (subtitle != null) {
                     Spacer(Modifier.height(spacing.xSmall))
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                    )
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                 }
             }
-            Text(
-                value,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Text(value, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (key, label) ->
                 DropdownMenuItem(
                     text = { Text(label) },
-                    onClick = {
-                        onPick(key)
-                        expanded = false
-                    },
+                    onClick = { onPick(key); expanded = false },
                 )
             }
         }
@@ -297,143 +448,58 @@ private fun CustomDnsEditor(servers: List<String>, onChange: (List<String>) -> U
     }
 }
 
-@Composable
-private fun DirectRoutesCard(
-    rules: List<DirectRouteRule>,
-    onToggle: (String, Boolean) -> Unit,
-    onEdit: (DirectRouteRule) -> Unit,
-    onAdd: () -> Unit,
-    onDelete: (String) -> Unit,
-) {
-    val spacing = MaterialTheme.spacing
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-    ) {
-        Column(modifier = Modifier.padding(vertical = spacing.small)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = spacing.large, vertical = spacing.small),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.routing_direct_routes_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onAdd) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.routing_direct_route_add_cd))
-                }
-            }
-            Text(
-                stringResource(R.string.routing_direct_routes_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.xSmall),
-            )
-            if (rules.isEmpty()) {
-                Text(
-                    stringResource(R.string.routing_direct_routes_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(spacing.large),
-                )
-            } else {
-                rules.forEachIndexed { idx, rule ->
-                    DirectRouteRow(
-                        rule = rule,
-                        onToggle = { onToggle(rule.id, it) },
-                        onEdit = { onEdit(rule) },
-                        onDelete = { onDelete(rule.id) },
-                    )
-                    if (idx != rules.lastIndex) DividerRow()
-                }
-            }
-        }
-    }
-}
+private enum class SourceKind { CIDR, ASN, DOMAIN }
 
 @Composable
-private fun DirectRouteRow(
-    rule: DirectRouteRule,
-    onToggle: (Boolean) -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    val spacing = MaterialTheme.spacing
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onEdit)
-            .padding(horizontal = spacing.large, vertical = spacing.medium),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Switch(checked = rule.enabled, onCheckedChange = onToggle)
-        Spacer(Modifier.width(spacing.medium))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                rule.cidr.asString(),
-                style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (rule.comment.isNotBlank()) {
-                Text(
-                    rule.comment,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = stringResource(R.string.routing_direct_route_delete_cd),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun DirectRouteEditorDialog(
-    existing: DirectRouteRule?,
+private fun AddSourceDialog(
     onDismiss: () -> Unit,
-    onSave: (DirectRouteRule) -> Unit,
+    onSave: (DirectRouteSource) -> Unit,
 ) {
-    var cidrText by remember { mutableStateOf(existing?.cidr?.asString().orEmpty()) }
-    var comment by remember { mutableStateOf(existing?.comment.orEmpty()) }
-    val parsed = Cidr.parseOrNull(cidrText)
-    val valid = parsed != null
+    var kind by remember { mutableStateOf(SourceKind.CIDR) }
+    var value by remember { mutableStateOf("") }
+    var comment by remember { mutableStateOf("") }
+    val parsed: DirectRouteSource? = remember(kind, value, comment) {
+        val v = value.trim()
+        if (v.isEmpty()) null else when (kind) {
+            SourceKind.CIDR -> Cidr.parseOrNull(v)?.let {
+                DirectRouteSource.Cidr(UUID.randomUUID().toString(), it, comment, true, 0)
+            }
+            SourceKind.ASN -> v.removePrefix("AS").removePrefix("as").toIntOrNull()?.let {
+                DirectRouteSource.Asn(UUID.randomUUID().toString(), it, comment, true, 0)
+            }
+            SourceKind.DOMAIN -> if (v.contains('.') && !v.contains(' ')) {
+                DirectRouteSource.Domain(UUID.randomUUID().toString(), v, comment, true, 0)
+            } else null
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(
-                    if (existing == null) R.string.routing_direct_route_add_title
-                    else R.string.routing_direct_route_edit_title
-                )
-            )
-        },
+        title = { Text(stringResource(R.string.routing_sources_add_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
+                    SourceKind.entries.forEach { entry ->
+                        FilterChip(
+                            selected = kind == entry,
+                            onClick = { kind = entry },
+                            label = { Text(entry.label()) },
+                        )
+                    }
+                }
                 OutlinedTextField(
-                    value = cidrText,
-                    onValueChange = { cidrText = it },
-                    label = { Text(stringResource(R.string.routing_direct_route_cidr_label)) },
-                    placeholder = { Text("10.0.0.0/8") },
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text(stringResource(R.string.routing_sources_add_value_label)) },
+                    placeholder = { Text(kind.placeholder()) },
                     singleLine = true,
-                    isError = cidrText.isNotEmpty() && !valid,
+                    isError = value.isNotEmpty() && parsed == null,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = comment,
                     onValueChange = { comment = it },
-                    label = { Text(stringResource(R.string.routing_direct_route_comment_label)) },
+                    label = { Text(stringResource(R.string.routing_sources_add_comment_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -441,19 +507,8 @@ private fun DirectRouteEditorDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = valid,
-                onClick = {
-                    val cidr = parsed ?: return@TextButton
-                    onSave(
-                        DirectRouteRule(
-                            id = existing?.id ?: UUID.randomUUID().toString(),
-                            cidr = cidr,
-                            comment = comment,
-                            enabled = existing?.enabled ?: true,
-                            orderIndex = existing?.orderIndex ?: 0,
-                        )
-                    )
-                },
+                enabled = parsed != null,
+                onClick = { parsed?.let(onSave) },
             ) { Text(stringResource(R.string.action_save)) }
         },
         dismissButton = {
@@ -463,185 +518,46 @@ private fun DirectRouteEditorDialog(
 }
 
 @Composable
-private fun GeoBypassCard(
-    info: ru.shapovalov.bedlam.core.geoip.domain.model.GeoIpDatabaseInfo,
-    updateState: GeoIpUpdateState,
-    selected: Set<CountryCode>,
-    onDownload: () -> Unit,
-    onRemove: () -> Unit,
-    onOpenPicker: () -> Unit,
-) {
-    val spacing = MaterialTheme.spacing
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-    ) {
-        Column(modifier = Modifier.padding(vertical = spacing.small)) {
-            Text(
-                stringResource(R.string.routing_geo_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small),
-            )
-            Text(
-                stringResource(R.string.routing_geo_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = spacing.large),
-            )
-            Spacer(Modifier.height(spacing.small))
-            when (updateState) {
-                is GeoIpUpdateState.Downloading -> {
-                    val total = updateState.totalBytes
-                    if (total != null && total > 0) {
-                        LinearProgressIndicator(
-                            progress = { (updateState.bytesReceived.toFloat() / total).coerceIn(0f, 1f) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = spacing.large, vertical = spacing.small),
-                        )
-                    } else {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = spacing.large, vertical = spacing.small),
-                        )
-                    }
-                }
-                is GeoIpUpdateState.Failed -> {
-                    Text(
-                        stringResource(R.string.routing_geo_failed, updateState.message),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.xSmall),
-                    )
-                }
-                else -> Unit
-            }
-            if (info.isInstalled) {
-                InfoLine(
-                    stringResource(R.string.routing_geo_version),
-                    info.version ?: "—",
-                )
-                InfoLine(
-                    stringResource(R.string.routing_geo_size),
-                    info.sizeBytes?.let { "${it / 1024} KB" } ?: "—",
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = spacing.large, vertical = spacing.small),
-                    horizontalArrangement = Arrangement.spacedBy(spacing.small),
-                ) {
-                    TextButton(onClick = onDownload) { Text(stringResource(R.string.routing_geo_update)) }
-                    TextButton(onClick = onRemove) { Text(stringResource(R.string.routing_geo_remove)) }
-                }
-                NavRow(
-                    title = stringResource(R.string.routing_geo_countries_title),
-                    value = if (selected.isEmpty()) {
-                        stringResource(R.string.routing_geo_countries_none)
-                    } else {
-                        selected.joinToString(", ") { it.raw }
-                    },
-                    onClick = onOpenPicker,
-                )
-            } else {
-                TextButton(
-                    onClick = onDownload,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = spacing.large, vertical = spacing.small),
-                ) { Text(stringResource(R.string.routing_geo_download)) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InfoLine(label: String, value: String) {
-    val spacing = MaterialTheme.spacing
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.large, vertical = spacing.xSmall),
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        Text(value, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
-    }
-}
-
-@Composable
-private fun NavRow(title: String, value: String, onClick: () -> Unit) {
-    val spacing = MaterialTheme.spacing
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = spacing.large, vertical = spacing.medium),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(spacing.xSmall))
-            Text(
-                value,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun CountryPickerDialog(
-    available: List<CountryCode>,
-    selected: Set<CountryCode>,
-    onToggle: (CountryCode) -> Unit,
-    onDismiss: () -> Unit,
-) {
+private fun PresetsDialog(onDismiss: () -> Unit, onPick: (String) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.routing_geo_countries_title)) },
+        title = { Text(stringResource(R.string.routing_presets_title)) },
         text = {
-            if (available.isEmpty()) {
-                Text(stringResource(R.string.routing_geo_countries_empty))
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    available.forEach { country ->
-                        val isSelected = country in selected
-                        Row(
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+            ) {
+                RoutePresets.ALL.forEach { preset ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onPick(preset.id) }
+                            .padding(MaterialTheme.spacing.medium),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onToggle(country) }
-                                .padding(vertical = MaterialTheme.spacing.small),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isSelected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.surfaceContainerHighest
-                                    ),
-                            )
-                            Spacer(Modifier.width(MaterialTheme.spacing.medium))
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                        )
+                        Spacer(Modifier.width(MaterialTheme.spacing.medium))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(preset.name, style = MaterialTheme.typography.titleSmall)
+                            Spacer(Modifier.height(MaterialTheme.spacing.xSmall))
                             Text(
-                                country.raw,
-                                style = MaterialTheme.typography.titleSmall.copy(fontFamily = FontFamily.Monospace),
+                                preset.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(MaterialTheme.spacing.xSmall))
+                            Text(
+                                stringResource(R.string.routing_preset_asn_count, preset.asns.size),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -680,3 +596,19 @@ private fun DnsMode.label(): String = stringResource(
         DnsMode.Custom -> R.string.routing_dns_custom
     }
 )
+
+@Composable
+private fun SourceKind.label(): String = stringResource(
+    when (this) {
+        SourceKind.CIDR -> R.string.routing_kind_cidr
+        SourceKind.ASN -> R.string.routing_kind_asn
+        SourceKind.DOMAIN -> R.string.routing_kind_domain
+    }
+)
+
+@Composable
+private fun SourceKind.placeholder(): String = when (this) {
+    SourceKind.CIDR -> "10.0.0.0/8"
+    SourceKind.ASN -> "AS13238"
+    SourceKind.DOMAIN -> "yandex.ru"
+}

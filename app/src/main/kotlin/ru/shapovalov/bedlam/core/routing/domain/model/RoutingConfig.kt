@@ -6,6 +6,5 @@ data class RoutingConfig(
     val ipv6Mode: Ipv6Mode = Ipv6Mode.Enabled,
     val dnsMode: DnsMode = DnsMode.Cloudflare,
     val customDns: List<String> = emptyList(),
-    val directRoutes: List<DirectRouteRule> = emptyList(),
-    val geoDirectCountries: Set<CountryCode> = emptySet(),
+    val sources: List<ResolvedSource> = emptyList(),
 )

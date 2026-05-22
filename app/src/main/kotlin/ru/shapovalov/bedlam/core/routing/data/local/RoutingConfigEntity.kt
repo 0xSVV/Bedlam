@@ -10,7 +10,6 @@ data class RoutingConfigEntity(
     val ipv6Mode: String = "Enabled",
     val dnsMode: String = "Cloudflare",
     val customDnsCsv: String = "",
-    val geoDirectCountriesCsv: String = "",
 ) {
     companion object { const val SINGLETON_ID = 1 }
 }

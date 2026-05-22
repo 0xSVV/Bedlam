@@ -7,13 +7,13 @@ import me.tatarka.inject.annotations.Component
 import me.tatarka.inject.annotations.Provides
 import ru.shapovalov.bedlam.core.appfilter.di.AppFilterModule
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
-import ru.shapovalov.bedlam.core.geoip.di.GeoIpModule
-import ru.shapovalov.bedlam.core.geoip.domain.repository.GeoIpDatabase
-import ru.shapovalov.bedlam.core.geoip.domain.repository.GeoIpUpdater
 import ru.shapovalov.bedlam.core.profile.di.ProfileModule
 import ru.shapovalov.bedlam.core.routing.di.RoutingModule
 import ru.shapovalov.bedlam.core.routing.domain.repository.RoutingRepository
+import ru.shapovalov.bedlam.core.routing.domain.usecase.AddPresetUseCase
+import ru.shapovalov.bedlam.core.routing.domain.usecase.AddRouteSourceUseCase
 import ru.shapovalov.bedlam.core.routing.domain.usecase.BuildRoutePlanUseCase
+import ru.shapovalov.bedlam.core.routing.domain.usecase.RefreshRouteSourcesUseCase
 import ru.shapovalov.bedlam.core.routing.engine.RoutePlanApplier
 import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
 import ru.shapovalov.bedlam.feature.session.di.SessionModule
@@ -30,8 +30,7 @@ abstract class AppComponent(
     PresentationModule,
     AppFilterModule,
     SessionModule,
-    RoutingModule,
-    GeoIpModule {
+    RoutingModule {
 
     abstract val hysteriaClient: HysteriaClient
     abstract val json: Json
@@ -39,8 +38,9 @@ abstract class AppComponent(
     abstract val routingRepository: RoutingRepository
     abstract val buildRoutePlan: BuildRoutePlanUseCase
     abstract val routePlanApplier: RoutePlanApplier
-    abstract val geoIpDatabase: GeoIpDatabase
-    abstract val geoIpUpdater: GeoIpUpdater
+    abstract val addRouteSource: AddRouteSourceUseCase
+    abstract val addPreset: AddPresetUseCase
+    abstract val refreshRouteSources: RefreshRouteSourcesUseCase
     abstract val logBuffer: LogBuffer
 
     abstract val rootComponentFactory: RootComponentFactory

@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam
 
 import android.app.Application
+import ru.shapovalov.bedlam.core.routing.work.RouteRefreshWorker
 import ru.shapovalov.bedlam.di.AppComponent
 import ru.shapovalov.bedlam.di.create
 
@@ -13,6 +14,6 @@ class BedlamApplication : Application() {
         super.onCreate()
         component = AppComponent::class.create(this)
         component.logBuffer
-        component.geoIpDatabase.prewarm()
+        RouteRefreshWorker.schedule(this)
     }
 }
