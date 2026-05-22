@@ -13,5 +13,6 @@ class BedlamApplication : Application() {
         super.onCreate()
         component = AppComponent::class.create(this)
         component.logBuffer
+        component.geoIpDatabase.prewarm()
     }
 }

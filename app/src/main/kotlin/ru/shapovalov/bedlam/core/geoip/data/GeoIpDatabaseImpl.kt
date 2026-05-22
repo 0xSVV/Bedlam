@@ -1,6 +1,9 @@
 package ru.shapovalov.bedlam.core.geoip.data
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -19,8 +22,14 @@ class GeoIpDatabaseImpl(
 ) : GeoIpDatabase {
 
     private val mutex = Mutex()
+    private val prewarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var cache: Map<CountryCode, List<Cidr>>? = null
     @Volatile private var loadedSize: Long = -1L
+
+    override fun prewarm() {
+        if (cache != null) return
+        prewarmScope.launch { ensureLoaded() }
+    }
 
     suspend fun reload() = mutex.withLock {
         cache = null

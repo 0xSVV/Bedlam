@@ -13,4 +13,8 @@ interface GeoIpDatabase {
     suspend fun cidrs(country: CountryCode): List<Cidr>
 
     suspend fun isLoaded(): Boolean
+
+    /** Hint that the caller will need data soon; implementations may start parsing
+     *  in the background. Safe to call any time, even before any file is downloaded. */
+    fun prewarm() {}
 }
