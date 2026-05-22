@@ -16,12 +16,12 @@ import java.net.InetAddress
 class RoutePlanApplier {
 
     fun apply(plan: RoutePlan, builder: VpnService.Builder) {
-        plan.claimedV4.forEach { builder.addRoute(it.toInetAddress(), it.prefixLength) }
-        plan.claimedV6.forEach { builder.addRoute(it.toInetAddress(), it.prefixLength) }
+        plan.claimedV4.forEach { addRouteSafely(builder, it) }
+        plan.claimedV6.forEach { addRouteSafely(builder, it) }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            plan.excludedV4.forEach { builder.excludeRoute(it.toIpPrefix()) }
-            plan.excludedV6.forEach { builder.excludeRoute(it.toIpPrefix()) }
+            plan.excludedV4.forEach { excludeRouteSafely(builder, it) }
+            plan.excludedV6.forEach { excludeRouteSafely(builder, it) }
         }
 
         plan.dnsServers.forEach { builder.addDnsServer(it) }
@@ -44,6 +44,22 @@ class RoutePlanApplier {
                         } else throw e
                     }
             }
+        }
+    }
+
+    private fun addRouteSafely(builder: VpnService.Builder, cidr: Cidr) {
+        try {
+            builder.addRoute(cidr.toInetAddress(), cidr.prefixLength)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "addRoute rejected ${cidr.asString()}: ${e.message}")
+        }
+    }
+
+    private fun excludeRouteSafely(builder: VpnService.Builder, cidr: Cidr) {
+        try {
+            builder.excludeRoute(cidr.toIpPrefix())
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "excludeRoute rejected ${cidr.asString()}: ${e.message}")
         }
     }
 

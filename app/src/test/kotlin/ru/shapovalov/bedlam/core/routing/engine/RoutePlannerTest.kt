@@ -45,7 +45,37 @@ class RoutePlannerTest {
             assertEquals(listOf(RoutePlanner.IPV6_DEFAULT), plan.claimedV6)
             assertTrue(plan.excludedV4.any { it == Cidr.parse("10.0.0.0/8") })
             assertTrue(plan.excludedV4.any { it == Cidr.parse("192.168.0.0/16") })
-            assertTrue(plan.excludedV4.any { it == Cidr.parse("127.0.0.0/8") })
+            assertTrue(plan.excludedV4.any { it == Cidr.parse("172.16.0.0/12") })
+        }
+
+        @Test
+        fun `loopback is never excluded - VpnService rejects it`() = runTest {
+            val plan = planner().plan(RoutingConfig(bypassLan = true), AppFilter())
+            assertFalse(plan.excludedV4.any { it == Cidr.parse("127.0.0.0/8") })
+            assertFalse(plan.excludedV6.any { it == Cidr.parse("::1/128") })
+        }
+
+        @Test
+        fun `large GeoIP selection drops geo exclusions but keeps LAN`() = runTest {
+            val ru = CountryCode.of("RU")
+            // Synthesize a country with > maxTotalRoutes CIDRs (each a unique /32).
+            val flood = (0 until 5000).map {
+                Cidr.parse("11.${(it shr 16) and 0xFF}.${(it shr 8) and 0xFF}.${it and 0xFF}/32")
+            }
+            val p = RoutePlanner(
+                supportsExcludeRoute = true,
+                tunPrefixV4 = tunV4,
+                tunPrefixV6 = tunV6,
+                geoIp = FakeGeoIp(mapOf(ru to flood)),
+                maxTotalRoutes = 100,
+            )
+            val plan = p.plan(
+                RoutingConfig(bypassLan = true, geoDirectCountries = setOf(ru)),
+                AppFilter(),
+            )
+            // Flooded geo CIDRs must be gone; LAN must remain.
+            assertFalse(plan.excludedV4.any { it == Cidr.parse("11.0.0.0/32") })
+            assertTrue(plan.excludedV4.any { it == Cidr.parse("10.0.0.0/8") })
         }
 
         @Test

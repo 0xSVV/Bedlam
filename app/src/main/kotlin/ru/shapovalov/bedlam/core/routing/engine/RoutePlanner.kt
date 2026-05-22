@@ -11,16 +11,24 @@ import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 /**
  * Builds a [RoutePlan] from a [RoutingConfig] + [AppFilter]. Pure — no Android deps.
  *
+ * VpnService.Builder serializes its config over a Binder transaction with a ~1 MB
+ * cap; large GeoIP selections (CN, RU, US) can easily produce 10k+ CIDRs and blow
+ * past it. [maxTotalRoutes] is a soft budget — if the full plan would exceed it,
+ * GeoIP exclusions are dropped first, keeping LAN bypass and user-defined direct
+ * routes intact.
+ *
  * @property supportsExcludeRoute on API 33+, ships exclusions verbatim; otherwise
  *   subtracts on our side.
  * @property tunPrefixV4 the local TUN v4 prefix; always excluded to avoid loops.
  * @property tunPrefixV6 the local TUN v6 prefix.
+ * @property maxTotalRoutes claimed+excluded ceiling before GeoIP is dropped.
  */
 class RoutePlanner(
     private val supportsExcludeRoute: Boolean,
     private val tunPrefixV4: Cidr.V4,
     private val tunPrefixV6: Cidr.V6,
     private val geoIp: GeoIpDatabase,
+    private val maxTotalRoutes: Int = DEFAULT_MAX_TOTAL_ROUTES,
 ) {
 
     suspend fun plan(config: RoutingConfig, appFilter: AppFilter): RoutePlan {
@@ -37,12 +45,40 @@ class RoutePlanner(
         val lanExclusionsV4 = if (config.bypassLan) LanRanges.IPV4 else emptyList()
         val lanExclusionsV6 = if (config.bypassLan) LanRanges.IPV6 else emptyList()
 
-        val (directV4, directV6) = collectDirectCidrs(config)
+        val directV4 = config.directRoutes.asSequence()
+            .filter { it.enabled }
+            .map { it.cidr }
+            .filterIsInstance<Cidr.V4>()
+            .toList()
+        val directV6 = config.directRoutes.asSequence()
+            .filter { it.enabled }
+            .map { it.cidr }
+            .filterIsInstance<Cidr.V6>()
+            .toList()
 
-        val excludedV4Raw: List<Cidr> = systemExclusionsV4 + lanExclusionsV4 + directV4
-        val excludedV6Raw: List<Cidr> = systemExclusionsV6 + lanExclusionsV6 + directV6
-        val excludedV4 = CidrMath.coalesce(excludedV4Raw).filterIsInstance<Cidr.V4>()
-        val excludedV6 = CidrMath.coalesce(excludedV6Raw).filterIsInstance<Cidr.V6>()
+        val coreV4 = CidrMath
+            .coalesce(systemExclusionsV4 + lanExclusionsV4 + directV4)
+            .filterIsInstance<Cidr.V4>()
+        val coreV6 = CidrMath
+            .coalesce(systemExclusionsV6 + lanExclusionsV6 + directV6)
+            .filterIsInstance<Cidr.V6>()
+
+        val (geoV4, geoV6) = collectGeoCidrs(config)
+
+        val fullV4 = CidrMath.coalesce(coreV4 + geoV4).filterIsInstance<Cidr.V4>()
+        val fullV6 = CidrMath.coalesce(coreV6 + geoV6).filterIsInstance<Cidr.V6>()
+
+        val totalFull = baseV4.size + baseV6.size + fullV4.size + fullV6.size
+        val (excludedV4, excludedV6) = if (totalFull <= maxTotalRoutes) {
+            fullV4 to fullV6
+        } else {
+            android.util.Log.w(
+                TAG,
+                "GeoIP bypass dropped: $totalFull routes exceed budget $maxTotalRoutes " +
+                    "(Android Binder cap). Reduce selected countries."
+            )
+            coreV4 to coreV6
+        }
 
         val dnsServers = resolveDns(config)
 
@@ -73,17 +109,14 @@ class RoutePlanner(
         }
     }
 
-    private suspend fun collectDirectCidrs(
+    private suspend fun collectGeoCidrs(
         config: RoutingConfig,
     ): Pair<List<Cidr.V4>, List<Cidr.V6>> {
+        if (config.geoDirectCountries.isEmpty()) return emptyList<Cidr.V4>() to emptyList()
         val all = mutableListOf<Cidr>()
-        for (rule in config.directRoutes) {
-            if (rule.enabled) all += rule.cidr
-        }
-        for (country in config.geoDirectCountries) {
-            all += geoIp.cidrs(country)
-        }
-        return all.filterIsInstance<Cidr.V4>() to all.filterIsInstance<Cidr.V6>()
+        for (country in config.geoDirectCountries) all += geoIp.cidrs(country)
+        val coalesced = CidrMath.coalesce(all)
+        return coalesced.filterIsInstance<Cidr.V4>() to coalesced.filterIsInstance<Cidr.V6>()
     }
 
     private fun resolveDns(config: RoutingConfig): List<String> = when (config.dnsMode) {
@@ -106,6 +139,8 @@ class RoutePlanner(
     }
 
     companion object {
+        private const val TAG = "RoutePlanner"
+        const val DEFAULT_MAX_TOTAL_ROUTES: Int = 4096
         val IPV4_DEFAULT: Cidr.V4 = Cidr.parse("0.0.0.0/0") as Cidr.V4
         val IPV6_DEFAULT: Cidr.V6 = Cidr.parse("::/0") as Cidr.V6
     }
