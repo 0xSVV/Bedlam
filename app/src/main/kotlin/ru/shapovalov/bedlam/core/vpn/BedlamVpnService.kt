@@ -129,7 +129,6 @@ class BedlamVpnService : VpnService() {
             return START_NOT_STICKY
         }
         connectionName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty().ifEmpty { config.name }
-        currentRoutePlan = runBlocking { buildRoutePlan() }
 
         startAsForeground()
         acquireWakeLock()
@@ -139,6 +138,7 @@ class BedlamVpnService : VpnService() {
 
         scope.launch {
             try {
+                currentRoutePlan = buildRoutePlan()
                 client.start(
                     config = config,
                     tunConfig = TunConfig.Default,

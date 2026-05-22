@@ -63,21 +63,23 @@ class RoutePlanner(
             .coalesce(systemExclusionsV6 + lanExclusionsV6 + directV6)
             .filterIsInstance<Cidr.V6>()
 
-        val (geoV4, geoV6) = collectGeoCidrs(config)
+        val rawGeoCount = countGeoCidrs(config)
+        val budgetForGeo = maxTotalRoutes - baseV4.size - baseV6.size - coreV4.size - coreV6.size
 
-        val fullV4 = CidrMath.coalesce(coreV4 + geoV4).filterIsInstance<Cidr.V4>()
-        val fullV6 = CidrMath.coalesce(coreV6 + geoV6).filterIsInstance<Cidr.V6>()
-
-        val totalFull = baseV4.size + baseV6.size + fullV4.size + fullV6.size
-        val (excludedV4, excludedV6) = if (totalFull <= maxTotalRoutes) {
-            fullV4 to fullV6
-        } else {
-            android.util.Log.w(
-                TAG,
-                "GeoIP bypass dropped: $totalFull routes exceed budget $maxTotalRoutes " +
-                    "(Android Binder cap). Reduce selected countries."
-            )
+        val (excludedV4, excludedV6) = if (rawGeoCount == 0 || rawGeoCount > budgetForGeo) {
+            if (rawGeoCount > 0) {
+                android.util.Log.w(
+                    TAG,
+                    "GeoIP bypass dropped: $rawGeoCount raw CIDRs exceed budget for geo ($budgetForGeo). " +
+                        "Reduce selected countries."
+                )
+            }
             coreV4 to coreV6
+        } else {
+            val (geoV4, geoV6) = collectGeoCidrs(config)
+            val fullV4 = CidrMath.coalesce(coreV4 + geoV4).filterIsInstance<Cidr.V4>()
+            val fullV6 = CidrMath.coalesce(coreV6 + geoV6).filterIsInstance<Cidr.V6>()
+            fullV4 to fullV6
         }
 
         val dnsServers = resolveDns(config)
@@ -107,6 +109,13 @@ class RoutePlanner(
                 appFilter = appFilter,
             )
         }
+    }
+
+    private suspend fun countGeoCidrs(config: RoutingConfig): Int {
+        if (config.geoDirectCountries.isEmpty()) return 0
+        var total = 0
+        for (country in config.geoDirectCountries) total += geoIp.cidrs(country).size
+        return total
     }
 
     private suspend fun collectGeoCidrs(
