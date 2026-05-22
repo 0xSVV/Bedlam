@@ -29,9 +29,9 @@ import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
 import java.util.concurrent.TimeUnit
-import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilter
-import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
-import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
+import ru.shapovalov.bedlam.core.routing.domain.model.RoutePlan
+import ru.shapovalov.bedlam.core.routing.domain.usecase.BuildRoutePlanUseCase
+import ru.shapovalov.bedlam.core.routing.engine.RoutePlanApplier
 import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.api.DisconnectReason
@@ -44,8 +44,9 @@ class BedlamVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client: HysteriaClient by injected { hysteriaClient }
     private val json: Json by injected { json }
-    private val appFilterRepository: AppFilterRepository by injected { appFilterRepository }
-    private var currentAppFilter: AppFilter = AppFilter()
+    private val buildRoutePlan: BuildRoutePlanUseCase by injected { buildRoutePlan }
+    private val routePlanApplier: RoutePlanApplier by injected { routePlanApplier }
+    private var currentRoutePlan: RoutePlan? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockJob: Job? = null
     private var networkListener: DefaultNetworkListener? = null
@@ -128,7 +129,7 @@ class BedlamVpnService : VpnService() {
             return START_NOT_STICKY
         }
         connectionName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty().ifEmpty { config.name }
-        currentAppFilter = runBlocking { appFilterRepository.get() }
+        currentRoutePlan = runBlocking { buildRoutePlan() }
 
         startAsForeground()
         acquireWakeLock()
@@ -154,45 +155,20 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun establishTun(mtu: Int): Int {
+        val plan = currentRoutePlan
+            ?: throw IllegalStateException("RoutePlan not built before establishTun()")
         val (v4Addr, v4Prefix) = parsePrefix(TunConfig.DEFAULT_IPV4_PREFIX)
         val (v6Addr, v6Prefix) = parsePrefix(TunConfig.DEFAULT_IPV6_PREFIX)
-        val pfd = Builder()
+        val builder = Builder()
             .setSession(connectionName.ifEmpty { getString(R.string.vpn_session_default) })
             .setMtu(mtu)
             .setMetered(false)
             .addAddress(v4Addr, v4Prefix)
             .addAddress(v6Addr, v6Prefix)
-            .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0)
-            .addDnsServer("1.1.1.1")
-            .addDnsServer("1.0.0.1")
-            .addDnsServer("2606:4700:4700::1111")
-            .addDnsServer("2606:4700:4700::1001")
-            .applyAppFilter(currentAppFilter)
-            .establish()
+        routePlanApplier.apply(plan, builder)
+        val pfd = builder.establish()
             ?: throw IllegalStateException("VpnService.establish() returned null")
         return pfd.detachFd()
-    }
-
-    private fun Builder.applyAppFilter(filter: AppFilter): Builder {
-        when (filter.mode) {
-            AppFilterMode.All -> Unit
-            AppFilterMode.Allowlist -> filter.packages.forEach { pkg ->
-                try {
-                    addAllowedApplication(pkg)
-                } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
-                    Log.w(TAG, "Allowlist package not installed: $pkg")
-                }
-            }
-            AppFilterMode.Blocklist -> filter.packages.forEach { pkg ->
-                try {
-                    addDisallowedApplication(pkg)
-                } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
-                    Log.w(TAG, "Blocklist package not installed: $pkg")
-                }
-            }
-        }
-        return this
     }
 
     private fun parsePrefix(cidr: String): Pair<String, Int> {
