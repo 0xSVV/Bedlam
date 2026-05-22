@@ -90,6 +90,11 @@
     <string name="routing_presets_chip">Add preset…</string>
     <string name="routing_presets_title">Curated presets</string>
     <string name="routing_preset_asn_count">%1$d ASNs</string>
+    <string name="routing_preset_partial">%1$d of %2$d already added — tap to add the rest</string>
+    <string name="routing_preset_added">All added</string>
+    <string name="routing_sources_add_duplicate">Already in the list</string>
+    <string name="routing_swipe_disable">Disable</string>
+    <string name="routing_swipe_enable">Enable</string>
 
     <string name="routing_kind_cidr">CIDR</string>
     <string name="routing_kind_asn">ASN</string>

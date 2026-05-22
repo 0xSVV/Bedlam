@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -35,19 +36,24 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +65,7 @@ import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
+import ru.shapovalov.bedlam.core.routing.domain.model.RoutePreset
 import ru.shapovalov.bedlam.feature.routing.presentation.RoutingComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
 import java.util.UUID
@@ -70,6 +77,16 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
     val spacing = MaterialTheme.spacing
     var showAddSource by remember { mutableStateOf(false) }
     var showPresets by remember { mutableStateOf(false) }
+
+    val presetStatuses = remember(state.config.sources) {
+        val existingAsns = state.config.sources
+            .mapNotNull { (it.source as? DirectRouteSource.Asn)?.asn }
+            .toSet()
+        RoutePresets.ALL.associate { preset ->
+            val present = preset.asns.count { it.asn in existingAsns }
+            preset.id to PresetStatus(present = present, total = preset.asns.size)
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -138,6 +155,9 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
 
     if (showAddSource) {
         AddSourceDialog(
+            existingKeys = remember(state.config.sources) {
+                state.config.sources.map { it.source.dedupeKey() }.toSet()
+            },
             onDismiss = { showAddSource = false },
             onSave = { source ->
                 component.onAddSource(source)
@@ -148,6 +168,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
 
     if (showPresets) {
         PresetsDialog(
+            statuses = presetStatuses,
             onDismiss = { showPresets = false },
             onPick = {
                 component.onAddPreset(it)
@@ -169,6 +190,9 @@ private fun BasicsCard(
     onSetCustomDns: (List<String>) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
+    val ipv6Options = remember { Ipv6Mode.entries.toList() }
+    val dnsOptions = remember { DnsMode.entries.toList() }
+
     ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
             ToggleRow(
@@ -181,7 +205,8 @@ private fun BasicsCard(
             DropdownRow(
                 title = stringResource(R.string.routing_ipv6_title),
                 value = ipv6Mode.label(),
-                options = Ipv6Mode.entries.map { it to it.label() },
+                options = ipv6Options,
+                renderLabel = { it.label() },
                 onPick = onSetIpv6Mode,
             )
             DividerRow()
@@ -189,12 +214,13 @@ private fun BasicsCard(
                 title = stringResource(R.string.routing_dns_title),
                 value = dnsMode.label(),
                 subtitle = if (dnsMode == DnsMode.System) stringResource(R.string.routing_dns_system_warning) else null,
-                options = DnsMode.entries.map { it to it.label() },
+                options = dnsOptions,
+                renderLabel = { it.label() },
                 onPick = onSetDnsMode,
             )
             if (dnsMode == DnsMode.Custom) {
                 DividerRow()
-                CustomDnsEditor(servers = customDns, onChange = onSetCustomDns)
+                CustomDnsEditor(initial = customDns, onChange = onSetCustomDns)
             }
         }
     }
@@ -250,13 +276,16 @@ private fun SourcesCard(
                     modifier = Modifier.padding(spacing.large),
                 )
             } else {
+                Spacer(Modifier.height(spacing.xSmall))
                 sources.forEachIndexed { idx, resolved ->
-                    SourceRow(
-                        resolved = resolved,
-                        isRefreshing = isRefreshing,
-                        onToggle = { onToggle(resolved.source.id, it) },
-                        onDelete = { onDelete(resolved.source.id) },
-                    )
+                    key(resolved.source.id) {
+                        SwipeableSourceRow(
+                            resolved = resolved,
+                            isRefreshing = isRefreshing,
+                            onToggle = onToggle,
+                            onDelete = onDelete,
+                        )
+                    }
                     if (idx != sources.lastIndex) DividerRow()
                 }
             }
@@ -264,21 +293,114 @@ private fun SourcesCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SourceRow(
+private fun SwipeableSourceRow(
     resolved: ResolvedSource,
     isRefreshing: Boolean,
-    onToggle: (Boolean) -> Unit,
-    onDelete: () -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
 ) {
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    // Swipe right → delete
+                    onDelete(resolved.source.id)
+                    true
+                }
+                SwipeToDismissBoxValue.EndToStart -> {
+                    // Swipe left → toggle, then snap back
+                    onToggle(resolved.source.id, !resolved.source.enabled)
+                    false
+                }
+                SwipeToDismissBoxValue.Settled -> false
+            }
+        },
+        positionalThreshold = { totalDistance -> totalDistance * 0.45f },
+    )
+
+    // After a toggle, the state needs to be reset to Settled (since we returned false).
+    LaunchedEffect(resolved.source.enabled) {
+        if (state.currentValue != SwipeToDismissBoxValue.Settled) {
+            state.reset()
+        }
+    }
+
+    SwipeToDismissBox(
+        state = state,
+        backgroundContent = { SwipeBackground(state.dismissDirection, resolved.source.enabled) },
+        content = { SourceRowContent(resolved, isRefreshing) },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled: Boolean) {
     val spacing = MaterialTheme.spacing
+    val (bg, fg, icon, label, align) = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd -> SwipeBgSpec(
+            bg = MaterialTheme.colorScheme.errorContainer,
+            fg = MaterialTheme.colorScheme.onErrorContainer,
+            icon = Icons.Default.Delete,
+            label = stringResource(R.string.routing_sources_delete_cd),
+            align = Alignment.CenterStart,
+        )
+        SwipeToDismissBoxValue.EndToStart -> SwipeBgSpec(
+            bg = MaterialTheme.colorScheme.tertiaryContainer,
+            fg = MaterialTheme.colorScheme.onTertiaryContainer,
+            icon = if (currentlyEnabled) Icons.Default.Refresh else Icons.Default.Check,
+            label = stringResource(
+                if (currentlyEnabled) R.string.routing_swipe_disable else R.string.routing_swipe_enable
+            ),
+            align = Alignment.CenterEnd,
+        )
+        SwipeToDismissBoxValue.Settled -> return
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bg)
+            .padding(horizontal = spacing.large),
+        contentAlignment = align,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = fg)
+            Spacer(Modifier.width(spacing.small))
+            Text(label, style = MaterialTheme.typography.labelLarge, color = fg)
+        }
+    }
+}
+
+private data class SwipeBgSpec(
+    val bg: Color,
+    val fg: Color,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val label: String,
+    val align: Alignment,
+)
+
+@Composable
+private fun SourceRowContent(resolved: ResolvedSource, isRefreshing: Boolean) {
+    val spacing = MaterialTheme.spacing
+    val dimmed = !resolved.source.enabled
+    val baseColor = MaterialTheme.colorScheme.surface
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(baseColor)
             .padding(horizontal = spacing.large, vertical = spacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Switch(checked = resolved.source.enabled, onCheckedChange = onToggle)
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(
+                    if (resolved.source.enabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                ),
+        )
         Spacer(Modifier.width(spacing.medium))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -287,6 +409,7 @@ private fun SourceRow(
                 Text(
                     resolved.source.label(),
                     style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+                    color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -309,13 +432,6 @@ private fun SourceRow(
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = stringResource(R.string.routing_sources_delete_cd),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
@@ -324,7 +440,7 @@ private fun KindChip(source: DirectRouteSource) {
     val (label, color) = when (source) {
         is DirectRouteSource.Cidr -> "CIDR" to MaterialTheme.colorScheme.primary
         is DirectRouteSource.Asn -> "ASN" to MaterialTheme.colorScheme.tertiary
-        is DirectRouteSource.Domain -> "DNS" to MaterialTheme.colorScheme.secondary
+        is DirectRouteSource.Domain -> "DOMAIN" to MaterialTheme.colorScheme.secondary
     }
     Box(
         modifier = Modifier
@@ -387,7 +503,7 @@ private fun ToggleRow(
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(spacing.medium))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -395,7 +511,8 @@ private fun ToggleRow(
 private fun <T> DropdownRow(
     title: String,
     value: String,
-    options: List<Pair<T, String>>,
+    options: List<T>,
+    renderLabel: @Composable (T) -> String,
     onPick: (T) -> Unit,
     subtitle: String? = null,
 ) {
@@ -419,10 +536,10 @@ private fun <T> DropdownRow(
             Text(value, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { (key, label) ->
+            options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = { onPick(key); expanded = false },
+                    text = { Text(renderLabel(option)) },
+                    onClick = { onPick(option); expanded = false },
                 )
             }
         }
@@ -430,9 +547,11 @@ private fun <T> DropdownRow(
 }
 
 @Composable
-private fun CustomDnsEditor(servers: List<String>, onChange: (List<String>) -> Unit) {
+private fun CustomDnsEditor(initial: List<String>, onChange: (List<String>) -> Unit) {
     val spacing = MaterialTheme.spacing
-    var text by remember(servers) { mutableStateOf(servers.joinToString(", ")) }
+    // Local field state owns the text. We only seed from [initial] once;
+    // upstream updates from our own onChange must not bounce back and reset.
+    var text by remember { mutableStateOf(initial.joinToString(", ")) }
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
             value = text,
@@ -452,6 +571,7 @@ private enum class SourceKind { CIDR, ASN, DOMAIN }
 
 @Composable
 private fun AddSourceDialog(
+    existingKeys: Set<String>,
     onDismiss: () -> Unit,
     onSave: (DirectRouteSource) -> Unit,
 ) {
@@ -464,7 +584,7 @@ private fun AddSourceDialog(
             SourceKind.CIDR -> Cidr.parseOrNull(v)?.let {
                 DirectRouteSource.Cidr(UUID.randomUUID().toString(), it, comment, true, 0)
             }
-            SourceKind.ASN -> v.removePrefix("AS").removePrefix("as").toIntOrNull()?.let {
+            SourceKind.ASN -> v.removePrefix("AS").removePrefix("as").trim().toIntOrNull()?.let {
                 DirectRouteSource.Asn(UUID.randomUUID().toString(), it, comment, true, 0)
             }
             SourceKind.DOMAIN -> if (v.contains('.') && !v.contains(' ')) {
@@ -472,6 +592,7 @@ private fun AddSourceDialog(
             } else null
         }
     }
+    val isDuplicate = parsed?.dedupeKey()?.let { it in existingKeys } == true
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -493,7 +614,13 @@ private fun AddSourceDialog(
                     label = { Text(stringResource(R.string.routing_sources_add_value_label)) },
                     placeholder = { Text(kind.placeholder()) },
                     singleLine = true,
-                    isError = value.isNotEmpty() && parsed == null,
+                    isError = (value.isNotEmpty() && parsed == null) || isDuplicate,
+                    supportingText = when {
+                        isDuplicate -> {
+                            { Text(stringResource(R.string.routing_sources_add_duplicate)) }
+                        }
+                        else -> null
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
@@ -507,7 +634,7 @@ private fun AddSourceDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = parsed != null,
+                enabled = parsed != null && !isDuplicate,
                 onClick = { parsed?.let(onSave) },
             ) { Text(stringResource(R.string.action_save)) }
         },
@@ -517,8 +644,18 @@ private fun AddSourceDialog(
     )
 }
 
+private data class PresetStatus(val present: Int, val total: Int) {
+    val isFullyAdded: Boolean get() = present == total
+    val isPartial: Boolean get() = present in 1 until total
+    val isNew: Boolean get() = present == 0
+}
+
 @Composable
-private fun PresetsDialog(onDismiss: () -> Unit, onPick: (String) -> Unit) {
+private fun PresetsDialog(
+    statuses: Map<String, PresetStatus>,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.routing_presets_title)) },
@@ -530,37 +667,8 @@ private fun PresetsDialog(onDismiss: () -> Unit, onPick: (String) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
             ) {
                 RoutePresets.ALL.forEach { preset ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { onPick(preset.id) }
-                            .padding(MaterialTheme.spacing.medium),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
-                        )
-                        Spacer(Modifier.width(MaterialTheme.spacing.medium))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(preset.name, style = MaterialTheme.typography.titleSmall)
-                            Spacer(Modifier.height(MaterialTheme.spacing.xSmall))
-                            Text(
-                                preset.description,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(MaterialTheme.spacing.xSmall))
-                            Text(
-                                stringResource(R.string.routing_preset_asn_count, preset.asns.size),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    val status = statuses[preset.id] ?: PresetStatus(0, preset.asns.size)
+                    PresetRow(preset = preset, status = status, onPick = { onPick(preset.id) })
                 }
             }
         },
@@ -568,6 +676,65 @@ private fun PresetsDialog(onDismiss: () -> Unit, onPick: (String) -> Unit) {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) }
         },
     )
+}
+
+@Composable
+private fun PresetRow(preset: RoutePreset, status: PresetStatus, onPick: () -> Unit) {
+    val spacing = MaterialTheme.spacing
+    val enabled = !status.isFullyAdded
+    val (dotColor, statusLabel) = when {
+        status.isFullyAdded -> MaterialTheme.colorScheme.outline.copy(alpha = 0.4f) to
+            stringResource(R.string.routing_preset_added)
+        status.isPartial -> MaterialTheme.colorScheme.tertiary to
+            stringResource(R.string.routing_preset_partial, status.present, status.total)
+        else -> MaterialTheme.colorScheme.primary to
+            stringResource(R.string.routing_preset_asn_count, status.total)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .let { if (enabled) it.clickable(onClick = onPick) else it }
+            .padding(spacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (status.isFullyAdded) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(16.dp),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(dotColor),
+            )
+        }
+        Spacer(Modifier.width(spacing.medium))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                preset.name,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(spacing.xSmall))
+            Text(
+                preset.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(spacing.xSmall))
+            Text(
+                statusLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = dotColor,
+            )
+        }
+    }
 }
 
 @Composable

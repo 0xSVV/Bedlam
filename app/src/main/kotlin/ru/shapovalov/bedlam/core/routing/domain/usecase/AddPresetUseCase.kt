@@ -9,10 +9,12 @@ import java.util.UUID
 class AddPresetUseCase(
     private val addSource: AddRouteSourceUseCase,
 ) {
-    suspend operator fun invoke(presetId: String) {
-        val preset = RoutePresets.byId(presetId) ?: return
+    /** Adds only the preset's ASNs that aren't already present. Returns the number actually added. */
+    suspend operator fun invoke(presetId: String): Int {
+        val preset = RoutePresets.byId(presetId) ?: return 0
+        var added = 0
         preset.asns.forEachIndexed { index, entry ->
-            addSource(
+            val created = addSource(
                 DirectRouteSource.Asn(
                     id = UUID.randomUUID().toString(),
                     asn = entry.asn,
@@ -21,6 +23,8 @@ class AddPresetUseCase(
                     orderIndex = index,
                 )
             )
+            if (created) added++
         }
+        return added
     }
 }

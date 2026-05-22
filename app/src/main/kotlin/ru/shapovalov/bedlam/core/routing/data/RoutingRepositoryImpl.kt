@@ -72,6 +72,11 @@ class RoutingRepositoryImpl(
         dao.setSourceEnabled(id, enabled)
     }
 
+    override suspend fun hasEquivalent(source: DirectRouteSource): Boolean {
+        val key = source.dedupeKey()
+        return dao.getSources().any { it.toDomainOrNull()?.dedupeKey() == key }
+    }
+
     override suspend fun recordResolution(sourceId: String, cidrs: List<Cidr>, error: String?) {
         dao.replaceResolved(sourceId, cidrs.map { it.asString() })
         dao.setSourceResolutionState(sourceId, System.currentTimeMillis(), error)
