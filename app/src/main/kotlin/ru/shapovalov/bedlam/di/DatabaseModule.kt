@@ -5,9 +5,11 @@ import androidx.room.Room
 import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Provides
 import ru.shapovalov.bedlam.core.database.BedlamDatabase
+import ru.shapovalov.bedlam.core.geoip.data.local.GeoIpDao
 import ru.shapovalov.bedlam.core.profile.data.local.AppSettingsDao
 import ru.shapovalov.bedlam.core.profile.data.local.HysteriaConfigConverter
 import ru.shapovalov.bedlam.core.profile.data.local.ProfileDao
+import ru.shapovalov.bedlam.core.routing.data.local.RoutingDao
 
 interface DatabaseModule {
 
@@ -38,4 +40,10 @@ interface DatabaseModule {
 
     @Provides
     fun provideAppSettingsDao(database: BedlamDatabase): AppSettingsDao = database.appSettingsDao()
+
+    @Provides
+    fun provideRoutingDao(database: BedlamDatabase): RoutingDao = database.routingDao()
+
+    @Provides
+    fun provideGeoIpDao(database: BedlamDatabase): GeoIpDao = database.geoIpDao()
 }
