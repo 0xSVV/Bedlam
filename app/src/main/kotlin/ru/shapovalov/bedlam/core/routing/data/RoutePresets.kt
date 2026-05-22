@@ -3,8 +3,10 @@ package ru.shapovalov.bedlam.core.routing.data
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutePreset
 
 /**
- * Hardcoded curated presets. Updates ship in app releases; the resolved CIDRs
- * stay current via the daily refresh worker since the underlying ASNs are stable.
+ * Hardcoded curated presets. Each preset is a bundle of ASNs whose announced
+ * prefixes are reasonably representative of the named service. Avoid generic
+ * cloud ASNs (Microsoft Azure, Akamai, Vultr) — they announce thousands of
+ * prefixes that don't actually serve the service you want to bypass for.
  */
 object RoutePresets {
 
@@ -36,22 +38,22 @@ object RoutePresets {
             ),
         ),
         RoutePreset(
-            id = "ai",
-            name = "AI services",
-            description = "OpenAI, Anthropic — useful if your VPN exit is in a region they block.",
+            id = "ru-telco",
+            name = "Russian telcos & ISPs",
+            description = "MTS, Megafon, Beeline, Rostelecom — for direct access to operator portals and self-service.",
             asns = listOf(
-                RoutePreset.AsnEntry(20473, "Choopa/Vultr (OpenAI infra)"),
-                RoutePreset.AsnEntry(8075, "Microsoft (Azure OpenAI)"),
+                RoutePreset.AsnEntry(8359, "MTS"),
+                RoutePreset.AsnEntry(31133, "Megafon"),
+                RoutePreset.AsnEntry(3216, "VimpelCom / Beeline"),
+                RoutePreset.AsnEntry(12389, "Rostelecom"),
             ),
         ),
         RoutePreset(
-            id = "cdn",
-            name = "Major CDNs",
-            description = "Cloudflare, Fastly, Akamai — bypass tunnel for CDN-served content.",
+            id = "cf",
+            name = "Cloudflare",
+            description = "Cloudflare's anycast network (~600 prefixes). Useful if your VPN's exit is being rate-limited by CF.",
             asns = listOf(
                 RoutePreset.AsnEntry(13335, "Cloudflare"),
-                RoutePreset.AsnEntry(54113, "Fastly"),
-                RoutePreset.AsnEntry(20940, "Akamai"),
             ),
         ),
     )

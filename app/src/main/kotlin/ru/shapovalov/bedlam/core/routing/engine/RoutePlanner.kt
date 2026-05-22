@@ -36,27 +36,32 @@ class RoutePlanner(
         val lanExclusionsV4 = if (config.bypassLan) LanRanges.IPV4 else emptyList()
         val lanExclusionsV6 = if (config.bypassLan) LanRanges.IPV6 else emptyList()
 
-        val sourceCidrs = config.sources.asSequence()
-            .filter { it.source.enabled }
-            .flatMap { it.cidrs.asSequence() }
-            .toList()
-        val sourceV4 = sourceCidrs.filterIsInstance<Cidr.V4>()
-        val sourceV6 = sourceCidrs.filterIsInstance<Cidr.V6>()
-
         val budget = maxTotalRoutes - baseV4.size - baseV6.size -
             systemExclusionsV4.size - systemExclusionsV6.size -
             lanExclusionsV4.size - lanExclusionsV6.size
 
-        val (keptSourceV4, keptSourceV6) = if (sourceV4.size + sourceV6.size > budget) {
-            android.util.Log.w(
-                TAG,
-                "Direct routes dropped: ${sourceV4.size + sourceV6.size} CIDRs exceed budget $budget. " +
-                    "Trim direct route sources."
-            )
-            emptyList<Cidr.V4>() to emptyList<Cidr.V6>()
-        } else {
-            sourceV4 to sourceV6
+        // Fit individual sources into the budget smallest-first. A single huge
+        // source (Akamai's 10k prefixes, etc.) shouldn't take small sources
+        // (Yandex's ~70) down with it.
+        val enabledSources = config.sources
+            .filter { it.source.enabled && it.cidrs.isNotEmpty() }
+            .sortedBy { it.cidrs.size }
+        val kept = mutableListOf<Cidr>()
+        var used = 0
+        for (resolved in enabledSources) {
+            if (used + resolved.cidrs.size > budget) {
+                android.util.Log.w(
+                    TAG,
+                    "Source dropped (over budget): ${resolved.source.label()} " +
+                        "(${resolved.cidrs.size} CIDRs, budget remaining ${budget - used})"
+                )
+                continue
+            }
+            kept += resolved.cidrs
+            used += resolved.cidrs.size
         }
+        val keptSourceV4 = kept.filterIsInstance<Cidr.V4>()
+        val keptSourceV6 = kept.filterIsInstance<Cidr.V6>()
 
         val excludedV4Raw: List<Cidr> = systemExclusionsV4 + lanExclusionsV4 + keptSourceV4
         val excludedV6Raw: List<Cidr> = systemExclusionsV6 + lanExclusionsV6 + keptSourceV6
