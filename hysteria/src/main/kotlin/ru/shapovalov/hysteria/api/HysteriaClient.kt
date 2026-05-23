@@ -167,9 +167,6 @@ enum class DisconnectReason {
 
     /** Android revoked the VPN permission. */
     REVOKED,
-
-    /** A previous [HysteriaClient.start] failed and rolled back. */
-    FAILED,
 }
 
 /** Outcome of a connectivity diagnostic ([HysteriaClient.testUdp] / [HysteriaClient.testDnsOverTcp]). */
