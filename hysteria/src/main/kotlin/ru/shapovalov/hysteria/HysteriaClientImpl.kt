@@ -92,7 +92,7 @@ class HysteriaClientImpl : HysteriaClient {
                     },
                 )
                 session = s
-                val pfd = tun.create(tunConfig.mtu)
+                val pfd = tun.create(tunConfig)
                 val fd = try {
                     pfd.detachFd()
                 } catch (t: Throwable) {
@@ -102,7 +102,7 @@ class HysteriaClientImpl : HysteriaClient {
                 }
                 var adopted = false
                 try {
-                    s.startTUN(fd, tunConfig.mtu, tunConfig.ipv4Prefix, tunConfig.ipv6Prefix)
+                    s.startTUN(fd, tunConfig.mtu, TunConfig.IPV4_CIDR, TunConfig.IPV6_CIDR)
                     adopted = true
                 } catch (t: Throwable) {
                     if (!adopted) {

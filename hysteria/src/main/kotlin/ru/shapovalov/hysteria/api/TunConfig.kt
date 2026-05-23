@@ -1,22 +1,27 @@
 package ru.shapovalov.hysteria.api
 
-data class TunConfig(
-    val mtu: Int = DEFAULT_MTU,
-    val ipv4Prefix: String = DEFAULT_IPV4_PREFIX,
-    val ipv6Prefix: String = DEFAULT_IPV6_PREFIX,
-) {
-    init {
-        require(mtu in MIN_MTU..MAX_MTU) { "MTU out of range: $mtu" }
-        requireCidr(ipv4Prefix, "ipv4Prefix", IpFamily.V4)
-        requireCidr(ipv6Prefix, "ipv6Prefix", IpFamily.V6)
-    }
+/**
+ * User-facing tuning for the TUN device. Only the MTU is configurable; the
+ * link-local addressing is an internal implementation detail of the module
+ * because the kernel TUN and the gVisor stack must agree on it. The
+ * constants below are exposed read-only so an external [HysteriaClient.TunFactory]
+ * can program `VpnService.Builder.addAddress` with the matching values.
+ */
+data class TunConfig(val mtu: Int = DEFAULT_MTU) {
+    init { require(mtu in MIN_MTU..MAX_MTU) { "MTU out of range: $mtu" } }
 
     companion object {
         const val DEFAULT_MTU: Int = 1280
-        const val DEFAULT_IPV4_PREFIX: String = "172.19.0.1/30"
-        const val DEFAULT_IPV6_PREFIX: String = "fdfe:dcba:9876::1/126"
         const val MIN_MTU: Int = 576
         const val MAX_MTU: Int = 9000
+
+        const val IPV4_ADDRESS: String = "172.19.0.1"
+        const val IPV4_PREFIX_LENGTH: Int = 30
+        const val IPV6_ADDRESS: String = "fdfe:dcba:9876::1"
+        const val IPV6_PREFIX_LENGTH: Int = 126
+
+        const val IPV4_CIDR: String = "$IPV4_ADDRESS/$IPV4_PREFIX_LENGTH"
+        const val IPV6_CIDR: String = "$IPV6_ADDRESS/$IPV6_PREFIX_LENGTH"
 
         val Default: TunConfig = TunConfig()
     }

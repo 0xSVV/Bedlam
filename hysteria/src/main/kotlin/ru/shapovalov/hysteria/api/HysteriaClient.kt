@@ -142,12 +142,14 @@ interface HysteriaClient {
     }
 
     /**
-     * Establishes the Android VPN interface with the requested [mtu] and returns
-     * the resulting TUN device. Ownership passes to the client; do not close
-     * the returned descriptor yourself.
+     * Establishes the Android VPN interface with the requested [config] and
+     * returns the resulting TUN device. Ownership passes to the client; do
+     * not close the returned descriptor yourself. The caller must wire the
+     * Builder's `addAddress`/MTU using the values in [config] so the kernel
+     * TUN matches the gVisor stack the client will attach to it.
      */
     fun interface TunFactory {
-        fun create(mtu: Int): ParcelFileDescriptor
+        fun create(config: TunConfig): ParcelFileDescriptor
     }
 }
 

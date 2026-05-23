@@ -145,7 +145,7 @@ class BedlamVpnService : VpnService() {
                     config = config,
                     tunConfig = TunConfig.Default,
                     protector = { fd -> protect(fd) },
-                    tun = { mtu -> establishTun(mtu) },
+                    tun = { tunConfig -> establishTun(tunConfig) },
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "VPN startup failed", e)
@@ -156,26 +156,18 @@ class BedlamVpnService : VpnService() {
         return START_STICKY
     }
 
-    private fun establishTun(mtu: Int): ParcelFileDescriptor {
+    private fun establishTun(tunConfig: TunConfig): ParcelFileDescriptor {
         val plan = currentRoutePlan
             ?: throw IllegalStateException("RoutePlan not built before establishTun()")
-        val (v4Addr, v4Prefix) = parsePrefix(TunConfig.DEFAULT_IPV4_PREFIX)
-        val (v6Addr, v6Prefix) = parsePrefix(TunConfig.DEFAULT_IPV6_PREFIX)
         val builder = Builder()
             .setSession(connectionName.ifEmpty { getString(R.string.vpn_session_default) })
-            .setMtu(mtu)
+            .setMtu(tunConfig.mtu)
             .setMetered(false)
-            .addAddress(v4Addr, v4Prefix)
-            .addAddress(v6Addr, v6Prefix)
+            .addAddress(TunConfig.IPV4_ADDRESS, TunConfig.IPV4_PREFIX_LENGTH)
+            .addAddress(TunConfig.IPV6_ADDRESS, TunConfig.IPV6_PREFIX_LENGTH)
         routePlanApplier.apply(plan, builder)
         return builder.establish()
             ?: throw IllegalStateException("VpnService.establish() returned null")
-    }
-
-    private fun parsePrefix(cidr: String): Pair<String, Int> {
-        val slash = cidr.lastIndexOf('/')
-        require(slash > 0) { "Invalid CIDR: $cidr" }
-        return cidr.substring(0, slash) to cidr.substring(slash + 1).toInt()
     }
 
     private fun stop(reason: DisconnectReason = DisconnectReason.USER) {

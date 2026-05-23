@@ -17,6 +17,14 @@ class TunConfigTest {
         assertEquals(1280, c.mtu)
     }
 
+    @Test
+    fun `internal CIDR constants are well-formed`() {
+        requireCidr(TunConfig.IPV4_CIDR, "IPV4_CIDR", IpFamily.V4)
+        requireCidr(TunConfig.IPV6_CIDR, "IPV6_CIDR", IpFamily.V6)
+        assertEquals("${TunConfig.IPV4_ADDRESS}/${TunConfig.IPV4_PREFIX_LENGTH}", TunConfig.IPV4_CIDR)
+        assertEquals("${TunConfig.IPV6_ADDRESS}/${TunConfig.IPV6_PREFIX_LENGTH}", TunConfig.IPV6_CIDR)
+    }
+
     @ParameterizedTest
     @ValueSource(ints = [TunConfig.MIN_MTU, 1280, 1500, TunConfig.MAX_MTU])
     fun `mtu in range accepted`(mtu: Int) {
@@ -27,50 +35,6 @@ class TunConfigTest {
     @ValueSource(ints = [0, 1, TunConfig.MIN_MTU - 1, TunConfig.MAX_MTU + 1, Int.MAX_VALUE])
     fun `mtu out of range rejected`(mtu: Int) {
         assertThrows(IllegalArgumentException::class.java) { TunConfig(mtu = mtu) }
-    }
-
-    @Test
-    fun `valid ipv4 cidr accepted`() {
-        TunConfig(ipv4Prefix = "10.0.0.1/24")
-    }
-
-    @Test
-    fun `valid ipv6 cidr accepted`() {
-        TunConfig(ipv6Prefix = "fdfe::1/64")
-    }
-
-    @ParameterizedTest
-    @ValueSource(
-        strings = [
-            "10.0.0.1",                // missing slash
-            "10.0.0.1/",               // empty length
-            "10.0.0.1/abc",            // non-numeric length
-            "10.0.0.1/33",             // length > 32 for v4
-            "256.0.0.0/24",            // octet out of range
-            "10.0.0/24",               // wrong octet count
-            "fdfe::1/24",              // ipv6 in ipv4 slot
-            "10.0.0.1/16/32",          // multiple slashes
-        ]
-    )
-    fun `bad ipv4 prefix rejected`(bad: String) {
-        assertThrows(IllegalArgumentException::class.java) { TunConfig(ipv4Prefix = bad) }
-    }
-
-    @ParameterizedTest
-    @ValueSource(
-        strings = [
-            "fdfe::1",                 // missing slash
-            "fdfe::1/",                // empty length
-            "fdfe::1/129",             // length > 128
-            "10.0.0.1/64",             // ipv4 in ipv6 slot
-            "ggg::1/64",               // non-hex
-            "1::2::3/64",              // two double-colons
-            "1:2:3:4:5:6:7/64",        // too few groups without ::
-            "1:2:3:4:5:6:7:8:9/64",    // too many groups
-        ]
-    )
-    fun `bad ipv6 prefix rejected`(bad: String) {
-        assertThrows(IllegalArgumentException::class.java) { TunConfig(ipv6Prefix = bad) }
     }
 
     @Test
