@@ -1,10 +1,5 @@
 package ru.shapovalov.hysteria.api
 
-/**
- * Configuration for the TUN device that the Hysteria core reads/writes packets on.
- * The prefixes are *interface addresses* assigned to the local TUN — not the
- * routes claimed by the VPN; the Android caller decides those separately.
- */
 data class TunConfig(
     val mtu: Int = DEFAULT_MTU,
     val ipv4Prefix: String = DEFAULT_IPV4_PREFIX,

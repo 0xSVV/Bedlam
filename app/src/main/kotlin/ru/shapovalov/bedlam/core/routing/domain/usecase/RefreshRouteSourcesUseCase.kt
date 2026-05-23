@@ -12,12 +12,6 @@ class RefreshRouteSourcesUseCase(
     private val repo: RoutingRepository,
     private val resolver: DirectRouteResolver,
 ) {
-    /**
-     * Re-resolves enabled non-literal sources. CIDR sources are skipped — they
-     * have nothing to refresh. Resolution runs in parallel.
-     *
-     * @param staleAfterMillis if non-null, only sources older than this are refreshed.
-     */
     suspend operator fun invoke(staleAfterMillis: Long? = null) {
         val now = System.currentTimeMillis()
         val sources = repo.get().sources

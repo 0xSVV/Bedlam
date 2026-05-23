@@ -330,10 +330,6 @@ private fun SwipeableSourceCard(
     onToggle: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
 ) {
-    // rememberSwipeToDismissBoxState captures `confirmValueChange` once via
-    // rememberSaveable. To see live values inside that pinned closure we route
-    // them through rememberUpdatedState — the lambda reads State refs that
-    // always point at the most recent props.
     val latestResolved by rememberUpdatedState(resolved)
     val latestOnToggle by rememberUpdatedState(onToggle)
     val latestOnDelete by rememberUpdatedState(onDelete)
@@ -342,12 +338,10 @@ private fun SwipeableSourceCard(
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.EndToStart -> {
-                    // Swipe LEFT → delete (commit dismissal)
                     latestOnDelete(latestResolved.source.id)
                     true
                 }
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    // Swipe RIGHT → toggle, snap back
                     latestOnToggle(latestResolved.source.id, !latestResolved.source.enabled)
                     false
                 }
@@ -374,7 +368,6 @@ private fun SwipeableSourceCard(
 private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled: Boolean) {
     val spacing = MaterialTheme.spacing
     val spec: SwipeBgSpec = when (direction) {
-        // Swipe RIGHT — content moves right, background reveals on the LEFT.
         SwipeToDismissBoxValue.StartToEnd -> SwipeBgSpec(
             bg = MaterialTheme.colorScheme.tertiaryContainer,
             fg = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -384,7 +377,6 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
             ),
             align = Alignment.CenterStart,
         )
-        // Swipe LEFT — content moves left, background reveals on the RIGHT.
         SwipeToDismissBoxValue.EndToStart -> SwipeBgSpec(
             bg = MaterialTheme.colorScheme.errorContainer,
             fg = MaterialTheme.colorScheme.onErrorContainer,
@@ -421,9 +413,6 @@ private data class SwipeBgSpec(
 private fun SourceRowContent(resolved: ResolvedSource, isRefreshing: Boolean) {
     val spacing = MaterialTheme.spacing
     val dimmed = !resolved.source.enabled
-    // Matches ElevatedCard's default containerColor so the row is opaque
-    // (covers the swipe-action background when at rest) yet blends with
-    // the surrounding card.
     val baseColor = MaterialTheme.colorScheme.surfaceContainerLow
     Row(
         modifier = Modifier
@@ -589,8 +578,6 @@ private fun <T> DropdownRow(
 @Composable
 private fun CustomDnsEditor(initial: List<String>, onChange: (List<String>) -> Unit) {
     val spacing = MaterialTheme.spacing
-    // Local field state owns the text. We only seed from [initial] once;
-    // upstream updates from our own onChange must not bounce back and reset.
     var text by remember { mutableStateOf(initial.joinToString(", ")) }
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(

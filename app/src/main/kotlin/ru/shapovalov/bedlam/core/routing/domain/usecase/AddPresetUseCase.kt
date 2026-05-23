@@ -9,7 +9,6 @@ import java.util.UUID
 class AddPresetUseCase(
     private val addSource: AddRouteSourceUseCase,
 ) {
-    /** Adds only the preset's ASNs that aren't already present. Returns the number actually added. */
     suspend operator fun invoke(presetId: String): Int {
         val preset = RoutePresets.byId(presetId) ?: return 0
         var added = 0

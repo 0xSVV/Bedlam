@@ -1,17 +1,11 @@
 package ru.shapovalov.bedlam.core.routing.domain.model
 
-/**
- * An IP CIDR block. Network bytes are always normalized — bits past the
- * prefix are zeroed — so two equal CIDRs compare as equal regardless of
- * how they were originally written.
- */
 sealed interface Cidr {
     val prefixLength: Int
     val networkBytes: ByteArray
     val byteCount: Int get() = networkBytes.size
     val bitCount: Int get() = byteCount * 8
 
-    /** Returns the canonical CIDR string ("a.b.c.d/p" or "x:y:z::/p"). */
     fun asString(): String
 
     data class V4(
@@ -57,7 +51,6 @@ sealed interface Cidr {
     }
 
     companion object {
-        /** Parse a "a.b.c.d/p" or "x:y::z/p" string. Throws [IllegalArgumentException] on malformed input. */
         fun parse(s: String): Cidr {
             val slash = s.indexOf('/')
             require(slash > 0) { "Missing '/' in CIDR: $s" }
@@ -72,7 +65,6 @@ sealed interface Cidr {
             }
         }
 
-        /** Returns null on parse failure rather than throwing. */
         fun parseOrNull(s: String): Cidr? = runCatching { parse(s) }.getOrNull()
     }
 }

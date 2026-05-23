@@ -2,12 +2,6 @@ package ru.shapovalov.bedlam.core.routing.data
 
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutePreset
 
-/**
- * Hardcoded curated presets. Each preset is a bundle of ASNs whose announced
- * prefixes are reasonably representative of the named service. Avoid generic
- * cloud ASNs (Microsoft Azure, Akamai, Vultr) — they announce thousands of
- * prefixes that don't actually serve the service you want to bypass for.
- */
 object RoutePresets {
 
     val ALL: List<RoutePreset> = listOf(

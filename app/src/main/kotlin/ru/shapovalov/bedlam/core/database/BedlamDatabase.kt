@@ -37,24 +37,17 @@ abstract class BedlamDatabase : RoomDatabase() {
     abstract fun routingDao(): RoutingDao
 }
 
-/**
- * v2 → v3 introduced direct_route + geoip_db_info; v3 → v4 drops them in
- * favor of the unified route_source / resolved_cidr scheme and removes the
- * geoDirectCountriesCsv column from routing_config (SQLite rebuild because
- * minSdk < 31 can't ALTER TABLE DROP COLUMN safely).
- */
 val MIGRATION_2_4: Migration = object : Migration(2, 4) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        rebuildRoutingConfig(db, fromVersion = 2)
+        rebuildRoutingConfig(db)
         createRouteSourceTables(db)
     }
 }
 
 val MIGRATION_3_4: Migration = object : Migration(3, 4) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        rebuildRoutingConfig(db, fromVersion = 3)
+        rebuildRoutingConfig(db)
         createRouteSourceTables(db)
-        // Carry existing direct_route rows over as CIDR sources.
         db.execSQL(
             """
             INSERT INTO route_source (id, kind, rawValue, comment, enabled, orderIndex, lastResolvedMillis, lastError)
@@ -66,7 +59,7 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
     }
 }
 
-private fun rebuildRoutingConfig(db: SupportSQLiteDatabase, fromVersion: Int) {
+private fun rebuildRoutingConfig(db: SupportSQLiteDatabase) {
     db.execSQL(
         """
         CREATE TABLE IF NOT EXISTS routing_config_new (
@@ -78,19 +71,10 @@ private fun rebuildRoutingConfig(db: SupportSQLiteDatabase, fromVersion: Int) {
         )
         """.trimIndent()
     )
-    if (fromVersion >= 3) {
-        // v3 had geoDirectCountriesCsv; drop it via copy.
-        db.execSQL(
-            "INSERT INTO routing_config_new (id, bypassLan, ipv6Mode, dnsMode, customDnsCsv) " +
-                "SELECT id, bypassLan, ipv6Mode, dnsMode, customDnsCsv FROM routing_config"
-        )
-    } else {
-        // v2 didn't have routing_config at all (or it had no geo column); copy what's there.
-        db.execSQL(
-            "INSERT INTO routing_config_new (id, bypassLan, ipv6Mode, dnsMode, customDnsCsv) " +
-                "SELECT id, bypassLan, ipv6Mode, dnsMode, customDnsCsv FROM routing_config"
-        )
-    }
+    db.execSQL(
+        "INSERT INTO routing_config_new (id, bypassLan, ipv6Mode, dnsMode, customDnsCsv) " +
+            "SELECT id, bypassLan, ipv6Mode, dnsMode, customDnsCsv FROM routing_config"
+    )
     db.execSQL("DROP TABLE routing_config")
     db.execSQL("ALTER TABLE routing_config_new RENAME TO routing_config")
 }

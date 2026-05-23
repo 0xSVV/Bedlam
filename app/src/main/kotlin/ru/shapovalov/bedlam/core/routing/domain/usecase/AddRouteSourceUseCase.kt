@@ -10,11 +10,6 @@ class AddRouteSourceUseCase(
     private val repo: RoutingRepository,
     private val resolver: DirectRouteResolver,
 ) {
-    /**
-     * Persists [source] and triggers an immediate resolution attempt.
-     * If an equivalent source (by dedupe key) already exists, returns `false`
-     * without touching anything.
-     */
     suspend operator fun invoke(source: DirectRouteSource): Boolean {
         if (repo.hasEquivalent(source)) return false
         repo.upsertSource(source)

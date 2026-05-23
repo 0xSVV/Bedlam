@@ -116,7 +116,6 @@ class CidrMathTest {
 
         @Test
         fun `single full v4 sweep merges to slash-0`() {
-            // 0.0.0.0/1 + 128.0.0.0/1 == 0.0.0.0/0
             val merged = CidrMath.coalesce(
                 listOf(Cidr.parse("0.0.0.0/1"), Cidr.parse("128.0.0.0/1"))
             )
@@ -141,7 +140,6 @@ class CidrMathTest {
                 base = listOf(Cidr.parse("0.0.0.0/0")),
                 exclude = listOf(Cidr.parse("1.2.3.4/32"))
             )
-            // Should cover everything except 1.2.3.4 exactly.
             assertTrue(result.all { it is Cidr.V4 })
             assertFalse(coversAddress(result, Cidr.parse("1.2.3.4/32").networkBytes))
             assertTrue(coversAddress(result, Cidr.parse("1.2.3.3/32").networkBytes))
@@ -178,11 +176,9 @@ class CidrMathTest {
                     Cidr.parse("192.168.0.0/16"),
                 )
             )
-            // None of the private ranges may be covered.
             assertFalse(coversAddress(result, byteArrayOf(10, 5, 6, 7)))
             assertFalse(coversAddress(result, byteArrayOf(172.toByte(), 20, 0, 1)))
             assertFalse(coversAddress(result, byteArrayOf(192.toByte(), 168.toByte(), 1, 1)))
-            // But arbitrary public addresses must be.
             assertTrue(coversAddress(result, byteArrayOf(8, 8, 8, 8)))
             assertTrue(coversAddress(result, byteArrayOf(1, 1, 1, 1)))
         }
@@ -193,9 +189,7 @@ class CidrMathTest {
                 base = listOf(Cidr.parse("0.0.0.0/0"), Cidr.parse("::/0")),
                 exclude = listOf(Cidr.parse("fc00::/7"))
             )
-            // v4 default must survive intact.
             assertTrue(result.any { it == Cidr.parse("0.0.0.0/0") })
-            // v6 default must be split.
             assertTrue(result.any { it is Cidr.V6 && it != Cidr.parse("::/0") })
         }
 
@@ -214,7 +208,6 @@ class CidrMathTest {
                 base = listOf(Cidr.parse("10.0.0.0/24"), Cidr.parse("10.0.1.0/24")),
                 exclude = emptyList(),
             )
-            // The two siblings should merge.
             assertEquals(listOf(Cidr.parse("10.0.0.0/23")), result)
         }
     }

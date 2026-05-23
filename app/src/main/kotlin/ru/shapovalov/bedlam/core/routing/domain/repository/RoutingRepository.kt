@@ -20,7 +20,6 @@ interface RoutingRepository {
     suspend fun removeSource(id: String)
     suspend fun setSourceEnabled(id: String, enabled: Boolean)
 
-    /** True iff a source with the same [DirectRouteSource.dedupeKey] already exists. */
     suspend fun hasEquivalent(source: DirectRouteSource): Boolean
     suspend fun recordResolution(sourceId: String, cidrs: List<Cidr>, error: String?)
 }

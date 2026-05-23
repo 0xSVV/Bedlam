@@ -7,18 +7,6 @@ import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutePlan
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 
-/**
- * Builds a [RoutePlan] from a [RoutingConfig] + [AppFilter]. Pure — no Android deps.
- *
- * All sources are pre-resolved (CIDRs cached in Room), so this is a fast in-memory
- * coalesce. [maxTotalRoutes] is a soft budget against Android's ~1 MB Binder cap.
- *
- * @property supportsExcludeRoute on API 33+, ships exclusions verbatim; otherwise
- *   subtracts on our side.
- * @property tunPrefixV4 the local TUN v4 prefix; always excluded to avoid loops.
- * @property tunPrefixV6 the local TUN v6 prefix.
- * @property maxTotalRoutes claimed+excluded ceiling before sources are dropped.
- */
 class RoutePlanner(
     private val supportsExcludeRoute: Boolean,
     private val tunPrefixV4: Cidr.V4,
@@ -40,9 +28,6 @@ class RoutePlanner(
             systemExclusionsV4.size - systemExclusionsV6.size -
             lanExclusionsV4.size - lanExclusionsV6.size
 
-        // Fit individual sources into the budget smallest-first. A single huge
-        // source (Akamai's 10k prefixes, etc.) shouldn't take small sources
-        // (Yandex's ~70) down with it.
         val enabledSources = config.sources
             .filter { it.source.enabled && it.cidrs.isNotEmpty() }
             .sortedBy { it.cidrs.size }
@@ -118,8 +103,6 @@ class RoutePlanner(
 
     companion object {
         private const val TAG = "RoutePlanner"
-        /** Android's `VpnService.Builder` serializes routes over a ~1 MB Binder
-         *  transaction; ~10k `RouteInfo` entries fit, so 8192 is a safe ceiling. */
         const val DEFAULT_MAX_TOTAL_ROUTES: Int = 8192
 
         val IPV4_DEFAULT: Cidr.V4 = Cidr.parse("0.0.0.0/0") as Cidr.V4

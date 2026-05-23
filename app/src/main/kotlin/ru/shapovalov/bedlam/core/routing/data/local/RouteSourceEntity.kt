@@ -6,8 +6,8 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "route_source")
 data class RouteSourceEntity(
     @PrimaryKey val id: String,
-    val kind: String,            // "CIDR" | "ASN" | "DOMAIN"
-    val rawValue: String,        // "10.0.0.0/8" | "13238" | "yandex.ru"
+    val kind: String,
+    val rawValue: String,
     val comment: String,
     val enabled: Boolean,
     val orderIndex: Int,
