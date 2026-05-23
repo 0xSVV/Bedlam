@@ -264,6 +264,11 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 
 	var newFunc func(addr net.Addr) (net.PacketConn, error)
 	if isHop {
+		if cfg.MinHopIntervalSec > 0 && cfg.MaxHopIntervalSec > 0 &&
+			cfg.MinHopIntervalSec > cfg.MaxHopIntervalSec {
+			return fmt.Errorf("min_hop_interval (%ds) exceeds max_hop_interval (%ds)",
+				cfg.MinHopIntervalSec, cfg.MaxHopIntervalSec)
+		}
 		hopAddr := serverAddr.(*udphop.UDPHopAddr)
 		hopInterval := buildHopInterval(cfg)
 		newFunc = func(addr net.Addr) (net.PacketConn, error) {

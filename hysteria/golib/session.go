@@ -110,6 +110,11 @@ func ValidateConfig(configJSON string) error {
 	if cfg.ObfsType == "salamander" && cfg.ObfsPassword == "" {
 		return fmt.Errorf("obfs password required for salamander")
 	}
+	if cfg.MinHopIntervalSec > 0 && cfg.MaxHopIntervalSec > 0 &&
+		cfg.MinHopIntervalSec > cfg.MaxHopIntervalSec {
+		return fmt.Errorf("min_hop_interval (%ds) exceeds max_hop_interval (%ds)",
+			cfg.MinHopIntervalSec, cfg.MaxHopIntervalSec)
+	}
 	return nil
 }
 
