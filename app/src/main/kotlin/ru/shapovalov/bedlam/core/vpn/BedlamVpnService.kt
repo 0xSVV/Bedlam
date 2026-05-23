@@ -12,6 +12,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.text.format.Formatter
 import android.util.Log
@@ -154,7 +155,7 @@ class BedlamVpnService : VpnService() {
         return START_STICKY
     }
 
-    private fun establishTun(mtu: Int): Int {
+    private fun establishTun(mtu: Int): ParcelFileDescriptor {
         val plan = currentRoutePlan
             ?: throw IllegalStateException("RoutePlan not built before establishTun()")
         val (v4Addr, v4Prefix) = parsePrefix(TunConfig.DEFAULT_IPV4_PREFIX)
@@ -166,9 +167,8 @@ class BedlamVpnService : VpnService() {
             .addAddress(v4Addr, v4Prefix)
             .addAddress(v6Addr, v6Prefix)
         routePlanApplier.apply(plan, builder)
-        val pfd = builder.establish()
+        return builder.establish()
             ?: throw IllegalStateException("VpnService.establish() returned null")
-        return pfd.detachFd()
     }
 
     private fun parsePrefix(cidr: String): Pair<String, Int> {

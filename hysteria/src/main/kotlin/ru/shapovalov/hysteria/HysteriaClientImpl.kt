@@ -1,5 +1,6 @@
 package ru.shapovalov.hysteria
 
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import golib.EventHandler
 import golib.Golib
@@ -91,10 +92,22 @@ class HysteriaClientImpl : HysteriaClient {
                     },
                 )
                 session = s
-                try {
-                    val fd = tun.create(tunConfig.mtu)
-                    s.startTUN(fd, tunConfig.mtu, tunConfig.ipv4Prefix, tunConfig.ipv6Prefix)
+                val pfd = tun.create(tunConfig.mtu)
+                val fd = try {
+                    pfd.detachFd()
                 } catch (t: Throwable) {
+                    runCatching { pfd.close() }
+                    closeSessionLocked()
+                    throw t
+                }
+                var adopted = false
+                try {
+                    s.startTUN(fd, tunConfig.mtu, tunConfig.ipv4Prefix, tunConfig.ipv6Prefix)
+                    adopted = true
+                } catch (t: Throwable) {
+                    if (!adopted) {
+                        runCatching { ParcelFileDescriptor.adoptFd(fd).close() }
+                    }
                     closeSessionLocked()
                     throw t
                 }

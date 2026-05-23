@@ -1,5 +1,6 @@
 package ru.shapovalov.hysteria.api
 
+import android.os.ParcelFileDescriptor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import ru.shapovalov.hysteria.ConnectionState
@@ -38,9 +39,11 @@ interface HysteriaClient {
      *   [`VpnService.protect`](https://developer.android.com/reference/android/net/VpnService#protect(int)).
      *   Returning `false` is logged (`WARN`) and may indicate a routing loop is
      *   imminent.
-     * @param tun invoked once after the handshake succeeds; must return a raw
-     *   file descriptor for an established Android TUN device. Ownership of the
-     *   fd transfers to the client and is closed on [stop].
+     * @param tun invoked once after the handshake succeeds; must return a
+     *   [ParcelFileDescriptor] for an established Android TUN device. The
+     *   client takes ownership: the fd is detached and passed to the native
+     *   layer on success, or closed if [start] fails before the native layer
+     *   adopts it.
      *
      * @throws IllegalStateException if a tunnel is already running or starting.
      * @throws Exception with the original cause if the handshake fails.
@@ -140,10 +143,11 @@ interface HysteriaClient {
 
     /**
      * Establishes the Android VPN interface with the requested [mtu] and returns
-     * the raw file descriptor of the resulting TUN device.
+     * the resulting TUN device. Ownership passes to the client; do not close
+     * the returned descriptor yourself.
      */
     fun interface TunFactory {
-        fun create(mtu: Int): Int
+        fun create(mtu: Int): ParcelFileDescriptor
     }
 }
 
