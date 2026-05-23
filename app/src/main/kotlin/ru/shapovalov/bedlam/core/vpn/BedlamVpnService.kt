@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
@@ -63,12 +62,15 @@ class BedlamVpnService : VpnService() {
     override fun onRevoke() = stop(DisconnectReason.REVOKED)
 
     override fun onDestroy() {
+        // Orderly shutdown runs through stop() — by the time we get here either
+        // that has already completed, or Android is tearing the process down
+        // (memory pressure, force-stop) and the Go runtime goes with it. No
+        // blocking work on the main thread.
         notificationJob?.cancel()
         notificationJob = null
         stopNetworkListener()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        runBlocking { runCatching { client.stop(DisconnectReason.USER) } }
         scope.cancel()
         super.onDestroy()
     }
