@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
@@ -16,25 +17,32 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 		err  error
 	}
 	done := make(chan result, 1)
+	var (
+		connMu sync.Mutex
+		conn   net.Conn
+	)
 	go func() {
-		conn, err := c.TCP(dnsServer)
+		cn, err := c.TCP(dnsServer)
 		if err != nil {
 			done <- result{nil, fmt.Errorf("dial DNS server: %w", err)}
 			return
 		}
-		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(5 * time.Second))
+		connMu.Lock()
+		conn = cn
+		connMu.Unlock()
+		defer cn.Close()
+		cn.SetDeadline(time.Now().Add(5 * time.Second))
 
 		msg := make([]byte, 2+len(query))
 		binary.BigEndian.PutUint16(msg[:2], uint16(len(query)))
 		copy(msg[2:], query)
-		if _, err := conn.Write(msg); err != nil {
+		if _, err := cn.Write(msg); err != nil {
 			done <- result{nil, fmt.Errorf("write query: %w", err)}
 			return
 		}
 
 		var respLen [2]byte
-		if _, err := io.ReadFull(conn, respLen[:]); err != nil {
+		if _, err := io.ReadFull(cn, respLen[:]); err != nil {
 			done <- result{nil, fmt.Errorf("read response length: %w", err)}
 			return
 		}
@@ -45,7 +53,7 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 		}
 
 		resp := make([]byte, n)
-		if _, err := io.ReadFull(conn, resp); err != nil {
+		if _, err := io.ReadFull(cn, resp); err != nil {
 			done <- result{nil, fmt.Errorf("read response: %w", err)}
 			return
 		}
@@ -56,6 +64,11 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 	case r := <-done:
 		return r.resp, r.err
 	case <-time.After(6 * time.Second):
+		connMu.Lock()
+		if conn != nil {
+			_ = conn.Close()
+		}
+		connMu.Unlock()
 		return nil, fmt.Errorf("DNS query to %s timed out", dnsServer)
 	}
 }
