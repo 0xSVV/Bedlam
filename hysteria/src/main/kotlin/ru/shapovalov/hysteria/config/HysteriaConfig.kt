@@ -6,7 +6,6 @@ import kotlinx.serialization.Serializable
 data class HysteriaConfig(
     val server: ServerCredentials,
     val tls: TlsOptions,
-    val name: String = "",
     val obfuscation: ObfuscationOptions? = null,
     val quic: QuicOptions? = null,
     val congestion: CongestionOptions? = null,

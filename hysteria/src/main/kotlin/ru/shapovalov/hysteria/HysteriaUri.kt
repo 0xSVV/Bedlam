@@ -10,17 +10,26 @@ import ru.shapovalov.hysteria.config.defaultTlsOptions
 import java.net.URLDecoder
 
 /**
- * Parses a Hysteria 2 URI into a [HysteriaConfig].
+ * Result of parsing a Hysteria 2 URI: a fully-formed [HysteriaConfig] plus the
+ * human-readable [name] taken from the URI fragment (empty if absent).
+ */
+data class ParsedHysteriaUri(
+    val config: HysteriaConfig,
+    val name: String,
+)
+
+/**
+ * Parses a Hysteria 2 URI into a [ParsedHysteriaUri].
  *
  * Format: `hysteria2://[auth@]hostname[:port]/?[key=value]&...[#name]`
  * Also accepts the `hy2://` scheme.
  *
  * Supported query parameters: sni, insecure, pinSHA256, obfs, obfs-password.
- * Optional fragment is treated as a human-readable connection name.
+ * The optional fragment is surfaced as [ParsedHysteriaUri.name].
  *
  * @see <a href="https://v2.hysteria.network/docs/developers/URI-Scheme/">Hysteria 2 URI Scheme</a>
  */
-fun parseHysteriaUri(uriString: String): HysteriaConfig {
+fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
     val raw = uriString.trim()
     require(raw.startsWith("hysteria2://") || raw.startsWith("hy2://")) {
         "URI must start with hysteria2:// or hy2://"
@@ -41,9 +50,8 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
     val obfsPassword = uri.getQueryParameter("obfs-password").orEmpty()
     val name = uri.encodedFragment?.let { URLDecoder.decode(it, "UTF-8") }.orEmpty()
 
-    return HysteriaConfig(
+    val config = HysteriaConfig(
         server = ServerCredentials(address = server, auth = auth),
-        name = name,
         tls = TlsOptions(
             tlsSni = sni,
             tlsInsecure = insecure,
@@ -57,6 +65,7 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
             obfuscationPassword = obfsPassword,
         )
     )
+    return ParsedHysteriaUri(config = config, name = name)
 }
 
 private fun isIpLiteral(host: String): Boolean {

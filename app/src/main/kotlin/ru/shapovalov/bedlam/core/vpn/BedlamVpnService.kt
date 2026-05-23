@@ -129,7 +129,7 @@ class BedlamVpnService : VpnService() {
             stopSelf()
             return START_NOT_STICKY
         }
-        connectionName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty().ifEmpty { config.name }
+        connectionName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty()
 
         startAsForeground()
         acquireWakeLock()

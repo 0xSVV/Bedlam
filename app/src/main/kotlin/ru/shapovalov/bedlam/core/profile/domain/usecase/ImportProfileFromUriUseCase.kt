@@ -12,12 +12,12 @@ class ImportProfileFromUriUseCase(
     private val hysteriaClient: HysteriaClient,
 ) {
     suspend operator fun invoke(uri: String, name: String? = null): Result<Profile> = runCatching {
-        val config = parseHysteriaUri(uri)
-        hysteriaClient.validateConfig(config).getOrThrow()
+        val parsed = parseHysteriaUri(uri)
+        hysteriaClient.validateConfig(parsed.config).getOrThrow()
         val profileName = name?.takeIf { it.isNotBlank() }
-            ?: config.name.takeIf { it.isNotBlank() }
-            ?: config.server.address
-        val profile = Profile.new(profileName, config, System.currentTimeMillis())
+            ?: parsed.name.takeIf { it.isNotBlank() }
+            ?: parsed.config.server.address
+        val profile = Profile.new(profileName, parsed.config, System.currentTimeMillis())
         repository.upsert(profile)
         profile
     }
