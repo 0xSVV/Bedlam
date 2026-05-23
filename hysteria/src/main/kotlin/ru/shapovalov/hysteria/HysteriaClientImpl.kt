@@ -42,12 +42,14 @@ class HysteriaClientImpl : HysteriaClient {
     )
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
-    private val sessionLock = Mutex()
     @Volatile private var session: Session? = null
-    private val lastConnectInfo = AtomicReference<ConnectionInfo?>(null)
+    private val sessionLock = Mutex()
+
     @Volatile private var serverAddress: String = ""
     @Volatile private var tunReady: Boolean = false
+
     private val pendingConnect = AtomicReference<ConnectionInfo?>(null)
+    private val lastConnectInfo = AtomicReference<ConnectionInfo?>(null)
 
     override suspend fun start(
         config: HysteriaConfig,
@@ -55,72 +57,97 @@ class HysteriaClientImpl : HysteriaClient {
         protector: HysteriaClient.SocketProtector,
         tun: HysteriaClient.TunFactory,
     ): Unit = sessionLock.withLock {
+        requireNotStarted()
+        beginConnecting(config)
+        try {
+            withContext(Dispatchers.IO) {
+                val s = openSession(config, protector)
+                session = s
+                attachTun(s, tunConfig, tun)
+            }
+            markTunReady()
+        } catch (e: Exception) {
+            abortStart(e)
+            throw e
+        }
+    }
+
+    private fun requireNotStarted() {
         when (val current = _state.value) {
-            is ConnectionState.Connecting, is ConnectionState.Connected, is ConnectionState.Reconnecting ->
-                throw IllegalStateException("client already $current")
-            else -> Unit
+            is ConnectionState.Connecting,
+            is ConnectionState.Connected,
+            is ConnectionState.Reconnecting -> throw IllegalStateException("client already $current")
+            is ConnectionState.Disconnected, is ConnectionState.Error -> Unit
         }
         if (session != null) throw IllegalStateException("session already exists")
+    }
+
+    private fun beginConnecting(config: HysteriaConfig) {
         _state.value = ConnectionState.Connecting
         serverAddress = config.server.address
         tunReady = false
         pendingConnect.set(null)
+    }
 
-        try {
-            withContext(Dispatchers.IO) {
-                val s = Golib.newSession(
-                    config.toJson(),
-                    { fd: Int -> protector.protect(fd) },
-                    object : EventHandler {
-                        override fun onConnected(udpEnabled: Boolean, attempt: Int) {
-                            val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
-                            lastConnectInfo.set(info)
-                            if (tunReady) {
-                                _state.value = ConnectionState.Connected(info)
-                            } else {
-                                pendingConnect.set(info)
-                            }
-                        }
+    private fun openSession(
+        config: HysteriaConfig,
+        protector: HysteriaClient.SocketProtector,
+    ): Session = Golib.newSession(
+        config.toJson(),
+        { fd: Int -> protector.protect(fd) },
+        sessionEventHandler(),
+    )
 
-                        override fun onReconnecting(attempt: Int, reason: String) {
-                            _state.value = ConnectionState.Reconnecting(attempt, reason)
-                        }
-
-                        override fun onError(message: String) {
-                            _state.value = ConnectionState.Error(message)
-                        }
-                    },
-                )
-                session = s
-                val pfd = tun.create(tunConfig)
-                val fd = try {
-                    pfd.detachFd()
-                } catch (t: Throwable) {
-                    runCatching { pfd.close() }
-                    closeSessionLocked()
-                    throw t
-                }
-                var adopted = false
-                try {
-                    s.startTUN(fd, tunConfig.mtu, TunConfig.IPV4_CIDR, TunConfig.IPV6_CIDR)
-                    adopted = true
-                } catch (t: Throwable) {
-                    if (!adopted) {
-                        runCatching { ParcelFileDescriptor.adoptFd(fd).close() }
-                    }
-                    closeSessionLocked()
-                    throw t
-                }
+    private fun sessionEventHandler(): EventHandler = object : EventHandler {
+        override fun onConnected(udpEnabled: Boolean, attempt: Int) {
+            val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
+            lastConnectInfo.set(info)
+            if (tunReady) {
+                _state.value = ConnectionState.Connected(info)
+            } else {
+                pendingConnect.set(info)
             }
-            tunReady = true
-            pendingConnect.getAndSet(null)?.let {
-                _state.value = ConnectionState.Connected(it)
-            }
-        } catch (e: Exception) {
-            withContext(Dispatchers.IO) { closeSessionLocked() }
-            _state.value = ConnectionState.Error(e.message ?: "Start failed")
-            throw e
         }
+
+        override fun onReconnecting(attempt: Int, reason: String) {
+            _state.value = ConnectionState.Reconnecting(attempt, reason)
+        }
+
+        override fun onError(message: String) {
+            _state.value = ConnectionState.Error(message)
+        }
+    }
+
+    private fun attachTun(
+        session: Session,
+        tunConfig: TunConfig,
+        factory: HysteriaClient.TunFactory,
+    ) {
+        val pfd = factory.create(tunConfig)
+        val fd = try {
+            pfd.detachFd()
+        } catch (t: Throwable) {
+            runCatching { pfd.close() }
+            throw t
+        }
+        try {
+            session.startTUN(fd, tunConfig.mtu, TunConfig.IPV4_CIDR, TunConfig.IPV6_CIDR)
+        } catch (t: Throwable) {
+            runCatching { ParcelFileDescriptor.adoptFd(fd).close() }
+            throw t
+        }
+    }
+
+    private fun markTunReady() {
+        tunReady = true
+        pendingConnect.getAndSet(null)?.let {
+            _state.value = ConnectionState.Connected(it)
+        }
+    }
+
+    private suspend fun abortStart(cause: Exception) {
+        withContext(Dispatchers.IO) { closeSessionLocked() }
+        _state.value = ConnectionState.Error(cause.message ?: "Start failed")
     }
 
     override suspend fun stop(reason: DisconnectReason) {
