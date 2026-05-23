@@ -86,9 +86,9 @@ class BedlamVpnService : VpnService() {
         wakeLockJob = scope.launch {
             while (isActive) {
                 delay(WAKE_LOCK_REFRESH_MS)
-                val wl = wakeLock ?: return@launch
-                if (wl.isHeld) wl.release()
-                wl.acquire(WAKE_LOCK_TIMEOUT_MS)
+                // setReferenceCounted(false) above means a second acquire()
+                // resets the timeout in-place; no release-then-reacquire gap.
+                wakeLock?.acquire(WAKE_LOCK_TIMEOUT_MS) ?: return@launch
             }
         }
     }
