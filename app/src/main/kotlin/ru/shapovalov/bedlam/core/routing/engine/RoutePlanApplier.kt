@@ -24,7 +24,7 @@ class RoutePlanApplier {
             plan.excludedV6.forEach { excludeRouteSafely(builder, it) }
         }
 
-        plan.dnsServers.forEach { builder.addDnsServer(it) }
+        plan.dnsServers.forEach { addDnsServerSafely(builder, it) }
 
         when (plan.appFilter.mode) {
             AppFilterMode.All -> Unit
@@ -60,6 +60,14 @@ class RoutePlanApplier {
             builder.excludeRoute(cidr.toIpPrefix())
         } catch (e: IllegalArgumentException) {
             Log.w(TAG, "excludeRoute rejected ${cidr.asString()}: ${e.message}")
+        }
+    }
+
+    private fun addDnsServerSafely(builder: VpnService.Builder, address: String) {
+        try {
+            builder.addDnsServer(address)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "addDnsServer rejected $address: ${e.message}")
         }
     }
 
