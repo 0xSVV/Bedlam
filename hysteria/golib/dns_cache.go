@@ -180,7 +180,7 @@ func cacheableTTL(response []byte) time.Duration {
 	}
 	qdCount := binary.BigEndian.Uint16(response[4:6])
 	anCount := binary.BigEndian.Uint16(response[6:8])
-	if anCount == 0 {
+	if qdCount != 1 || anCount == 0 {
 		return 0
 	}
 
