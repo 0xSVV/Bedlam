@@ -32,6 +32,10 @@ import java.util.concurrent.atomic.AtomicReference
 
 class HysteriaClientImpl : HysteriaClient {
 
+    init {
+        LogSink.attach()
+    }
+
     private val _state = MutableStateFlow<ConnectionState>(
         ConnectionState.Disconnected(DisconnectReason.NEVER_STARTED)
     )
@@ -178,7 +182,7 @@ private object LogSink {
     private val subscriberFloors = mutableMapOf<LogLevel, Int>()
     private val lock = Any()
 
-    init {
+    fun attach() {
         Golib.setLogHandler(LogHandler { level, source, message ->
             flow.tryEmit(
                 LogEntry(
