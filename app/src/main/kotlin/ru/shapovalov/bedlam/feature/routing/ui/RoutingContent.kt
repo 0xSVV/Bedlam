@@ -1,8 +1,12 @@
 package ru.shapovalov.bedlam.feature.routing.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +34,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -51,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -58,9 +64,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -334,6 +342,8 @@ private fun SwipeableSourceCard(
     val latestOnToggle by rememberUpdatedState(onToggle)
     val latestOnDelete by rememberUpdatedState(onDelete)
 
+    var armed by remember { mutableStateOf(true) }
+
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
@@ -342,7 +352,10 @@ private fun SwipeableSourceCard(
                     true
                 }
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    latestOnToggle(latestResolved.source.id, !latestResolved.source.enabled)
+                    if (armed) {
+                        armed = false
+                        latestOnToggle(latestResolved.source.id, !latestResolved.source.enabled)
+                    }
                     false
                 }
                 SwipeToDismissBoxValue.Settled -> false
@@ -351,6 +364,13 @@ private fun SwipeableSourceCard(
         positionalThreshold = { totalDistance -> totalDistance * 0.45f },
     )
 
+    LaunchedEffect(state) {
+        snapshotFlow { runCatching { state.requireOffset() }.getOrNull() ?: 0f }
+            .collect { offset -> if (offset == 0f) armed = true }
+    }
+
+    var expanded by remember { mutableStateOf(false) }
+
     ElevatedCard(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -358,7 +378,15 @@ private fun SwipeableSourceCard(
         SwipeToDismissBox(
             state = state,
             backgroundContent = { SwipeBackground(state.dismissDirection, resolved.source.enabled) },
-            content = { SourceRowContent(resolved, isRefreshing) },
+            gesturesEnabled = !expanded,
+            content = {
+                SourceRowContent(
+                    resolved = resolved,
+                    isRefreshing = isRefreshing,
+                    expanded = expanded,
+                    onToggleExpanded = { expanded = !expanded },
+                )
+            },
         )
     }
 }
@@ -410,57 +438,208 @@ private data class SwipeBgSpec(
 )
 
 @Composable
-private fun SourceRowContent(resolved: ResolvedSource, isRefreshing: Boolean) {
+private fun SourceRowContent(
+    resolved: ResolvedSource,
+    isRefreshing: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+) {
     val spacing = MaterialTheme.spacing
     val dimmed = !resolved.source.enabled
     val baseColor = MaterialTheme.colorScheme.surfaceContainerLow
-    Row(
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(220),
+        label = "chevron-rotation",
+    )
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(baseColor)
-            .padding(horizontal = spacing.large, vertical = spacing.medium),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(baseColor),
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(
-                    if (resolved.source.enabled) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-                ),
-        )
-        Spacer(Modifier.width(spacing.medium))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                KindChip(resolved.source)
-                Spacer(Modifier.width(spacing.small))
-                Text(
-                    resolved.source.label(),
-                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
-                    color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (resolved.source.comment.isNotBlank()) {
+                .fillMaxWidth()
+                .clickable(onClick = onToggleExpanded)
+                .padding(horizontal = spacing.large, vertical = spacing.medium),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (resolved.source.enabled) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                    ),
+            )
+            Spacer(Modifier.width(spacing.medium))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    KindChip(resolved.source)
+                    Spacer(Modifier.width(spacing.small))
+                    Text(
+                        resolved.source.label(),
+                        style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+                        color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (resolved.source.comment.isNotBlank()) {
+                    Spacer(Modifier.height(spacing.xSmall))
+                    Text(
+                        resolved.source.comment,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Spacer(Modifier.height(spacing.xSmall))
                 Text(
-                    resolved.source.comment,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    resolutionSummary(resolved, isRefreshing),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (resolved.lastError != null) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Spacer(Modifier.height(spacing.xSmall))
-            Text(
-                resolutionSummary(resolved, isRefreshing),
-                style = MaterialTheme.typography.labelSmall,
-                color = if (resolved.lastError != null) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+            Spacer(Modifier.width(spacing.small))
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = stringResource(
+                    if (expanded) R.string.routing_source_details_collapse_cd
+                    else R.string.routing_source_details_expand_cd
+                ),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.rotate(chevronRotation),
             )
         }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(animationSpec = tween(220)) + fadeIn(animationSpec = tween(220)),
+            exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(180)),
+        ) {
+            SourceDetails(resolved)
+        }
+    }
+}
+
+@Composable
+private fun SourceDetails(resolved: ResolvedSource) {
+    val spacing = MaterialTheme.spacing
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = spacing.large,
+                end = spacing.large,
+                bottom = spacing.medium,
+            ),
+        verticalArrangement = Arrangement.spacedBy(spacing.small),
+    ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        when (val s = resolved.source) {
+            is DirectRouteSource.Asn -> DetailRow(
+                label = stringResource(R.string.routing_source_details_asn_label),
+                value = "AS${s.asn}",
+                monospace = true,
+            )
+            is DirectRouteSource.Domain -> DetailRow(
+                label = stringResource(R.string.routing_source_details_domain_label),
+                value = s.hostname,
+                monospace = true,
+            )
+            is DirectRouteSource.Cidr -> DetailRow(
+                label = stringResource(R.string.routing_source_details_cidr_label),
+                value = s.cidr.asString(),
+                monospace = true,
+            )
+        }
+
+        if (resolved.source.comment.isNotBlank()) {
+            DetailRow(
+                label = stringResource(R.string.routing_source_details_comment_label),
+                value = resolved.source.comment,
+            )
+        }
+
+        resolved.lastResolvedMillis?.let {
+            DetailRow(
+                label = stringResource(R.string.routing_source_details_resolved_label),
+                value = formatRelative(it),
+            )
+        }
+
+        resolved.lastError?.let {
+            DetailRow(
+                label = stringResource(R.string.routing_source_details_error_label),
+                value = it,
+                valueColor = MaterialTheme.colorScheme.error,
+            )
+        }
+
+        Spacer(Modifier.height(spacing.xSmall))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.routing_source_details_networks_header),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+            )
+            if (resolved.cidrs.isNotEmpty()) {
+                val v4 = resolved.cidrs.count { it is Cidr.V4 }
+                val v6 = resolved.cidrs.count { it is Cidr.V6 }
+                Text(
+                    stringResource(R.string.routing_source_details_networks_breakdown, v4, v6),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (resolved.cidrs.isEmpty()) {
+            Text(
+                stringResource(R.string.routing_source_details_no_networks),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.xSmall)) {
+                resolved.cidrs.forEach { cidr ->
+                    Text(
+                        cidr.asString(),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailRow(
+    label: String,
+    value: String,
+    monospace: Boolean = false,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(verticalAlignment = Alignment.Top) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(96.dp),
+        )
+        Text(
+            value,
+            style = if (monospace)
+                MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+            else MaterialTheme.typography.bodyMedium,
+            color = valueColor,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

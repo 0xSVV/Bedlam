@@ -106,6 +106,18 @@
     <string name="routing_source_count_with_time">%1$d CIDRs · %2$s</string>
     <string name="routing_source_error">Resolution failed: %1$s</string>
 
+    <string name="routing_source_details_expand_cd">Show details</string>
+    <string name="routing_source_details_collapse_cd">Hide details</string>
+    <string name="routing_source_details_asn_label">AS number</string>
+    <string name="routing_source_details_domain_label">Hostname</string>
+    <string name="routing_source_details_cidr_label">Network</string>
+    <string name="routing_source_details_comment_label">Comment</string>
+    <string name="routing_source_details_resolved_label">Resolved</string>
+    <string name="routing_source_details_error_label">Last error</string>
+    <string name="routing_source_details_networks_header">Resolved networks</string>
+    <string name="routing_source_details_networks_breakdown">%1$d IPv4 · %2$d IPv6</string>
+    <string name="routing_source_details_no_networks">No networks resolved yet.</string>
+
     <string name="app_selection_title">Apps to proxy</string>
     <string name="app_selection_search_hint">Search apps</string>
     <string name="app_selection_all_hint">All apps will route through the tunnel.</string>
