@@ -22,7 +22,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -214,19 +215,22 @@ class BedlamVpnService : VpnService() {
     private fun startNotificationLoop() {
         notificationJob?.cancel()
         val nm = getSystemService(NotificationManager::class.java)
+        val ticker = flow {
+            while (true) {
+                emit(Unit)
+                delay(NOTIFICATION_REFRESH_MS)
+            }
+        }
         notificationJob = scope.launch(Dispatchers.Default) {
             var prevTx = 0L
             var prevRx = 0L
-            client.state.collectLatest { state ->
-                while (coroutineContext.isActive) {
-                    val s = client.stats() ?: HysteriaClient.TrafficStats(0, 0)
-                    val txRate = (s.txBytes - prevTx).coerceAtLeast(0)
-                    val rxRate = (s.rxBytes - prevRx).coerceAtLeast(0)
-                    prevTx = s.txBytes
-                    prevRx = s.rxBytes
-                    nm.notify(NOTIFICATION_ID, buildNotification(state, s, txRate, rxRate))
-                    delay(1000)
-                }
+            combine(client.state, ticker) { state, _ -> state }.collect { state ->
+                val s = client.stats() ?: HysteriaClient.TrafficStats(0, 0)
+                val txRate = (s.txBytes - prevTx).coerceAtLeast(0)
+                val rxRate = (s.rxBytes - prevRx).coerceAtLeast(0)
+                prevTx = s.txBytes
+                prevRx = s.rxBytes
+                nm.notify(NOTIFICATION_ID, buildNotification(state, s, txRate, rxRate))
             }
         }
     }
@@ -377,6 +381,7 @@ class BedlamVpnService : VpnService() {
         private const val REQ_RECONNECT = 2
         private val WAKE_LOCK_TIMEOUT_MS = TimeUnit.HOURS.toMillis(1)
         private val WAKE_LOCK_REFRESH_MS = TimeUnit.MINUTES.toMillis(50)
+        private const val NOTIFICATION_REFRESH_MS = 1000L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"
