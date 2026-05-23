@@ -47,12 +47,12 @@ class BedlamVpnService : VpnService() {
     private val json: Json by injected { json }
     private val buildRoutePlan: BuildRoutePlanUseCase by injected { buildRoutePlan }
     private val routePlanApplier: RoutePlanApplier by injected { routePlanApplier }
-    private var currentRoutePlan: RoutePlan? = null
+    @Volatile private var currentRoutePlan: RoutePlan? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockJob: Job? = null
     private var networkListener: DefaultNetworkListener? = null
     private var notificationJob: Job? = null
-    private var connectionName: String = ""
+    @Volatile private var connectionName: String = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -178,6 +178,10 @@ class BedlamVpnService : VpnService() {
         stopNetworkListener()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        // Cancellation of notificationJob is cooperative; a notify() already
+        // in flight can race past it. Explicit cancel guarantees no orphan
+        // notification lingers after stopForeground.
+        getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
         scope.launch {
             runCatching { client.stop(reason) }
             stopSelf()
