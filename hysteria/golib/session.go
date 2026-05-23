@@ -15,10 +15,6 @@ import (
 
 const statsLogInterval = 5 * time.Minute
 
-// Session owns the lifecycle of one Hysteria 2 tunnel: the QUIC connection,
-// the gVisor TUN stack, DNS cache, byte counters and the underlying-socket
-// protector. Each NewSession produces an independent state container; the
-// only process-wide state still in this package is the log sink.
 type Session struct {
 	closed atomic.Bool
 
@@ -45,13 +41,6 @@ type Session struct {
 	statsDone chan struct{}
 }
 
-// NewSession builds and connects a hysteria client, returning a Session ready
-// to have StartTUN called on it. The protector is captured at construction and
-// applied to every UDP socket the client opens, including reconnects. The
-// handler receives all post-handshake lifecycle events.
-//
-// If the initial handshake fails, the returned error wraps the underlying
-// cause and the handler's OnError is invoked exactly once.
 func NewSession(configJSON string, protector FdProtector, handler EventHandler) (*Session, error) {
 	var cfg clientConfig
 	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
@@ -91,9 +80,6 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 	return s, nil
 }
 
-// ValidateConfig parses configJSON and runs the same structural checks as
-// NewSession without dialing or resolving DNS. Returns nil if the config is
-// usable, an error otherwise.
 func ValidateConfig(configJSON string) error {
 	var cfg clientConfig
 	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
@@ -127,8 +113,6 @@ func ValidateConfig(configJSON string) error {
 	return nil
 }
 
-// Close tears the session down. Idempotent: subsequent calls return nil.
-// Bounded by a 3-second timeout on the underlying client close.
 func (s *Session) Close() error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
@@ -172,18 +156,14 @@ func (s *Session) Close() error {
 	return err
 }
 
-// ResetConnections closes all live upstream UDP packet conns so the next
-// stream call triggers a fresh dial. Use on network handoff.
 func (s *Session) ResetConnections() {
 	log(LogLevelInfo, srcTunnel, "Resetting upstream connections")
 	s.closeAllActiveConns()
 	s.dnsCache.clear()
 }
 
-// GetTxBytes returns cumulative bytes sent through the TUN since this Session started.
 func (s *Session) GetTxBytes() int64 { return s.txBytes.Load() }
 
-// GetRxBytes returns cumulative bytes received through the TUN since this Session started.
 func (s *Session) GetRxBytes() int64 { return s.rxBytes.Load() }
 
 func (s *Session) addTx(n int) {

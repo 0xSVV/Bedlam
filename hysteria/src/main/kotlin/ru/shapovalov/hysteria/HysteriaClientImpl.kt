@@ -42,6 +42,8 @@ class HysteriaClientImpl : HysteriaClient {
     @Volatile private var session: Session? = null
     private val lastConnectInfo = AtomicReference<ConnectionInfo?>(null)
     @Volatile private var serverAddress: String = ""
+    @Volatile private var tunReady: Boolean = false
+    private val pendingConnect = AtomicReference<ConnectionInfo?>(null)
 
     override suspend fun start(
         config: HysteriaConfig,
@@ -57,6 +59,8 @@ class HysteriaClientImpl : HysteriaClient {
         if (session != null) throw IllegalStateException("session already exists")
         _state.value = ConnectionState.Connecting
         serverAddress = config.server.server
+        tunReady = false
+        pendingConnect.set(null)
 
         try {
             withContext(Dispatchers.IO) {
@@ -67,7 +71,11 @@ class HysteriaClientImpl : HysteriaClient {
                         override fun onConnected(udpEnabled: Boolean, attempt: Int) {
                             val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
                             lastConnectInfo.set(info)
-                            _state.value = ConnectionState.Connected(info)
+                            if (tunReady) {
+                                _state.value = ConnectionState.Connected(info)
+                            } else {
+                                pendingConnect.set(info)
+                            }
                         }
 
                         override fun onReconnecting(attempt: Int, reason: String) {
@@ -88,6 +96,10 @@ class HysteriaClientImpl : HysteriaClient {
                     throw t
                 }
             }
+            tunReady = true
+            pendingConnect.getAndSet(null)?.let {
+                _state.value = ConnectionState.Connected(it)
+            }
         } catch (e: Exception) {
             withContext(Dispatchers.IO) { closeSessionLocked() }
             _state.value = ConnectionState.Error(e.message ?: "Start failed")
@@ -99,6 +111,8 @@ class HysteriaClientImpl : HysteriaClient {
         sessionLock.withLock {
             withContext(Dispatchers.IO) { closeSessionLocked() }
         }
+        tunReady = false
+        pendingConnect.set(null)
         lastConnectInfo.set(null)
         _state.value = ConnectionState.Disconnected(reason)
     }

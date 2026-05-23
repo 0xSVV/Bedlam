@@ -4,10 +4,6 @@ import (
 	"time"
 )
 
-// TestResult is the outcome of a connectivity diagnostic. Exactly one of
-// Ok or Error carries meaningful data: when Ok is true, Bytes/ElapsedMs/Detail
-// describe the successful round-trip; when Ok is false, Error explains the
-// failure.
 type TestResult struct {
 	Ok        bool
 	Bytes     int32
@@ -16,8 +12,6 @@ type TestResult struct {
 	Error     string
 }
 
-// TestUDP sends a small DNS query through hysteria's QUIC-datagram UDP relay
-// and waits for a response. Returns within ~10 seconds.
 func (s *Session) TestUDP() *TestResult {
 	c := s.currentClient()
 	if c == nil {
@@ -64,8 +58,6 @@ func (s *Session) TestUDP() *TestResult {
 	}
 }
 
-// TestDNSOverTCP sends a small DNS query through a hysteria TCP stream and
-// waits for the response.
 func (s *Session) TestDNSOverTCP() *TestResult {
 	c := s.currentClient()
 	if c == nil {
