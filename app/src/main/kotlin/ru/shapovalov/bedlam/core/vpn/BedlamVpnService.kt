@@ -114,7 +114,7 @@ class BedlamVpnService : VpnService() {
             }
             ACTION_RECONNECT -> {
                 scope.launch { runCatching { client.resetConnections() } }
-                return START_STICKY
+                return START_NOT_STICKY
             }
         }
 
@@ -155,7 +155,10 @@ class BedlamVpnService : VpnService() {
             }
         }
 
-        return START_STICKY
+        // The caller's intent carries the config/profile — Android can't
+        // replay it on memory-kill, so an automatic restart would land in
+        // the null-intent branch and immediately stopSelf(). Be honest.
+        return START_NOT_STICKY
     }
 
     private fun establishTun(tunConfig: TunConfig): ParcelFileDescriptor {
