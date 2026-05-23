@@ -54,7 +54,7 @@ class HysteriaClientImpl : HysteriaClient {
         tunConfig: TunConfig,
         protector: HysteriaClient.SocketProtector,
         tun: HysteriaClient.TunFactory,
-    ) = sessionLock.withLock {
+    ): Unit = sessionLock.withLock {
         when (val current = _state.value) {
             is ConnectionState.Connecting, is ConnectionState.Connected, is ConnectionState.Reconnecting ->
                 throw IllegalStateException("client already $current")
