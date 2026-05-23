@@ -3,6 +3,7 @@ package ru.shapovalov.bedlam
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
@@ -60,14 +61,14 @@ class MainActivity : ComponentActivity() {
             putExtra(BedlamVpnService.EXTRA_CONFIG_JSON, configJson)
             putExtra(BedlamVpnService.EXTRA_PROFILE_NAME, profileName)
         }
-        startService(intent)
+        ContextCompat.startForegroundService(this, intent)
     }
 
     private fun stopVpnService() {
         val intent = Intent(this, BedlamVpnService::class.java).apply {
             action = BedlamVpnService.ACTION_STOP
         }
-        startService(intent)
+        ContextCompat.startForegroundService(this, intent)
     }
 
     private fun requestVpnPermissionThen(block: () -> Unit) {
