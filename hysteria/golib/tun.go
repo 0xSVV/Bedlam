@@ -28,10 +28,6 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string)
 		return fmt.Errorf("client not connected")
 	}
 
-	if mtu <= 0 {
-		mtu = 1500
-	}
-
 	inet4, err := netip.ParsePrefix(inet4Prefix)
 	if err != nil {
 		return fmt.Errorf("parse inet4 prefix %q: %w", inet4Prefix, err)

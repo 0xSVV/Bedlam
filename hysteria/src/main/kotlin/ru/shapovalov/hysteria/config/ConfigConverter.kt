@@ -35,8 +35,6 @@ internal data class WireConfig(
     @SerialName("lazy") val lazy: Boolean,
 )
 
-private val wireJson = Json { encodeDefaults = true }
-
 fun HysteriaConfig.toJson(): String {
     val quic = quic ?: defaultQuicOptions
     val congestion = congestion ?: defaultCongestionOptions
@@ -73,5 +71,5 @@ fun HysteriaConfig.toJson(): String {
         fastOpen = behavior.fastOpen,
         lazy = behavior.lazy,
     )
-    return wireJson.encodeToString(wire)
+    return Json.encodeToString(wire)
 }

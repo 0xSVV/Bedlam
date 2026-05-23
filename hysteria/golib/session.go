@@ -14,8 +14,6 @@ import (
 	singtun "github.com/sagernet/sing-tun"
 )
 
-const statsLogInterval = 5 * time.Minute
-
 type Session struct {
 	closed atomic.Bool
 
@@ -27,8 +25,7 @@ type Session struct {
 	tunStack  singtun.Stack
 	tunCancel context.CancelFunc
 
-	protectorMu sync.Mutex
-	protector   FdProtector
+	protector FdProtector
 
 	activeConnsMu sync.Mutex
 	activeConns   map[net.PacketConn]struct{}
@@ -37,9 +34,6 @@ type Session struct {
 
 	txBytes atomic.Int64
 	rxBytes atomic.Int64
-
-	statsStop chan struct{}
-	statsDone chan struct{}
 }
 
 func NewSession(configJSON string, protector FdProtector, handler EventHandler) (*Session, error) {
@@ -61,8 +55,6 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 		protector:   protector,
 		activeConns: map[net.PacketConn]struct{}{},
 		dnsCache:    newDNSCache(),
-		statsStop:   make(chan struct{}),
-		statsDone:   make(chan struct{}),
 	}
 
 	wrappedHandler := &loggingHandler{inner: handler}
@@ -77,7 +69,6 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 		return nil, err
 	}
 	s.client = rc
-	go s.statsLogger()
 	return s, nil
 }
 
@@ -126,11 +117,6 @@ func (s *Session) Close() error {
 	}
 
 	log(LogLevelInfo, srcTunnel, "Closing session...")
-
-	if s.statsStop != nil {
-		close(s.statsStop)
-		<-s.statsDone
-	}
 
 	_ = s.StopTUN()
 
@@ -191,14 +177,8 @@ func (s *Session) currentClient() *reconnectClient {
 	return s.client
 }
 
-func (s *Session) getProtector() FdProtector {
-	s.protectorMu.Lock()
-	defer s.protectorMu.Unlock()
-	return s.protector
-}
-
 func (s *Session) protectPacketConn(conn net.PacketConn) {
-	p := s.getProtector()
+	p := s.protector
 	if p == nil {
 		return
 	}
@@ -249,17 +229,3 @@ func (s *Session) closeAllActiveConns() {
 	}
 }
 
-func (s *Session) statsLogger() {
-	defer close(s.statsDone)
-	ticker := time.NewTicker(statsLogInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-s.statsStop:
-			return
-		case <-ticker.C:
-			log(LogLevelDebug, srcStats, "tx=%dB rx=%dB",
-				s.txBytes.Load(), s.rxBytes.Load())
-		}
-	}
-}

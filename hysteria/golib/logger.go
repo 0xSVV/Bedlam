@@ -32,8 +32,6 @@ const (
 	srcTLS       = "tls"
 	srcTransport = "transport"
 	srcStream    = "stream"
-	srcDial      = "dial"
-	srcStats     = "stats"
 	srcConfig    = "config"
 )
 

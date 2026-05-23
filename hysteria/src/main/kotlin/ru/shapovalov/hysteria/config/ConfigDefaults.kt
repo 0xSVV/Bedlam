@@ -39,5 +39,3 @@ val defaultBehaviorOptions = BehaviorOptions(
     fastOpen = true,
     lazy = true
 )
-
-

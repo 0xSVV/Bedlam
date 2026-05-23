@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.sync.Mutex
@@ -144,9 +143,8 @@ class HysteriaClientImpl : HysteriaClient {
             s.testDNSOverTCP().toDiagnosticResult()
         }
 
-    override fun logs(minLevel: LogLevel): Flow<LogEntry> = flow {
-        LogSink.flow.filter { it.level.ordinal >= minLevel.ordinal }.collect { emit(it) }
-    }
+    override fun logs(minLevel: LogLevel): Flow<LogEntry> = LogSink.flow
+        .filter { it.level.ordinal >= minLevel.ordinal }
         .onStart { LogSink.register(minLevel) }
         .onCompletion { LogSink.unregister(minLevel) }
 

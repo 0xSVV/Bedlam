@@ -237,7 +237,7 @@ func resolveHost(server string) (net.Addr, error) {
 func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr net.Addr, session *Session) error {
 	isHop := serverAddr.Network() == "udphop"
 	hasObfs := strings.ToLower(cfg.ObfsType) == "salamander"
-	hasProtect := session.getProtector() != nil
+	hasProtect := session.protector != nil
 
 	if !isHop && !hasObfs && !hasProtect {
 		return nil

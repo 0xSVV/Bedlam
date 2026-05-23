@@ -72,9 +72,11 @@ private fun resolveServerAddress(uri: Uri, parsedHost: String, parsedPort: Int):
     val authority = uri.encodedAuthority ?: return "$parsedHost:$parsedPort"
     val hostPort = if ("@" in authority) authority.substringAfter("@") else authority
 
-    // Skip past a bracketed IPv6 literal before locating the port separator.
-    val portSepStart = if (hostPort.startsWith("[")) hostPort.indexOf(']') + 1 else 0
-    if (portSepStart < 0) return "$parsedHost:$parsedPort"
+    val portSepStart = if (hostPort.startsWith("[")) {
+        val close = hostPort.indexOf(']')
+        if (close < 0) return "$parsedHost:$parsedPort"
+        close + 1
+    } else 0
 
     val lastColon = hostPort.indexOf(':', startIndex = portSepStart)
     if (lastColon > 0) {
