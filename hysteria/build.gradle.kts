@@ -35,6 +35,14 @@ dependencies {
     api(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     compileOnly(fileTree("libs") { include("*.aar") })
+
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.junit.jupiter.params)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
 
 val golibDir = layout.projectDirectory.dir("golib")
@@ -177,4 +185,26 @@ tasks.named("preBuild") {
 tasks.named<Delete>("clean") {
     delete("libs/golib.aar", "libs/golib-sources.jar")
     finalizedBy("updateHysteriaCore")
+}
+
+val goTest by tasks.registering(Exec::class) {
+    description = "Run Go unit tests in golib/"
+    group = "verification"
+
+    dependsOn(syncHysteriaSubmodule)
+
+    val goPath = findGoPath()
+    val goExe = findExecutable("go", listOf("$goPath/bin", "/usr/local/go/bin", "/opt/homebrew/bin"))
+        ?: error("Go is not installed or not in PATH. Install it from: https://go.dev/dl/")
+
+    workingDir = golibDir.asFile
+    inputs.dir(golibDir)
+    inputs.dir(golibDir.asFile.resolve("../upstream"))
+    outputs.upToDateWhen { false }
+
+    commandLine(goExe, "test", "./...")
+}
+
+tasks.named("check") {
+    dependsOn(goTest)
 }
