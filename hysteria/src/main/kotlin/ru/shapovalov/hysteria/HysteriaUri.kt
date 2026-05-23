@@ -42,7 +42,7 @@ fun parseHysteriaUri(uriString: String): HysteriaConfig {
     val name = uri.encodedFragment?.let { URLDecoder.decode(it, "UTF-8") }.orEmpty()
 
     return HysteriaConfig(
-        server = ServerCredentials(server = server, auth = auth),
+        server = ServerCredentials(address = server, auth = auth),
         name = name,
         tls = TlsOptions(
             tlsSni = sni,

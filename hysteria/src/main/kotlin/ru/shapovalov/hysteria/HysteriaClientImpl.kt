@@ -62,7 +62,7 @@ class HysteriaClientImpl : HysteriaClient {
         }
         if (session != null) throw IllegalStateException("session already exists")
         _state.value = ConnectionState.Connecting
-        serverAddress = config.server.server
+        serverAddress = config.server.address
         tunReady = false
         pendingConnect.set(null)
 

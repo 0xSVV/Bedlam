@@ -357,7 +357,7 @@ private fun ProfileRow(
                 text = stringResource(
                     R.string.profile_subtitle,
                     stringResource(R.string.profile_protocol_hysteria),
-                    profile.config.server.server,
+                    profile.config.server.address,
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

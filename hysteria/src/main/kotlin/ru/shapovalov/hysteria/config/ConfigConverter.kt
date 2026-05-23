@@ -44,7 +44,7 @@ fun HysteriaConfig.toJson(): String {
     val obfs = obfuscation ?: ObfuscationOptions("", "")
 
     val wire = WireConfig(
-        server = server.server,
+        server = server.address,
         auth = server.auth,
         tlsSni = tls.tlsSni,
         tlsInsecure = tls.tlsInsecure,

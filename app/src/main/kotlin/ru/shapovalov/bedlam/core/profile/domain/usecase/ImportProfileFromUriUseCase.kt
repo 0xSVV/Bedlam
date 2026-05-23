@@ -16,7 +16,7 @@ class ImportProfileFromUriUseCase(
         hysteriaClient.validateConfig(config).getOrThrow()
         val profileName = name?.takeIf { it.isNotBlank() }
             ?: config.name.takeIf { it.isNotBlank() }
-            ?: config.server.server
+            ?: config.server.address
         val profile = Profile.new(profileName, config, System.currentTimeMillis())
         repository.upsert(profile)
         profile
