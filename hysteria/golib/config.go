@@ -105,6 +105,9 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 		coreConfig.TLSConfig.RootCAs = pool
 	}
 
+	if (cfg.TLSClientCert != "") != (cfg.TLSClientKey != "") {
+		return nil, fmt.Errorf("client cert and key must be set together")
+	}
 	mTLS := cfg.TLSClientCert != "" && cfg.TLSClientKey != ""
 	if mTLS {
 		cert, err := tls.X509KeyPair([]byte(cfg.TLSClientCert), []byte(cfg.TLSClientKey))
