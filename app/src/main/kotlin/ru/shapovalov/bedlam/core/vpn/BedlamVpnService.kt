@@ -8,7 +8,6 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.drawable.Icon
-import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
 import android.os.Build
@@ -101,11 +100,6 @@ class BedlamVpnService : VpnService() {
         wakeLock = null
     }
 
-    private fun activeUnderlyingNetwork(): Network? {
-        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        return cm.activeNetwork
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
@@ -136,7 +130,9 @@ class BedlamVpnService : VpnService() {
 
         startAsForeground()
         acquireWakeLock()
-        setUnderlyingNetworks(activeUnderlyingNetwork()?.let { arrayOf(it) })
+        // No initial seed — cm.activeNetwork may return a sibling VPN. The
+        // listener's first onAvailable callback fires within a frame and
+        // sets the correct underlying network (filtered as default, non-VPN).
         startNetworkListener()
         startNotificationLoop()
 
