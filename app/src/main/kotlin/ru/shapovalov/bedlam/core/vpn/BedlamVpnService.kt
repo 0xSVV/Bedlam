@@ -190,6 +190,7 @@ class BedlamVpnService : VpnService() {
     private fun startNetworkListener() {
         if (networkListener != null) return
         var seenInitial = false
+        var debounceJob: Job? = null
         networkListener = DefaultNetworkListener(this) { network ->
             setUnderlyingNetworks(network?.let { arrayOf(it) })
             if (!seenInitial) {
@@ -198,8 +199,14 @@ class BedlamVpnService : VpnService() {
                 return@DefaultNetworkListener
             }
             Log.i(TAG, "Underlying network changed: $network")
-            if (network != null) {
-                scope.launch { client.resetConnections() }
+            if (network == null) return@DefaultNetworkListener
+            // Flapping networks (edge-of-Wi-Fi, mobile handoffs) can fire
+            // off/on/off/on within a second. Debounce so we re-dial QUIC
+            // once per "settled" change rather than every transient flap.
+            debounceJob?.cancel()
+            debounceJob = scope.launch {
+                delay(NETWORK_DEBOUNCE_MS)
+                runCatching { client.resetConnections() }
             }
         }.also { it.start() }
     }
@@ -379,6 +386,7 @@ class BedlamVpnService : VpnService() {
         private val WAKE_LOCK_TIMEOUT_MS = TimeUnit.HOURS.toMillis(1)
         private val WAKE_LOCK_REFRESH_MS = TimeUnit.MINUTES.toMillis(50)
         private const val NOTIFICATION_REFRESH_MS = 1000L
+        private const val NETWORK_DEBOUNCE_MS = 500L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"
