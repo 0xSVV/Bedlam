@@ -3,17 +3,14 @@ package ru.shapovalov.bedlam.core.routing.engine
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
 import ru.shapovalov.bedlam.core.routing.domain.model.normalize
 
-/** Pure CIDR arithmetic: contains, overlaps, coalesce, subtract. */
 object CidrMath {
 
-    /** Merge overlapping/adjacent CIDRs into a minimal cover. */
     fun coalesce(cidrs: List<Cidr>): List<Cidr> {
         val v4 = cidrs.filterIsInstance<Cidr.V4>().map { it as Cidr }
         val v6 = cidrs.filterIsInstance<Cidr.V6>().map { it as Cidr }
         return coalesceSameFamily(v4) + coalesceSameFamily(v6)
     }
 
-    /** Compute `base \ exclude` as a minimal cover. */
     fun subtract(base: List<Cidr>, exclude: List<Cidr>): List<Cidr> {
         val baseV4 = base.filterIsInstance<Cidr.V4>().map { it as Cidr }
         val baseV6 = base.filterIsInstance<Cidr.V6>().map { it as Cidr }
@@ -23,14 +20,12 @@ object CidrMath {
             subtractSameFamily(baseV6, excV6)
     }
 
-    /** True iff [outer] entirely contains [inner] (same address family). */
     fun contains(outer: Cidr, inner: Cidr): Boolean {
         if (outer::class != inner::class) return false
         if (outer.prefixLength > inner.prefixLength) return false
         return commonPrefixBits(outer.networkBytes, inner.networkBytes) >= outer.prefixLength
     }
 
-    /** True iff [a] and [b] overlap by at least one address (same address family). */
     fun overlaps(a: Cidr, b: Cidr): Boolean {
         if (a::class != b::class) return false
         val shorter = minOf(a.prefixLength, b.prefixLength)

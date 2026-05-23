@@ -180,7 +180,7 @@ class HysteriaClientImpl : HysteriaClient {
 
 private fun TestResult.toDiagnosticResult(): DiagnosticResult =
     if (ok) {
-        DiagnosticResult.Ok(bytes = bytes.toInt(), rttMillis = elapsedMs, target = detail)
+        DiagnosticResult.Ok(bytes = bytes, rttMillis = elapsedMs, target = detail)
     } else {
         DiagnosticResult.Error(error)
     }

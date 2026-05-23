@@ -1,12 +1,5 @@
 package ru.shapovalov.hysteria.api
 
-/**
- * User-facing tuning for the TUN device. Only the MTU is configurable; the
- * link-local addressing is an internal implementation detail of the module
- * because the kernel TUN and the gVisor stack must agree on it. The
- * constants below are exposed read-only so an external [HysteriaClient.TunFactory]
- * can program `VpnService.Builder.addAddress` with the matching values.
- */
 data class TunConfig(val mtu: Int = DEFAULT_MTU) {
     init { require(mtu in MIN_MTU..MAX_MTU) { "MTU out of range: $mtu" } }
 

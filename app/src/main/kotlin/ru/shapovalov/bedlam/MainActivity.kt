@@ -15,7 +15,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.arkivanov.decompose.defaultComponentContext
 import ru.shapovalov.bedlam.core.vpn.BedlamVpnService
 import ru.shapovalov.bedlam.di.appComponent
-import ru.shapovalov.bedlam.navigation.RootComponent
 import ru.shapovalov.bedlam.ui.theme.BedlamTheme
 
 class MainActivity : ComponentActivity() {

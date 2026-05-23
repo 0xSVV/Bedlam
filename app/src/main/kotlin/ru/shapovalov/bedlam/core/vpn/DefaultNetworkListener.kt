@@ -4,11 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 
-/**
- * Subscribes to the system's default network — whatever Android currently
- * routes non-VPN traffic over — and forwards changes to [onChanged]. Emits
- * `null` when no default exists.
- */
 class DefaultNetworkListener(
     context: Context,
     private val onChanged: (Network?) -> Unit,

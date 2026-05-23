@@ -61,10 +61,6 @@ class BedlamVpnService : VpnService() {
     override fun onRevoke() = stop(DisconnectReason.REVOKED)
 
     override fun onDestroy() {
-        // Orderly shutdown runs through stop() — by the time we get here either
-        // that has already completed, or Android is tearing the process down
-        // (memory pressure, force-stop) and the Go runtime goes with it. No
-        // blocking work on the main thread.
         notificationJob?.cancel()
         notificationJob = null
         stopNetworkListener()
@@ -86,8 +82,6 @@ class BedlamVpnService : VpnService() {
         wakeLockJob = scope.launch {
             while (isActive) {
                 delay(WAKE_LOCK_REFRESH_MS)
-                // setReferenceCounted(false) above means a second acquire()
-                // resets the timeout in-place; no release-then-reacquire gap.
                 wakeLock?.acquire(WAKE_LOCK_TIMEOUT_MS) ?: return@launch
             }
         }
@@ -130,9 +124,6 @@ class BedlamVpnService : VpnService() {
 
         startAsForeground()
         acquireWakeLock()
-        // No initial seed — cm.activeNetwork may return a sibling VPN. The
-        // listener's first onAvailable callback fires within a frame and
-        // sets the correct underlying network (filtered as default, non-VPN).
         startNetworkListener()
         startNotificationLoop()
 
@@ -151,9 +142,6 @@ class BedlamVpnService : VpnService() {
             }
         }
 
-        // The caller's intent carries the config/profile — Android can't
-        // replay it on memory-kill, so an automatic restart would land in
-        // the null-intent branch and immediately stopSelf(). Be honest.
         return START_NOT_STICKY
     }
 
@@ -177,9 +165,6 @@ class BedlamVpnService : VpnService() {
         stopNetworkListener()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        // Cancellation of notificationJob is cooperative; a notify() already
-        // in flight can race past it. Explicit cancel guarantees no orphan
-        // notification lingers after stopForeground.
         getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
         scope.launch {
             runCatching { client.stop(reason) }
@@ -200,9 +185,6 @@ class BedlamVpnService : VpnService() {
             }
             Log.i(TAG, "Underlying network changed: $network")
             if (network == null) return@DefaultNetworkListener
-            // Flapping networks (edge-of-Wi-Fi, mobile handoffs) can fire
-            // off/on/off/on within a second. Debounce so we re-dial QUIC
-            // once per "settled" change rather than every transient flap.
             debounceJob?.cancel()
             debounceJob = scope.launch {
                 delay(NETWORK_DEBOUNCE_MS)

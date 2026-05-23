@@ -6,9 +6,9 @@ object RoutePresets {
 
     val ALL: List<RoutePreset> = listOf(
         RoutePreset(
-            id = "ru-web",
-            name = "Russian web giants",
-            description = "Yandex, VK, Mail.ru, Ozon, Wildberries — direct path so the tunnel doesn't get geo-blocked.",
+            id = "ru-big-tech",
+            name = "Big tech",
+            description = "Yandex, VK, Mail.ru, Ozon, Wildberries.",
             asns = listOf(
                 RoutePreset.AsnEntry(13238, "Yandex"),
                 RoutePreset.AsnEntry(208722, "Yandex Cloud"),
@@ -21,8 +21,8 @@ object RoutePresets {
         ),
         RoutePreset(
             id = "ru-bank",
-            name = "Russian banking & gov",
-            description = "Sberbank, Tinkoff, VTB, Alfa-Bank, Gosuslugi — these usually geo-block foreign IPs.",
+            name = "Banking & gov",
+            description = "Sberbank, Tinkoff, VTB, Alfa-Bank, Gosuslugi.",
             asns = listOf(
                 RoutePreset.AsnEntry(35237, "Sberbank"),
                 RoutePreset.AsnEntry(205638, "Tinkoff (T-Bank)"),
@@ -33,8 +33,8 @@ object RoutePresets {
         ),
         RoutePreset(
             id = "ru-telco",
-            name = "Russian telcos & ISPs",
-            description = "MTS, Megafon, Beeline, Rostelecom — for direct access to operator portals and self-service.",
+            name = "Telcos & ISPs",
+            description = "MTS, Megafon, Beeline, Rostelecom.",
             asns = listOf(
                 RoutePreset.AsnEntry(8359, "MTS"),
                 RoutePreset.AsnEntry(31133, "Megafon"),
@@ -45,7 +45,7 @@ object RoutePresets {
         RoutePreset(
             id = "cf",
             name = "Cloudflare",
-            description = "Cloudflare's anycast network (~600 prefixes). Useful if your VPN's exit is being rate-limited by CF.",
+            description = "Cloudflare's anycast network (~600 prefixes)",
             asns = listOf(
                 RoutePreset.AsnEntry(13335, "Cloudflare"),
             ),
