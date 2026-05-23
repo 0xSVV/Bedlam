@@ -84,10 +84,7 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 	)
 	if err != nil {
 		log(LogLevelError, srcTunnel, "Connection failed: %s", err.Error())
-		if handler != nil {
-			handler.OnError(err.Error())
-		}
-		return nil, fmt.Errorf("connect: %w", err)
+		return nil, err
 	}
 	s.client = rc
 	go s.statsLogger()
