@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -104,10 +105,11 @@ func ValidateConfig(configJSON string) error {
 			return err
 		}
 	}
-	if cfg.ObfsType != "" && cfg.ObfsType != "salamander" {
+	obfs := strings.ToLower(cfg.ObfsType)
+	if obfs != "" && obfs != "salamander" {
 		return fmt.Errorf("unsupported obfs type %q", cfg.ObfsType)
 	}
-	if cfg.ObfsType == "salamander" && cfg.ObfsPassword == "" {
+	if obfs == "salamander" && cfg.ObfsPassword == "" {
 		return fmt.Errorf("obfs password required for salamander")
 	}
 	if cfg.MinHopIntervalSec > 0 && cfg.MaxHopIntervalSec > 0 &&
