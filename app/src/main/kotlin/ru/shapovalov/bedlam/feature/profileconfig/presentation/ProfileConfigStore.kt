@@ -11,6 +11,9 @@ interface ProfileConfigStore : Store<ProfileConfigStore.Intent, ProfileConfigSto
         data object DiscardChanges : Intent
         data class UpdateDraft(val config: HysteriaConfig) : Intent
         data object Save : Intent
+        data object RequestDelete : Intent
+        data object CancelDelete : Intent
+        data object ConfirmDelete : Intent
         data object DismissError : Intent
     }
 
@@ -21,7 +24,9 @@ interface ProfileConfigStore : Store<ProfileConfigStore.Intent, ProfileConfigSto
         val editMode: Boolean = false,
         val isLoading: Boolean = true,
         val isSaving: Boolean = false,
+        val isDeleting: Boolean = false,
         val notFound: Boolean = false,
+        val pendingDeleteConfirmation: Boolean = false,
         val saveError: String? = null,
     ) {
         val isDirty: Boolean

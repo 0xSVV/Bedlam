@@ -13,6 +13,10 @@ internal sealed interface Msg {
     data object SaveStarted : Msg
     data class SaveSucceeded(val profile: Profile) : Msg
     data class SaveFailed(val message: String) : Msg
+    data object DeleteRequested : Msg
+    data object DeleteCancelled : Msg
+    data object DeleteStarted : Msg
+    data class DeleteFailed(val message: String) : Msg
     data object ErrorDismissed : Msg
 }
 
@@ -41,6 +45,10 @@ internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
             saveError = null,
         )
         is Msg.SaveFailed -> copy(isSaving = false, saveError = msg.message)
+        Msg.DeleteRequested -> copy(pendingDeleteConfirmation = true)
+        Msg.DeleteCancelled -> copy(pendingDeleteConfirmation = false)
+        Msg.DeleteStarted -> copy(pendingDeleteConfirmation = false, isDeleting = true)
+        is Msg.DeleteFailed -> copy(isDeleting = false, saveError = msg.message)
         Msg.ErrorDismissed -> copy(saveError = null)
     }
 }
