@@ -17,11 +17,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -76,6 +78,10 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
         component.onDismissError()
     }
 
+    LaunchedEffect(state.notFound) {
+        if (state.notFound) component.onBackPressed()
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -103,6 +109,17 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 ),
             )
         },
+        floatingActionButton = {
+            val showFab = state.draft != null && !state.editMode && !state.isLoading && !state.notFound
+            if (showFab) {
+                FloatingActionButton(onClick = component::onEnterEditMode) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = stringResource(R.string.profile_config_action_edit),
+                    )
+                }
+            }
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(snackbarData = it) } },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -117,6 +134,13 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
             }
         }
     }
+
+    if (state.pendingDeleteConfirmation) {
+        DeleteConfirmationDialog(
+            onConfirm = component::onConfirmDelete,
+            onDismiss = component::onCancelDelete,
+        )
+    }
 }
 
 @Composable
@@ -124,14 +148,17 @@ private fun TopActions(
     state: ProfileConfigStore.State,
     component: ProfileConfigComponent,
 ) {
-    val draftReady = state.draft != null && !state.isLoading && !state.notFound
-    if (!draftReady) return
+    val ready = state.draft != null && !state.isLoading && !state.notFound
+    if (!ready) return
 
     if (!state.editMode) {
-        IconButton(onClick = component::onEnterEditMode) {
+        IconButton(
+            onClick = component::onRequestDelete,
+            enabled = !state.isDeleting,
+        ) {
             Icon(
-                Icons.Default.Edit,
-                contentDescription = stringResource(R.string.profile_config_action_edit),
+                Icons.Default.Delete,
+                contentDescription = stringResource(R.string.profile_config_action_delete),
             )
         }
         return
@@ -150,6 +177,31 @@ private fun TopActions(
             Text(stringResource(R.string.action_save))
         }
     }
+}
+
+@Composable
+private fun DeleteConfirmationDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.profile_config_delete_title)) },
+        text = { Text(stringResource(R.string.profile_config_delete_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.profile_config_delete_confirm),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -174,7 +226,7 @@ private fun ConfigBody(
         BandwidthSection(draft, editMode, onDraftChanged)
         TransportSection(draft, editMode, onDraftChanged)
         BehaviorSection(draft, editMode, onDraftChanged)
-        Spacer(Modifier.height(spacing.large))
+        Spacer(Modifier.height(spacing.xLarge))
     }
 }
 
@@ -465,12 +517,7 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small),
             )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = spacing.large),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
             Column(
-                modifier = Modifier.padding(top = spacing.xSmall),
                 verticalArrangement = Arrangement.spacedBy(spacing.xSmall),
                 content = content,
             )
