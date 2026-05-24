@@ -46,6 +46,8 @@ class DashboardComponent(
     fun onDismissError() = store.accept(DashboardStore.Intent.DismissError)
     fun onOpenSession() = onOpenSession.invoke()
     fun onOpenProfileConfig(id: String) = onOpenProfileConfig.invoke(id)
+    fun onPingProfile(id: String) = store.accept(DashboardStore.Intent.PingProfile(id))
+    fun onPingAllProfiles() = store.accept(DashboardStore.Intent.PingAllProfiles)
 
     fun interface OnStartVpn { fun invoke(profile: Profile) }
     fun interface OnStopVpn { fun invoke() }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.NetworkPing
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.R
+import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardStore
@@ -119,8 +121,11 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
             ProfilesCard(
                 profiles = state.profiles,
                 activeProfileId = state.activeProfileId,
+                latencies = state.latencies,
                 onSelect = component::onSelectProfile,
                 onOpenConfig = component::onOpenProfileConfig,
+                onPingProfile = component::onPingProfile,
+                onPingAll = component::onPingAllProfiles,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = spacing.large),
@@ -285,8 +290,11 @@ private fun ConnectionHero(
 private fun ProfilesCard(
     profiles: List<Profile>,
     activeProfileId: String?,
+    latencies: Map<String, LatencyResult>,
     onSelect: (String) -> Unit,
     onOpenConfig: (String) -> Unit,
+    onPingProfile: (String) -> Unit,
+    onPingAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (profiles.isEmpty()) return
@@ -294,18 +302,35 @@ private fun ProfilesCard(
 
     ElevatedCard(modifier = modifier) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
-            Text(
-                text = stringResource(R.string.dashboard_profiles_section),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = spacing.large, end = spacing.small),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.dashboard_profiles_section),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                IconButton(onClick = onPingAll) {
+                    Icon(
+                        Icons.Default.NetworkPing,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             LazyColumn {
                 items(profiles, key = Profile::id) { profile ->
                     ProfileRow(
                         profile = profile,
                         isActive = profile.id == activeProfileId,
+                        latency = latencies[profile.id] ?: LatencyResult.Idle,
                         onClick = { onSelect(profile.id) },
+                        onPing = { onPingProfile(profile.id) },
                         onOpenConfig = { onOpenConfig(profile.id) },
                     )
                     if (profile != profiles.last()) {
@@ -324,7 +349,9 @@ private fun ProfilesCard(
 private fun ProfileRow(
     profile: Profile,
     isActive: Boolean,
+    latency: LatencyResult,
     onClick: () -> Unit,
+    onPing: () -> Unit,
     onOpenConfig: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
@@ -365,6 +392,7 @@ private fun ProfileRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        LatencyLabel(latency = latency, onClick = onPing)
         IconButton(onClick = onOpenConfig) {
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -373,6 +401,33 @@ private fun ProfileRow(
             )
         }
     }
+}
+
+@Composable
+private fun LatencyLabel(latency: LatencyResult, onClick: () -> Unit) {
+    val text = when (latency) {
+        LatencyResult.Idle -> null
+        LatencyResult.Measuring -> "..."
+        is LatencyResult.Success -> "${latency.ms} ms"
+        LatencyResult.Unreachable -> "—"
+    }
+    val color = when (latency) {
+        is LatencyResult.Success -> when {
+            latency.ms < 100 -> MaterialTheme.colorScheme.primary
+            latency.ms < 300 -> MaterialTheme.colorScheme.secondary
+            else -> MaterialTheme.colorScheme.error
+        }
+        LatencyResult.Unreachable -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        text = text ?: "",
+        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+        color = color,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp),
+    )
 }
 
 @Composable
