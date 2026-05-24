@@ -5,34 +5,23 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Inject
+import ru.shapovalov.bedlam.core.network.AppHttpClient
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 @Inject
-class RipestatAsnResolver(private val json: Json) {
+class RipestatAsnResolver(
+    private val httpClient: AppHttpClient,
+    private val json: Json,
+) {
 
     suspend fun resolve(asn: Int): Result<List<Cidr>> = runCatching {
         withContext(Dispatchers.IO) {
-            val url = URL("https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS$asn")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = TIMEOUT_MS
-                readTimeout = TIMEOUT_MS
-                requestMethod = "GET"
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "Bedlam/1.0")
-            }
-            try {
-                if (conn.responseCode !in 200..299) {
-                    throw IOException("RIPEstat HTTP ${conn.responseCode} for AS$asn")
-                }
-                val body = conn.inputStream.bufferedReader().use { it.readText() }
-                val response = json.decodeFromString(RipestatResponse.serializer(), body)
-                response.data.prefixes.mapNotNull { Cidr.parseOrNull(it.prefix) }
-            } finally {
-                conn.disconnect()
-            }
+            val body = httpClient.get(
+                url = "https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS$asn",
+                timeoutMs = TIMEOUT_MS,
+            )
+            val response = json.decodeFromString(RipestatResponse.serializer(), body)
+            response.data.prefixes.mapNotNull { Cidr.parseOrNull(it.prefix) }
         }
     }
 

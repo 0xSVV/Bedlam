@@ -3,16 +3,15 @@ package ru.shapovalov.bedlam.feature.session.data
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Inject
+import ru.shapovalov.bedlam.core.network.AppHttpClient
 import ru.shapovalov.bedlam.feature.session.domain.model.SessionInfo
 import ru.shapovalov.bedlam.feature.session.domain.repository.SessionInfoRepository
-import java.net.HttpURLConnection
-import java.net.URL
 
 @Inject
 class SessionInfoRepositoryImpl(
+    private val httpClient: AppHttpClient,
     private val json: Json,
 ) : SessionInfoRepository {
 
@@ -40,33 +39,15 @@ class SessionInfoRepositoryImpl(
         }
     }
 
-    private suspend fun fetchIpApi(): IpApiDto = withContext(Dispatchers.IO) {
-        val body = httpGet(URL("https://ipapi.co/json/"))
-        json.decodeFromString(IpApiDto.serializer(), body)
-    }
+    private fun fetchIpApi(): IpApiDto =
+        json.decodeFromString(IpApiDto.serializer(), httpClient.get(IP_API_URL))
 
-    private suspend fun fetchIpv6(): String? = withContext(Dispatchers.IO) {
-        val body = httpGet(URL("https://api64.ipify.org?format=json"))
-        json.decodeFromString(IpifyDto.serializer(), body).ip?.takeIf { it.contains(':') }
-    }
-
-    private fun httpGet(url: URL): String {
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
-            requestMethod = "GET"
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "Bedlam/1.0")
-        }
-        try {
-            if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}")
-            return conn.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            conn.disconnect()
-        }
-    }
+    private fun fetchIpv6(): String? =
+        json.decodeFromString(IpifyDto.serializer(), httpClient.get(IPIFY_URL))
+            .ip?.takeIf { it.contains(':') }
 
     private companion object {
-        const val TIMEOUT_MS = 10_000
+        const val IP_API_URL = "https://ipapi.co/json/"
+        const val IPIFY_URL = "https://api64.ipify.org?format=json"
     }
 }
