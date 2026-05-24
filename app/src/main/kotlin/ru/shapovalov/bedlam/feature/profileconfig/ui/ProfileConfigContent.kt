@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.feature.profileconfig.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,6 +72,8 @@ import ru.shapovalov.hysteria.config.defaultTransportOptions
 fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    BackHandler { component.onBackPressed() }
 
     val saveErrorMessage = state.saveError?.let {
         stringResource(R.string.profile_config_save_error, it)

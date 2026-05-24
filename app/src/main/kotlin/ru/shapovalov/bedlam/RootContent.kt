@@ -25,6 +25,7 @@ import ru.shapovalov.bedlam.feature.dashboard.ui.DashboardContent
 import ru.shapovalov.bedlam.feature.logs.ui.LogsContent
 import ru.shapovalov.bedlam.feature.profileconfig.ui.ProfileConfigContent
 import ru.shapovalov.bedlam.feature.session.ui.SessionContent
+import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child as SettingsChild
 import ru.shapovalov.bedlam.feature.settings.ui.SettingsContent
 import ru.shapovalov.bedlam.navigation.RootComponent
 import ru.shapovalov.bedlam.navigation.RootComponent.Child
@@ -33,21 +34,25 @@ import ru.shapovalov.bedlam.navigation.RootComponent.Tab
 @Composable
 fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
     val stack by component.childStack.subscribeAsState()
-    val activeTab = stack.active.instance.tab
+    val activeChild = stack.active.instance
+    val activeTab = activeChild.tab
+    val showBottomNavigation = activeChild.shouldShowBottomNavigation()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            NavigationBar {
-                Tab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = activeTab == tab,
-                        onClick = { component.onTabSelected(tab) },
-                        icon = { TabIcon(tab) },
-                        label = { Text(stringResource(tab.labelRes())) },
-                        alwaysShowLabel = false
-                    )
+            if (showBottomNavigation) {
+                NavigationBar {
+                    Tab.entries.forEach { tab ->
+                        NavigationBarItem(
+                            selected = activeTab == tab,
+                            onClick = { component.onTabSelected(tab) },
+                            icon = { TabIcon(tab) },
+                            label = { Text(stringResource(tab.labelRes())) },
+                            alwaysShowLabel = false,
+                        )
+                    }
                 }
             }
         },
@@ -69,6 +74,16 @@ fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+@Composable
+private fun Child.shouldShowBottomNavigation(): Boolean = when (this) {
+    is Child.Dashboard, is Child.Logs -> true
+    is Child.Settings -> {
+        val settingsStack by component.childStack.subscribeAsState()
+        settingsStack.active.instance == SettingsChild.Root
+    }
+    is Child.Session, is Child.ProfileConfig -> false
 }
 
 private fun Tab.labelRes(): Int = when (this) {
