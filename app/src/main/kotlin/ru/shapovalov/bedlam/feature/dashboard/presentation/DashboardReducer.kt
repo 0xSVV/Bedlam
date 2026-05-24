@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import com.arkivanov.mvikotlin.core.store.Reducer
+import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.hysteria.ConnectionState
 
@@ -11,6 +12,7 @@ internal sealed interface Msg {
     data object ImportFinished : Msg
     data class ErrorRaised(val reason: DashboardStore.ErrorReason) : Msg
     data object ErrorDismissed : Msg
+    data class LatencyUpdated(val id: String, val result: LatencyResult) : Msg
 }
 
 internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
@@ -24,5 +26,6 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
         Msg.ImportFinished -> copy(isImporting = false)
         is Msg.ErrorRaised -> copy(error = msg.reason)
         Msg.ErrorDismissed -> copy(error = null)
+        is Msg.LatencyUpdated -> copy(latencies = latencies + (msg.id to msg.result))
     }
 }

@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import com.arkivanov.mvikotlin.core.store.Store
+import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.hysteria.ConnectionState
 
@@ -12,6 +13,8 @@ interface DashboardStore : Store<DashboardStore.Intent, DashboardStore.State, Da
         data class DeleteProfile(val id: String) : Intent
         data class ImportProfileFromUri(val uri: String) : Intent
         data object DismissError : Intent
+        data class PingProfile(val id: String) : Intent
+        data object PingAllProfiles : Intent
     }
 
     data class State(
@@ -21,6 +24,7 @@ interface DashboardStore : Store<DashboardStore.Intent, DashboardStore.State, Da
         val connectedSinceMillis: Long? = null,
         val isImporting: Boolean = false,
         val error: ErrorReason? = null,
+        val latencies: Map<String, LatencyResult> = emptyMap(),
     ) {
         val activeProfile: Profile? get() = profiles.firstOrNull { it.id == activeProfileId }
     }

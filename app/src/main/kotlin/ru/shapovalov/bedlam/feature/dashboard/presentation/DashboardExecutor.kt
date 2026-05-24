@@ -2,6 +2,9 @@ package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
 import kotlinx.coroutines.launch
+import ru.shapovalov.bedlam.core.latency.LatencyResult
+import ru.shapovalov.bedlam.core.latency.PingProfileUseCase
+import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileFromUriUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
@@ -11,12 +14,14 @@ internal class DashboardExecutor(
     private val setActiveProfile: SetActiveProfileUseCase,
     private val deleteProfile: DeleteProfileUseCase,
     private val importFromUri: ImportProfileFromUriUseCase,
+    private val pingProfile: PingProfileUseCase,
 ) : CoroutineExecutor<DashboardStore.Intent, Action, DashboardStore.State, Msg, DashboardStore.Label>() {
 
     override fun executeAction(action: Action) {
         when (action) {
             is Action.ProfilesLoaded -> dispatch(Msg.ProfilesLoaded(action.profiles, action.activeId))
             is Action.ConnectionStateChanged -> dispatch(Msg.ConnectionChanged(action.state, action.connectedSinceMillis))
+            Action.TunnelConnected -> pingActiveProfile()
         }
     }
 
@@ -27,6 +32,8 @@ internal class DashboardExecutor(
             is DashboardStore.Intent.DeleteProfile -> scope.launch { deleteProfile(intent.id) }
             is DashboardStore.Intent.ImportProfileFromUri -> handleImport(intent.uri)
             DashboardStore.Intent.DismissError -> dispatch(Msg.ErrorDismissed)
+            is DashboardStore.Intent.PingProfile -> ping(intent.id)
+            DashboardStore.Intent.PingAllProfiles -> pingAll()
         }
     }
 
@@ -66,5 +73,27 @@ internal class DashboardExecutor(
                     dispatch(Msg.ErrorRaised(DashboardStore.ErrorReason.ImportFailed(e.message)))
                 }
         }
+    }
+
+    private fun ping(id: String) {
+        val profile = state().profiles.firstOrNull { it.id == id } ?: return
+        dispatch(Msg.LatencyUpdated(id, LatencyResult.Measuring))
+        scope.launch {
+            dispatch(Msg.LatencyUpdated(id, pingProfile(profile)))
+        }
+    }
+
+    private fun pingAll() {
+        state().profiles.forEach { profile ->
+            dispatch(Msg.LatencyUpdated(profile.id, LatencyResult.Measuring))
+            scope.launch {
+                dispatch(Msg.LatencyUpdated(profile.id, pingProfile(profile)))
+            }
+        }
+    }
+
+    private fun pingActiveProfile() {
+        val id = state().activeProfileId ?: return
+        ping(id)
     }
 }

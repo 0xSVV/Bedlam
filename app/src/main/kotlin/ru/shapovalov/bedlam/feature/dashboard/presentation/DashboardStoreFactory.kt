@@ -3,6 +3,7 @@ package ru.shapovalov.bedlam.feature.dashboard.presentation
 import com.arkivanov.mvikotlin.core.store.Store
 import com.arkivanov.mvikotlin.core.store.StoreFactory
 import me.tatarka.inject.annotations.Inject
+import ru.shapovalov.bedlam.core.latency.PingProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.GetProfilesUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileFromUriUseCase
@@ -19,6 +20,7 @@ class DashboardStoreFactory(
     private val deleteProfile: DeleteProfileUseCase,
     private val importFromUri: ImportProfileFromUriUseCase,
     private val client: HysteriaClient,
+    private val pingProfile: PingProfileUseCase,
 ) {
     fun create(): DashboardStore =
         object : DashboardStore, Store<DashboardStore.Intent, DashboardStore.State, DashboardStore.Label>
@@ -26,7 +28,7 @@ class DashboardStoreFactory(
             name = "DashboardStore",
             initialState = DashboardStore.State(connectionState = client.state.value),
             bootstrapper = DashboardBootstrapper(getProfiles, observeActiveId, client),
-            executorFactory = { DashboardExecutor(setActiveProfile, deleteProfile, importFromUri) },
+            executorFactory = { DashboardExecutor(setActiveProfile, deleteProfile, importFromUri, pingProfile) },
             reducer = DashboardReducer,
         ) {}
 }
