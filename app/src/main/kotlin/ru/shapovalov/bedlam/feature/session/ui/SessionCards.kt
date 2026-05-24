@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -98,6 +99,7 @@ private fun ShimmerBlock(width: Dp, height: Dp, shimmer: Shimmer) {
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun ErrorCard(message: String, onRetry: () -> Unit) {
     val spacing = MaterialTheme.spacing
@@ -116,7 +118,7 @@ internal fun ErrorCard(message: String, onRetry: () -> Unit) {
         ) {
             Text(
                 text = stringResource(R.string.session_error_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMediumEmphasized,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
             Text(
@@ -182,8 +184,8 @@ private fun InfoRow(label: String, value: String?, monoValue: Boolean = false) {
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.size(spacing.medium))
         Text(
@@ -192,7 +194,7 @@ private fun InfoRow(label: String, value: String?, monoValue: Boolean = false) {
                 fontFamily = if (monoValue) FontFamily.Monospace else FontFamily.Default,
                 fontWeight = FontWeight.Medium,
             ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.End,
         )
     }
@@ -206,6 +208,7 @@ private fun DividerRow() {
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun SpeedTestCard(onOpen: () -> Unit) {
     val spacing = MaterialTheme.spacing
@@ -225,7 +228,7 @@ internal fun SpeedTestCard(onOpen: () -> Unit) {
         ) {
             Text(
                 text = stringResource(R.string.session_speed_test_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMediumEmphasized,
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(

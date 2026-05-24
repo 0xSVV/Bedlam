@@ -23,13 +23,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,7 +42,7 @@ import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.session.presentation.SessionComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
@@ -60,7 +60,7 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                 title = {
                     Text(
                         stringResource(if (showSpeedTest) R.string.session_speed_test_title else R.string.session_title),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleLargeEmphasized,
                     )
                 },
                 navigationIcon = {
@@ -83,9 +83,6 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
             )
         },
     ) { padding ->
