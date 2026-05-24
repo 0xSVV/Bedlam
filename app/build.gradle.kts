@@ -18,6 +18,10 @@ android {
         versionName = libs.versions.versionName.get()
     }
 
+    signingConfigs {
+        named("debug") { }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -26,6 +30,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
