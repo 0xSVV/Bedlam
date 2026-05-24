@@ -19,18 +19,26 @@ android {
     }
 
     signingConfigs {
-        named("debug") { }
+        create("release") {
+            val storePath = providers.gradleProperty("BEDLAM_STORE_FILE").orNull
+            if (storePath != null) {
+                storeFile = file(storePath)
+                storePassword = providers.gradleProperty("BEDLAM_STORE_PASSWORD").orNull
+                keyAlias = providers.gradleProperty("BEDLAM_KEY_ALIAS").orNull
+                keyPassword = providers.gradleProperty("BEDLAM_KEY_PASSWORD").orNull
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
