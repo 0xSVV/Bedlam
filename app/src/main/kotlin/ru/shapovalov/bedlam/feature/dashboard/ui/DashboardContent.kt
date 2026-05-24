@@ -247,7 +247,7 @@ private fun ConnectionHero(
                     modifier = Modifier.size(40.dp),
                 )
                 else -> Icon(
-                    Icons.Default.PlayArrow,
+                    imageVector = Icons.Default.PlayArrow,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.onSurface,
