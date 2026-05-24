@@ -7,12 +7,6 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,11 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +57,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.session.domain.model.SessionInfo
 import ru.shapovalov.bedlam.feature.session.presentation.SessionComponent
+import ru.shapovalov.bedlam.ui.shimmer.Shimmer
+import ru.shapovalov.bedlam.ui.shimmer.ShimmerBounds
+import ru.shapovalov.bedlam.ui.shimmer.rememberShimmer
+import ru.shapovalov.bedlam.ui.shimmer.shimmer
 import ru.shapovalov.bedlam.ui.theme.spacing
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -153,11 +146,36 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
     }
 }
 
-private val SkeletonValueWidths = listOf(120.dp, 200.dp, 90.dp, 160.dp, 60.dp, 110.dp, 110.dp, 80.dp, 90.dp)
+// Label widths sized to match titleSmall rendered width of each field label.
+// Value widths sized to match typical bodyMedium content width per field.
+private val SkeletonLabelWidths = listOf(
+    32.dp,  // "IPv4"
+    32.dp,  // "IPv6"
+    28.dp,  // "ASN"
+    112.dp, // "AS Organization"
+    52.dp,  // "Country"
+    28.dp,  // "City"
+    44.dp,  // "Region"
+    52.dp,  // "Latitude"
+    60.dp,  // "Longitude"
+)
+
+private val SkeletonValueWidths = listOf(
+    88.dp,  // "1.2.3.4" monospace
+    196.dp, // "2001:db8:85a3::8a2e:370:7334" monospace
+    52.dp,  // "AS12345"
+    140.dp, // "Cloudflare, Inc."
+    100.dp, // "United States"
+    88.dp,  // "San Francisco"
+    80.dp,  // "California"
+    64.dp,  // "37.7749" monospace
+    72.dp,  // "-122.4194" monospace
+)
 
 @Composable
 private fun SkeletonInfoCard() {
     val spacing = MaterialTheme.spacing
+    val shimmer = rememberShimmer(ShimmerBounds.Window)
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -166,16 +184,16 @@ private fun SkeletonInfoCard() {
         ),
     ) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
-            SkeletonValueWidths.forEachIndexed { index, width ->
-                SkeletonRow(labelWidth = if (index % 2 == 0) 64.dp else 100.dp, valueWidth = width)
-                if (index != SkeletonValueWidths.lastIndex) DividerRow()
+            SkeletonLabelWidths.zip(SkeletonValueWidths).forEachIndexed { index, (labelWidth, valueWidth) ->
+                SkeletonRow(labelWidth = labelWidth, valueWidth = valueWidth, shimmer = shimmer)
+                if (index != SkeletonLabelWidths.lastIndex) DividerRow()
             }
         }
     }
 }
 
 @Composable
-private fun SkeletonRow(labelWidth: Dp, valueWidth: Dp) {
+private fun SkeletonRow(labelWidth: Dp, valueWidth: Dp, shimmer: Shimmer) {
     val spacing = MaterialTheme.spacing
     Row(
         modifier = Modifier
@@ -184,53 +202,20 @@ private fun SkeletonRow(labelWidth: Dp, valueWidth: Dp) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        ShimmerBlock(width = labelWidth, height = 14.dp)
-        ShimmerBlock(width = valueWidth, height = 14.dp)
+        ShimmerBlock(width = labelWidth, height = 20.dp, shimmer = shimmer)
+        ShimmerBlock(width = valueWidth, height = 20.dp, shimmer = shimmer)
     }
 }
 
 @Composable
-private fun ShimmerBlock(width: Dp, height: Dp) {
+private fun ShimmerBlock(width: Dp, height: Dp, shimmer: Shimmer) {
     Box(
         modifier = Modifier
             .width(width)
             .height(height)
             .clip(RoundedCornerShape(percent = 50))
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .shimmer(),
-    )
-}
-
-@Composable
-private fun Modifier.shimmer(): Modifier {
-    val transition = rememberInfiniteTransition(label = "shimmer")
-    val progress by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "shimmer-progress",
-    )
-    val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
-    val transparent = MaterialTheme.colorScheme.onSurface.copy(alpha = 0f)
-    return this.then(
-        Modifier.drawWithCache {
-            val width = size.width
-            val bandWidth = width * 0.6f
-            val travel = width + bandWidth
-            val start = -bandWidth + travel * progress
-            val brush = Brush.linearGradient(
-                colors = listOf(transparent, highlight, transparent),
-                start = Offset(start, 0f),
-                end = Offset(start + bandWidth, size.height),
-            )
-            onDrawWithContent {
-                drawContent()
-                drawRect(brush = brush, topLeft = Offset.Zero, size = Size(width, size.height), blendMode = BlendMode.SrcAtop)
-            }
-        },
+            .shimmer(shimmer),
     )
 }
 

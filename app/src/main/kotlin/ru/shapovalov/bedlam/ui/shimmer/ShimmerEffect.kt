@@ -58,32 +58,34 @@ internal class ShimmerEffect(
         animatedState.animateTo(targetValue = 1f, animationSpec = animationSpec)
     }
 
-    fun ContentDrawScope.draw(shimmerArea: ShimmerArea) = with(shimmerArea) {
-        if (shimmerBounds.isEmpty || viewBounds.isEmpty) return
+    fun ContentDrawScope.draw(shimmerArea: ShimmerArea) {
+        with(shimmerArea) {
+            if (shimmerBounds.isEmpty || viewBounds.isEmpty) return@with
 
-        val progress = animatedState.value
-        val traversal = -translationDistance / 2 + translationDistance * progress + pivotPoint.x
+            val progress = animatedState.value
+            val traversal = -translationDistance / 2 + translationDistance * progress + pivotPoint.x
 
-        transformationMatrix.apply {
-            reset()
-            translate(pivotPoint.x, pivotPoint.y, 0f)
-            rotateZ(rotation)
-            translate(-pivotPoint.x, -pivotPoint.y, 0f)
-            translate(traversal, 0f, 0f)
-        }
+            transformationMatrix.apply {
+                reset()
+                translate(pivotPoint.x, pivotPoint.y, 0f)
+                rotateZ(rotation)
+                translate(-pivotPoint.x, -pivotPoint.y, 0f)
+                translate(traversal, 0f, 0f)
+            }
 
-        paint.shader = LinearGradientShader(
-            from = transformationMatrix.map(gradientFrom),
-            to = transformationMatrix.map(gradientTo),
-            colors = shaderColors,
-            colorStops = shaderColorStops,
-        )
+            paint.shader = LinearGradientShader(
+                from = transformationMatrix.map(gradientFrom),
+                to = transformationMatrix.map(gradientTo),
+                colors = shaderColors,
+                colorStops = shaderColorStops,
+            )
 
-        val drawArea = size.toRect()
-        drawIntoCanvas { canvas ->
-            canvas.withSaveLayer(bounds = drawArea, paint = emptyPaint) {
-                drawContent()
-                canvas.drawRect(drawArea, paint)
+            val drawArea = size.toRect()
+            drawIntoCanvas { canvas ->
+                canvas.withSaveLayer(bounds = drawArea, paint = emptyPaint) {
+                    drawContent()
+                    canvas.drawRect(drawArea, paint)
+                }
             }
         }
     }
