@@ -157,4 +157,31 @@
     <string name="logs_level_info">Info</string>
     <string name="logs_level_warn">Warn</string>
     <string name="logs_level_error">Error</string>
+
+    <string name="profile_config_title">Configuration</string>
+    <string name="profile_config_open_cd">Open profile configuration</string>
+    <string name="profile_config_action_edit">Edit</string>
+    <string name="profile_config_not_found">Profile not found</string>
+    <string name="profile_config_save_error">Save failed: %1$s</string>
+    <string name="profile_config_field_empty">—</string>
+
+    <string name="profile_config_section_server">Server</string>
+    <string name="profile_config_section_tls">TLS</string>
+    <string name="profile_config_section_obfuscation">Obfuscation</string>
+    <string name="profile_config_section_quic">QUIC</string>
+    <string name="profile_config_section_congestion">Congestion</string>
+    <string name="profile_config_section_bandwidth">Bandwidth</string>
+    <string name="profile_config_section_transport">Transport (port hopping)</string>
+    <string name="profile_config_section_behavior">Behavior</string>
+
+    <string name="profile_config_caution_auth">Authentication credential — share carefully.</string>
+    <string name="profile_config_caution_tls_insecure">Disables certificate verification. Vulnerable to MitM.</string>
+    <string name="profile_config_caution_tls_pin">Pinned hash overrides normal certificate validation.</string>
+    <string name="profile_config_caution_tls_ca">Custom CA replaces the system trust store for this profile.</string>
+    <string name="profile_config_caution_tls_client">mTLS material must match what the server expects.</string>
+    <string name="profile_config_caution_obfs">Type and password must match the server.</string>
+    <string name="profile_config_caution_quic">Tuning these can break the connection.</string>
+    <string name="profile_config_caution_congestion">Unsupported algorithm or BBR profile may be rejected.</string>
+    <string name="profile_config_caution_bandwidth">Misreporting causes congestion-control issues.</string>
+    <string name="profile_config_caution_hop">Hop intervals must agree with the server.</string>
 </resources>
