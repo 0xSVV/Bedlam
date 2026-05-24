@@ -145,16 +145,17 @@
     <string name="session_speed_test_title">Speed Test</string>
     <string name="session_speed_test_subtitle">Test your Internet connection.</string>
 
-    <string name="logs_title">Logs</string>
-    <string name="logs_action_pause_cd">Pause</string>
-    <string name="logs_action_resume_cd">Resume</string>
-    <string name="logs_action_clear_cd">Clear</string>
+    <string name="logs_action_menu_open_cd">Open log actions</string>
+    <string name="logs_action_menu_close_cd">Close log actions</string>
+    <string name="logs_action_pause_cd">Pause logs</string>
+    <string name="logs_action_resume_cd">Resume logs</string>
+    <string name="logs_action_clear_cd">Delete logs</string>
     <string name="logs_empty_idle">Waiting for log output…</string>
     <string name="logs_empty_paused">Paused. New entries are suppressed.</string>
-    <string name="logs_level_debug">Debug</string>
-    <string name="logs_level_info">Info</string>
-    <string name="logs_level_warn">Warn</string>
-    <string name="logs_level_error">Error</string>
+    <string name="logs_level_debug">DEBUG</string>
+    <string name="logs_level_info">INFO</string>
+    <string name="logs_level_warn">WARN</string>
+    <string name="logs_level_error">ERROR</string>
 
     <string name="profile_config_title">Configuration</string>
     <string name="profile_config_open_cd">Open profile configuration</string>

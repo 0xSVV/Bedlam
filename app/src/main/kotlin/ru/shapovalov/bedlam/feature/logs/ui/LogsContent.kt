@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.feature.logs.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -13,45 +14,52 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FloatingActionButtonMenu
+import androidx.compose.material3.FloatingActionButtonMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.ToggleFloatingActionButton
+import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponent
-import ru.shapovalov.bedlam.feature.logs.presentation.LogsStore
 import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
 import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
@@ -59,58 +67,19 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
-    val terminalBackground = MaterialTheme.colorScheme.surfaceContainerLowest
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.logs_title),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                },
-                actions = {
-                    val pauseCd = stringResource(
-                        if (state.isPaused) R.string.logs_action_resume_cd
-                        else R.string.logs_action_pause_cd
-                    )
-                    IconButton(
-                        onClick = component::onTogglePause,
-                        modifier = Modifier.semantics { contentDescription = pauseCd },
-                    ) {
-                        if (state.isPaused) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        } else {
-                            PauseGlyph(
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-                    IconButton(onClick = component::onClear, enabled = state.liveEntries.isNotEmpty()) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = stringResource(R.string.logs_action_clear_cd),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-            )
-        },
-    ) { padding ->
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+    ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize(),
         ) {
             LevelFilterRow(
                 selected = state.minLevel,
@@ -120,13 +89,7 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
                     .padding(horizontal = spacing.large, vertical = spacing.small),
             )
 
-            TerminalSurface(
-                background = terminalBackground,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = spacing.large)
-                    .padding(bottom = spacing.large),
-            ) {
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 val visible = state.visibleEntries
                 if (visible.isEmpty()) {
                     EmptyState(isPaused = state.isPaused)
@@ -138,6 +101,83 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
                 }
             }
         }
+
+        LogsActionsMenu(
+            isPaused = state.isPaused,
+            onTogglePause = component::onTogglePause,
+            onClear = component::onClear,
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun LogsActionsMenu(
+    isPaused: Boolean,
+    onTogglePause: () -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val pauseLabel = stringResource(
+        if (isPaused) R.string.logs_action_resume_cd else R.string.logs_action_pause_cd
+    )
+    val openLabel = stringResource(R.string.logs_action_menu_open_cd)
+    val closeLabel = stringResource(R.string.logs_action_menu_close_cd)
+
+    BackHandler(expanded) { expanded = false }
+
+    FloatingActionButtonMenu(
+        modifier = modifier,
+        expanded = expanded,
+        button = {
+            ToggleFloatingActionButton(
+                checked = expanded,
+                onCheckedChange = { expanded = !expanded },
+                modifier = Modifier.semantics {
+                    traversalIndex = -1f
+                    stateDescription = if (expanded) closeLabel else openLabel
+                },
+            ) {
+                val icon by remember {
+                    derivedStateOf {
+                        if (checkedProgress > 0.5f) Icons.Default.Close else Icons.Default.MoreVert
+                    }
+                }
+                Icon(
+                    painter = rememberVectorPainter(icon),
+                    contentDescription = if (expanded) closeLabel else openLabel,
+                    modifier = Modifier.animateIcon({ checkedProgress }),
+                )
+            }
+        },
+    ) {
+        FloatingActionButtonMenuItem(
+            onClick = {
+                expanded = false
+                onTogglePause()
+            },
+            icon = {
+                if (isPaused) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                } else {
+                    PauseGlyph(
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            },
+            text = { Text(pauseLabel) },
+        )
+        FloatingActionButtonMenuItem(
+            onClick = {
+                expanded = false
+                onClear()
+            },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            text = { Text(stringResource(R.string.logs_action_clear_cd)) },
+        )
     }
 }
 
@@ -169,21 +209,6 @@ private fun LevelFilterRow(
                 ),
             )
         }
-    }
-}
-
-@Composable
-private fun TerminalSurface(
-    background: Color,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(background),
-    ) {
-        content()
     }
 }
 
@@ -221,8 +246,10 @@ private fun LogList(entries: List<LogEntry>, isPaused: Boolean) {
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            horizontal = MaterialTheme.spacing.medium,
-            vertical = MaterialTheme.spacing.medium,
+            start = MaterialTheme.spacing.large,
+            top = MaterialTheme.spacing.small,
+            end = MaterialTheme.spacing.large,
+            bottom = MaterialTheme.spacing.large,
         ),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -247,12 +274,12 @@ private fun LogRow(entry: LogEntry) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height(18.dp)
+                .height(32.dp)
                 .clip(RoundedCornerShape(2.dp))
                 .background(accent),
         )
@@ -299,15 +326,8 @@ private fun LogRow(entry: LogEntry) {
 private fun LevelChip(level: LogLevel) {
     val color = level.accentColor()
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .clip(CircleShape)
-                .background(color),
-        )
-        Spacer(Modifier.width(4.dp))
         Text(
-            text = level.shortLabel(),
+            text = level.label(),
             style = MaterialTheme.typography.labelSmall.copy(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
@@ -334,13 +354,6 @@ private fun LogLevel.label(): String = stringResource(
         LogLevel.ERROR -> R.string.logs_level_error
     }
 )
-
-private fun LogLevel.shortLabel(): String = when (this) {
-    LogLevel.DEBUG -> "DBG"
-    LogLevel.INFO -> "INF"
-    LogLevel.WARN -> "WRN"
-    LogLevel.ERROR -> "ERR"
-}
 
 @Composable
 private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier) {
