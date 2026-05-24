@@ -23,10 +23,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
@@ -56,6 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,7 +77,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -110,10 +110,20 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
         snackbarHostState.showSnackbar(msg)
         component.onDismissError()
     }
+    val connectionErrorText = (state.connectionState as? ConnectionState.Error)?.let {
+        stringResource(R.string.dashboard_connection_error, it.message)
+    }
+    LaunchedEffect(connectionErrorText) {
+        val msg = connectionErrorText ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(msg)
+    }
 
     Box(modifier = modifier.fillMaxSize().statusBarsPadding()) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = spacing.large),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             DashboardTopBar(
@@ -131,9 +141,6 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 },
                 isImporting = state.isImporting,
             )
-
-            Spacer(Modifier.height(spacing.small))
-
             ConnectionHero(
                 connectionState = state.connectionState,
                 connectedSinceMillis = state.connectedSinceMillis,
@@ -141,9 +148,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 onToggle = component::onToggleConnection,
                 onOpenSession = component::onOpenSession,
             )
-
             Spacer(Modifier.height(spacing.xLarge))
-
             ProfilesCard(
                 profiles = state.profiles,
                 activeProfileId = state.activeProfileId,
@@ -157,7 +162,6 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                     .padding(horizontal = spacing.large),
             )
         }
-
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -213,6 +217,7 @@ private fun ConnectionHero(
     val isConnected = connectionState is ConnectionState.Connected
     val isConnecting = connectionState is ConnectionState.Connecting ||
         connectionState is ConnectionState.Reconnecting
+    val isError = connectionState is ConnectionState.Error
 
     val restingButtonShape = MaterialShapes.Square
     val loadingButtonShapes = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
@@ -232,10 +237,10 @@ private fun ConnectionHero(
     }
 
     LaunchedEffect(isConnecting) {
-        suspend fun finishCurrentMorph() {
-            if (fromButtonShape != toButtonShape) {
-                buttonMorphProgress.animateTo(1f, ConnectionMorphAnimationSpec)
-                fromButtonShape = toButtonShape
+        suspend fun returnToCurrentShape() {
+            if (fromButtonShape != toButtonShape && buttonMorphProgress.value > 0f) {
+                buttonMorphProgress.animateTo(0f, ConnectionMorphAnimationSpec)
+                toButtonShape = fromButtonShape
                 buttonMorphProgress.snapTo(0f)
             }
         }
@@ -250,39 +255,47 @@ private fun ConnectionHero(
             buttonMorphProgress.snapTo(0f)
         }
 
-        finishCurrentMorph()
         if (isConnecting) {
             showButtonIcon = false
             while (true) {
                 loadingButtonShapes.forEach { morphTo(it) }
             }
         } else {
-            morphTo(restingButtonShape)
             showButtonIcon = true
+            returnToCurrentShape()
+            morphTo(restingButtonShape)
         }
     }
 
     val connectionButtonColor by animateColorAsState(
         targetValue = when {
             isConnecting -> MaterialTheme.colorScheme.primary
+            isError -> MaterialTheme.colorScheme.errorContainer
             isConnected -> MaterialTheme.colorScheme.primaryContainer
             else -> MaterialTheme.colorScheme.surfaceContainerHigh
         },
         label = "connection-button-color",
     )
+    val connectionButtonContentColor by animateColorAsState(
+        targetValue = if (isError) {
+            MaterialTheme.colorScheme.onErrorContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        label = "connection-button-content-color",
+    )
 
-    val elapsedSeconds = remember(connectedSinceMillis) { mutableStateOf(0L) }
+    val elapsedSeconds = remember(connectedSinceMillis) { mutableLongStateOf(0L) }
     LaunchedEffect(connectedSinceMillis) {
         if (connectedSinceMillis == null) {
-            elapsedSeconds.value = 0L
+            elapsedSeconds.longValue = 0L
         } else {
             while (true) {
-                elapsedSeconds.value = (System.currentTimeMillis() - connectedSinceMillis) / 1000
+                elapsedSeconds.longValue = (System.currentTimeMillis() - connectedSinceMillis) / 1000
                 delay(1000)
             }
         }
     }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -291,22 +304,25 @@ private fun ConnectionHero(
     ) {
         Text(
             text = stringResource(R.string.dashboard_connection_time),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmallEmphasized,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(spacing.xSmall))
         Text(
             text = formatDuration(elapsedSeconds.value),
-            style = MaterialTheme.typography.displayMedium.copy(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.displayMediumEmphasized.copy(
+                fontFeatureSettings = "tnum",
             ),
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(spacing.large))
 
         val toggleCd = stringResource(
-            if (isConnected) R.string.action_disconnect else R.string.action_connect
+            when {
+                isConnected || isConnecting -> R.string.action_disconnect
+                isError -> R.string.action_reconnect
+                else -> R.string.action_connect
+            }
         )
         LargeExtendedFloatingActionButton(
             onClick = onToggle,
@@ -327,11 +343,11 @@ private fun ConnectionHero(
                     ),
                     contentDescription = null,
                     modifier = Modifier.size(FloatingActionButtonDefaults.LargeIconSize),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = connectionButtonContentColor,
                 )
             }
         }
-        Spacer(Modifier.height(spacing.medium))
+        Spacer(Modifier.height(spacing.large))
         val chipLabelColor = when (connectionState) {
             is ConnectionState.Connected -> MaterialTheme.colorScheme.primary
             is ConnectionState.Error -> MaterialTheme.colorScheme.error
@@ -340,7 +356,12 @@ private fun ConnectionHero(
         val openSessionCd = stringResource(R.string.dashboard_open_session_cd)
         ElevatedAssistChip(
             onClick = onOpenSession,
-            label = { Text(connectionState.displayText()) },
+            label = {
+                Text(
+                    text = connectionState.displayText(),
+                    style = MaterialTheme.typography.labelLargeEmphasized,
+                )
+            },
             trailingIcon = {
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -390,7 +411,7 @@ private fun ProfilesCard(
             ) {
                 Text(
                     text = stringResource(R.string.dashboard_profiles_section),
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelLargeEmphasized,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 IconButton(onClick = onPingAll) {
@@ -402,22 +423,20 @@ private fun ProfilesCard(
                     )
                 }
             }
-            LazyColumn {
-                items(profiles, key = Profile::id) { profile ->
-                    ProfileRow(
-                        profile = profile,
-                        isActive = profile.id == activeProfileId,
-                        latency = latencies[profile.id] ?: LatencyResult.Idle,
-                        onClick = { onSelect(profile.id) },
-                        onPing = { onPingProfile(profile.id) },
-                        onOpenConfig = { onOpenConfig(profile.id) },
+            profiles.forEachIndexed { index, profile ->
+                ProfileRow(
+                    profile = profile,
+                    isActive = profile.id == activeProfileId,
+                    latency = latencies[profile.id] ?: LatencyResult.Idle,
+                    onClick = { onSelect(profile.id) },
+                    onPing = { onPingProfile(profile.id) },
+                    onOpenConfig = { onOpenConfig(profile.id) },
+                )
+                if (index < profiles.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = spacing.large),
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
-                    if (profile != profiles.last()) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = spacing.large),
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                    }
                 }
             }
         }
@@ -469,7 +488,11 @@ private fun ProfileRow(
                 Text(
                     textAlign = TextAlign.Center,
                     text = profile.name,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = if (isActive) {
+                        MaterialTheme.typography.titleMediumEmphasized
+                    } else {
+                        MaterialTheme.typography.titleMedium
+                    },
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -553,7 +576,7 @@ private fun ConnectionState.displayText(): String = when (this) {
     ConnectionState.Connecting -> stringResource(R.string.dashboard_state_connecting)
     is ConnectionState.Connected -> stringResource(R.string.dashboard_state_connected)
     is ConnectionState.Reconnecting -> stringResource(R.string.dashboard_state_reconnecting, attempt)
-    is ConnectionState.Error -> stringResource(R.string.dashboard_state_error, message)
+    is ConnectionState.Error -> stringResource(R.string.dashboard_state_error)
 }
 
 @Composable

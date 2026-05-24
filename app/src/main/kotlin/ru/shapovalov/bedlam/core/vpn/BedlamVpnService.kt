@@ -23,6 +23,7 @@ import ru.shapovalov.bedlam.core.routing.domain.usecase.BuildRoutePlanUseCase
 import ru.shapovalov.bedlam.core.routing.engine.RoutePlanApplier
 import ru.shapovalov.bedlam.core.vpn.notification.VpnNotificationController
 import ru.shapovalov.bedlam.di.injected
+import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.api.DisconnectReason
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.api.TunConfig
@@ -116,7 +117,12 @@ class BedlamVpnService : VpnService() {
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "VPN startup failed", e)
-                stop()
+                if (client.state.value is ConnectionState.Error) {
+                    releaseForegroundResources()
+                    stopSelf()
+                } else {
+                    stop()
+                }
             }
         }
     }
@@ -136,6 +142,14 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun stop(reason: DisconnectReason = DisconnectReason.USER) {
+        releaseForegroundResources()
+        scope.launch {
+            runCatching { client.stop(reason) }
+            stopSelf()
+        }
+    }
+
+    private fun releaseForegroundResources() {
         notificationJob?.cancel()
         notificationJob = null
         networkObserver?.stop()
@@ -143,10 +157,6 @@ class BedlamVpnService : VpnService() {
         wakeLock.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
         notifications.cancel()
-        scope.launch {
-            runCatching { client.stop(reason) }
-            stopSelf()
-        }
     }
 
     private fun startAsForeground() {

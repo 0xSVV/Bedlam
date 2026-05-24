@@ -35,7 +35,8 @@
     <string name="dashboard_state_connecting">Connecting…</string>
     <string name="dashboard_state_connected">Connected</string>
     <string name="dashboard_state_reconnecting">Reconnecting (#%1$d)</string>
-    <string name="dashboard_state_error">Error: %1$s</string>
+    <string name="dashboard_state_error">Failed</string>
+    <string name="dashboard_connection_error">Error: %1$s</string>
 
     <string name="dashboard_error_no_profile">Select a profile first</string>
     <string name="dashboard_error_clipboard_empty">Clipboard is empty</string>
