@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -37,12 +36,13 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ElevatedAssistChip
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,15 +51,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -71,6 +72,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -86,7 +90,7 @@ import ru.shapovalov.bedlam.feature.routing.presentation.RoutingComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
 import java.util.UUID
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
@@ -108,7 +112,12 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.routing_title)) },
+                title = {
+                    Text(
+                        text = stringResource(R.string.routing_title),
+                        style = MaterialTheme.typography.titleLargeEmphasized,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = component::onBackPressed) {
                         Icon(
@@ -226,6 +235,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun BasicsCard(
     modifier: Modifier = Modifier,
@@ -238,12 +248,11 @@ private fun BasicsCard(
     onSetDnsMode: (DnsMode) -> Unit,
     onSetCustomDns: (List<String>) -> Unit,
 ) {
-    val spacing = MaterialTheme.spacing
     val ipv6Options = remember { Ipv6Mode.entries.toList() }
     val dnsOptions = remember { DnsMode.entries.toList() }
 
     ElevatedCard(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
-        Column(modifier = Modifier.padding(vertical = spacing.small)) {
+        Column(modifier = Modifier.padding(vertical = MaterialTheme.spacing.small)) {
             ToggleRow(
                 title = stringResource(R.string.routing_bypass_lan_title),
                 subtitle = stringResource(R.string.routing_bypass_lan_subtitle),
@@ -251,13 +260,19 @@ private fun BasicsCard(
                 onCheckedChange = onSetBypassLan,
             )
             DividerRow()
-            DropdownRow(
+            ToggleGroupRow(
                 title = stringResource(R.string.routing_ipv6_title),
-                value = ipv6Mode.label(),
+                selected = ipv6Mode,
                 options = ipv6Options,
-                renderLabel = { it.label() },
                 onPick = onSetIpv6Mode,
-            )
+            ) { mode ->
+                Text(
+                    text = mode.label(),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             DividerRow()
             DropdownRow(
                 title = stringResource(R.string.routing_dns_title),
@@ -270,6 +285,50 @@ private fun BasicsCard(
             if (dnsMode == DnsMode.Custom) {
                 DividerRow()
                 CustomDnsEditor(initial = customDns, onChange = onSetCustomDns)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun <T> ToggleGroupRow(
+    title: String,
+    selected: T,
+    options: List<T>,
+    onPick: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable (T) -> Unit,
+) {
+    val spacing = MaterialTheme.spacing
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.large, vertical = spacing.medium),
+        verticalArrangement = Arrangement.spacedBy(spacing.small),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMediumEmphasized,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+        ) {
+            options.forEachIndexed { index, option ->
+                ToggleButton(
+                    checked = selected == option,
+                    onCheckedChange = { if (it) onPick(option) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { role = Role.RadioButton },
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
+                ) {
+                    content(option)
+                }
             }
         }
     }
@@ -292,25 +351,31 @@ private fun SourcesHeaderCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        stringResource(R.string.routing_sources_title),
-                        style = MaterialTheme.typography.titleMedium,
+                        text = stringResource(R.string.routing_sources_title),
+                        style = MaterialTheme.typography.titleMediumEmphasized,
                     )
                     Spacer(Modifier.height(spacing.xSmall))
                     Text(
-                        stringResource(R.string.routing_sources_hint),
+                        text = stringResource(R.string.routing_sources_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 IconButton(onClick = onAdd) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.routing_sources_add_cd))
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = stringResource(R.string.routing_sources_add_cd),
+                    )
                 }
             }
             Row(
                 modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.xSmall),
                 horizontalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
-                AssistChip(onClick = onPresets, label = { Text(stringResource(R.string.routing_presets_chip)) })
+                ElevatedAssistChip(
+                    onClick = onPresets,
+                    label = { Text(stringResource(R.string.routing_presets_chip)) },
+                )
             }
         }
     }
@@ -318,13 +383,12 @@ private fun SourcesHeaderCard(
 
 @Composable
 private fun EmptySourcesRow(modifier: Modifier = Modifier) {
-    val spacing = MaterialTheme.spacing
     ElevatedCard(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
         Text(
-            stringResource(R.string.routing_sources_empty),
+            text = stringResource(R.string.routing_sources_empty),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(spacing.large),
+            modifier = Modifier.padding(MaterialTheme.spacing.large),
         )
     }
 }
@@ -437,6 +501,7 @@ private data class SwipeBgSpec(
     val align: Alignment,
 )
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SourceRowContent(
     resolved: ResolvedSource,
@@ -479,9 +544,10 @@ private fun SourceRowContent(
                     KindChip(resolved.source)
                     Spacer(Modifier.width(spacing.small))
                     Text(
-                        resolved.source.label(),
+                        text = resolved.source.label(),
                         style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
-                        color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -489,7 +555,7 @@ private fun SourceRowContent(
                 if (resolved.source.comment.isNotBlank()) {
                     Spacer(Modifier.height(spacing.xSmall))
                     Text(
-                        resolved.source.comment,
+                        text = resolved.source.comment,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -498,7 +564,7 @@ private fun SourceRowContent(
                 }
                 Spacer(Modifier.height(spacing.xSmall))
                 Text(
-                    resolutionSummary(resolved, isRefreshing),
+                    text = resolutionSummary(resolved, isRefreshing),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (resolved.lastError != null) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -538,40 +604,6 @@ private fun SourceDetails(resolved: ResolvedSource) {
             ),
         verticalArrangement = Arrangement.spacedBy(spacing.small),
     ) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-        when (val s = resolved.source) {
-            is DirectRouteSource.Asn -> DetailRow(
-                label = stringResource(R.string.routing_source_details_asn_label),
-                value = "AS${s.asn}",
-                monospace = true,
-            )
-            is DirectRouteSource.Domain -> DetailRow(
-                label = stringResource(R.string.routing_source_details_domain_label),
-                value = s.hostname,
-                monospace = true,
-            )
-            is DirectRouteSource.Cidr -> DetailRow(
-                label = stringResource(R.string.routing_source_details_cidr_label),
-                value = s.cidr.asString(),
-                monospace = true,
-            )
-        }
-
-        if (resolved.source.comment.isNotBlank()) {
-            DetailRow(
-                label = stringResource(R.string.routing_source_details_comment_label),
-                value = resolved.source.comment,
-            )
-        }
-
-        resolved.lastResolvedMillis?.let {
-            DetailRow(
-                label = stringResource(R.string.routing_source_details_resolved_label),
-                value = formatRelative(it),
-            )
-        }
-
         resolved.lastError?.let {
             DetailRow(
                 label = stringResource(R.string.routing_source_details_error_label),
@@ -580,11 +612,9 @@ private fun SourceDetails(resolved: ResolvedSource) {
             )
         }
 
-        Spacer(Modifier.height(spacing.xSmall))
-
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                stringResource(R.string.routing_source_details_networks_header),
+                text = stringResource(R.string.routing_source_details_networks_header),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
@@ -592,7 +622,7 @@ private fun SourceDetails(resolved: ResolvedSource) {
                 val v4 = resolved.cidrs.count { it is Cidr.V4 }
                 val v6 = resolved.cidrs.count { it is Cidr.V6 }
                 Text(
-                    stringResource(R.string.routing_source_details_networks_breakdown, v4, v6),
+                    text = stringResource(R.string.routing_source_details_networks_breakdown, v4, v6),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -600,7 +630,7 @@ private fun SourceDetails(resolved: ResolvedSource) {
         }
         if (resolved.cidrs.isEmpty()) {
             Text(
-                stringResource(R.string.routing_source_details_no_networks),
+                text = stringResource(R.string.routing_source_details_no_networks),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -608,7 +638,7 @@ private fun SourceDetails(resolved: ResolvedSource) {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.xSmall)) {
                 resolved.cidrs.forEach { cidr ->
                     Text(
-                        cidr.asString(),
+                        text = cidr.asString(),
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -627,15 +657,14 @@ private fun DetailRow(
 ) {
     Row(verticalAlignment = Alignment.Top) {
         Text(
-            label,
+            text = label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(96.dp),
         )
         Text(
-            value,
-            style = if (monospace)
-                MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+            text = value,
+            style = if (monospace) MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
             else MaterialTheme.typography.bodyMedium,
             color = valueColor,
             modifier = Modifier.weight(1f),
@@ -657,7 +686,7 @@ private fun KindChip(source: DirectRouteSource) {
             .padding(horizontal = 8.dp, vertical = 2.dp),
     ) {
         Text(
-            label,
+            text = label,
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
             color = color,
         )
@@ -690,6 +719,7 @@ private fun formatRelative(millis: Long): String {
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ToggleRow(
     title: String,
@@ -706,15 +736,20 @@ private fun ToggleRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(text = title, style = MaterialTheme.typography.titleMediumEmphasized)
             Spacer(Modifier.height(spacing.xSmall))
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         Spacer(Modifier.width(spacing.medium))
-        androidx.compose.material3.Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun <T> DropdownRow(
     title: String,
@@ -726,29 +761,37 @@ private fun <T> DropdownRow(
 ) {
     val spacing = MaterialTheme.spacing
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = true }
-                .padding(horizontal = spacing.large, vertical = spacing.medium),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                if (subtitle != null) {
-                    Spacer(Modifier.height(spacing.xSmall))
-                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
-                }
-            }
-            Text(value, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(renderLabel(option)) },
-                    onClick = { onPick(option); expanded = false },
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = true }
+            .padding(horizontal = spacing.large, vertical = spacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.titleMediumEmphasized)
+            if (subtitle != null) {
+                Spacer(Modifier.height(spacing.xSmall))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
                 )
+            }
+        }
+        Box {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelLargeEmphasized,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(renderLabel(option)) },
+                        onClick = { onPick(option); expanded = false },
+                    )
+                }
             }
         }
     }
@@ -775,6 +818,7 @@ private fun CustomDnsEditor(initial: List<String>, onChange: (List<String>) -> U
 
 private enum class SourceKind { CIDR, ASN, DOMAIN }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AddSourceDialog(
     existingKeys: Set<String>,
@@ -799,19 +843,34 @@ private fun AddSourceDialog(
         }
     }
     val isDuplicate = parsed?.dedupeKey()?.let { it in existingKeys } == true
+    val kinds = remember { SourceKind.entries.toList() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.routing_sources_add_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
-                    SourceKind.entries.forEach { entry ->
-                        FilterChip(
-                            selected = kind == entry,
-                            onClick = { kind = entry },
-                            label = { Text(entry.label()) },
-                        )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+                ) {
+                    kinds.forEachIndexed { index, entry ->
+                        ToggleButton(
+                            checked = kind == entry,
+                            onCheckedChange = { if (it) kind = entry },
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { role = Role.RadioButton },
+                            shapes = when (index) {
+                                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                kinds.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                            },
+                        ) {
+                            Text(
+                                text = entry.label(),
+                                style = MaterialTheme.typography.labelLargeEmphasized,
+                            )
+                        }
                     }
                 }
                 OutlinedTextField(
@@ -884,6 +943,7 @@ private fun PresetsDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun PresetRow(preset: RoutePreset, status: PresetStatus, onPick: () -> Unit) {
     val spacing = MaterialTheme.spacing
@@ -922,20 +982,21 @@ private fun PresetRow(preset: RoutePreset, status: PresetStatus, onPick: () -> U
         Spacer(Modifier.width(spacing.medium))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                preset.name,
-                style = MaterialTheme.typography.titleSmall,
+                text = preset.name,
+                style = if (enabled) MaterialTheme.typography.titleSmallEmphasized
+                else MaterialTheme.typography.titleSmall,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(spacing.xSmall))
             Text(
-                preset.description,
+                text = preset.description,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(spacing.xSmall))
             Text(
-                statusLabel,
+                text = statusLabel,
                 style = MaterialTheme.typography.labelSmall,
                 color = dotColor,
             )
