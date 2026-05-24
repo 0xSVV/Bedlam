@@ -19,6 +19,7 @@ class DashboardComponent(
     private val onStartVpn: OnStartVpn,
     private val onStopVpn: OnStopVpn,
     private val onOpenSession: OnOpenSession,
+    private val onOpenProfileConfig: OnOpenProfileConfig,
 ) : ComponentContext by componentContext {
 
     private val store = instanceKeeper.getStore { storeFactory.create() }
@@ -44,8 +45,10 @@ class DashboardComponent(
     fun onImportFromClipboard(uri: String) = store.accept(DashboardStore.Intent.ImportProfileFromUri(uri))
     fun onDismissError() = store.accept(DashboardStore.Intent.DismissError)
     fun onOpenSession() = onOpenSession.invoke()
+    fun onOpenProfileConfig(id: String) = onOpenProfileConfig.invoke(id)
 
     fun interface OnStartVpn { fun invoke(profile: Profile) }
     fun interface OnStopVpn { fun invoke() }
     fun interface OnOpenSession { fun invoke() }
+    fun interface OnOpenProfileConfig { fun invoke(profileId: String) }
 }

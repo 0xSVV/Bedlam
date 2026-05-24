@@ -12,11 +12,13 @@ class DashboardComponentFactory(
         onStartVpn: DashboardComponent.OnStartVpn,
         onStopVpn: DashboardComponent.OnStopVpn,
         onOpenSession: DashboardComponent.OnOpenSession,
+        onOpenProfileConfig: DashboardComponent.OnOpenProfileConfig,
     ): DashboardComponent = DashboardComponent(
         componentContext,
         storeFactory,
         onStartVpn,
         onStopVpn,
         onOpenSession,
+        onOpenProfileConfig,
     )
 }

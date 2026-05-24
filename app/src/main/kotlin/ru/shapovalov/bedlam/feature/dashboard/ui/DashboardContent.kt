@@ -121,6 +121,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 activeProfileId = state.activeProfileId,
                 onSelect = component::onSelectProfile,
                 onDelete = component::onDeleteProfile,
+                onOpenConfig = component::onOpenProfileConfig,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = spacing.large),
@@ -287,6 +288,7 @@ private fun ProfilesCard(
     activeProfileId: String?,
     onSelect: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onOpenConfig: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (profiles.isEmpty()) return
@@ -307,6 +309,7 @@ private fun ProfilesCard(
                         isActive = profile.id == activeProfileId,
                         onClick = { onSelect(profile.id) },
                         onDelete = { onDelete(profile.id) },
+                        onOpenConfig = { onOpenConfig(profile.id) },
                     )
                     if (profile != profiles.last()) {
                         HorizontalDivider(
@@ -326,6 +329,7 @@ private fun ProfileRow(
     isActive: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
+    onOpenConfig: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     Row(
@@ -363,6 +367,13 @@ private fun ProfileRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onOpenConfig) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = stringResource(R.string.profile_config_open_cd),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         IconButton(onClick = onDelete) {
