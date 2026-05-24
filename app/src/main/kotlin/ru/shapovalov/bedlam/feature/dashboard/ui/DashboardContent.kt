@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -120,7 +119,6 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 profiles = state.profiles,
                 activeProfileId = state.activeProfileId,
                 onSelect = component::onSelectProfile,
-                onDelete = component::onDeleteProfile,
                 onOpenConfig = component::onOpenProfileConfig,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -287,7 +285,6 @@ private fun ProfilesCard(
     profiles: List<Profile>,
     activeProfileId: String?,
     onSelect: (String) -> Unit,
-    onDelete: (String) -> Unit,
     onOpenConfig: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -308,7 +305,6 @@ private fun ProfilesCard(
                         profile = profile,
                         isActive = profile.id == activeProfileId,
                         onClick = { onSelect(profile.id) },
-                        onDelete = { onDelete(profile.id) },
                         onOpenConfig = { onOpenConfig(profile.id) },
                     )
                     if (profile != profiles.last()) {
@@ -328,7 +324,6 @@ private fun ProfileRow(
     profile: Profile,
     isActive: Boolean,
     onClick: () -> Unit,
-    onDelete: () -> Unit,
     onOpenConfig: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
@@ -373,13 +368,6 @@ private fun ProfileRow(
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = stringResource(R.string.profile_config_open_cd),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = stringResource(R.string.dashboard_action_delete_cd),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
