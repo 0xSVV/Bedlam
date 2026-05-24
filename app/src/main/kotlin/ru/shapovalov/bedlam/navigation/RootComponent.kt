@@ -7,6 +7,7 @@ import com.arkivanov.decompose.router.stack.bringToFront
 import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.router.stack.pop
 import com.arkivanov.decompose.value.Value
+import com.arkivanov.essenty.backhandler.BackCallback
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
@@ -34,6 +35,7 @@ class RootComponent(
 ) : ComponentContext by componentContext {
 
     private val navigation = StackNavigation<Config>()
+    private val backCallback = BackCallback(isEnabled = false) { navigation.pop() }
 
     val childStack: Value<ChildStack<*, Child>> = childStack(
         source = navigation,
@@ -72,6 +74,15 @@ class RootComponent(
             }
         },
     )
+
+    init {
+        backHandler.register(backCallback)
+        childStack.subscribe { stack ->
+            backCallback.isEnabled = stack.active.instance.let {
+                it is Child.Session || it is Child.ProfileConfig
+            }
+        }
+    }
 
     fun onTabSelected(tab: Tab) {
         val target = when (tab) {
