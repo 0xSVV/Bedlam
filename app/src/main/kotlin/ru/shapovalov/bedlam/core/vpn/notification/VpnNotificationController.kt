@@ -17,7 +17,8 @@ import ru.shapovalov.hysteria.api.HysteriaClient
 
 class VpnNotificationController(private val context: Context) {
 
-    @Volatile var connectionName: String = ""
+    @Volatile
+    var connectionName: String = ""
 
     private val notificationManager: NotificationManager =
         requireNotNull(context.getSystemService(NotificationManager::class.java)) {
@@ -60,7 +61,7 @@ class VpnNotificationController(private val context: Context) {
     ): Notification {
         val builder = Notification.Builder(context, CHANNEL_ID)
             .setContentTitle(title())
-            .setSmallIcon(R.drawable.ic_vpn_tunnel)
+            .setSmallIcon(R.drawable.ic_stat_bedlam)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
@@ -82,6 +83,7 @@ class VpnNotificationController(private val context: Context) {
                 builder.setContentText(context.getString(R.string.notification_state_connecting))
                 builder.addAction(stopAction())
             }
+
             is ConnectionState.Connected -> {
                 builder.setContentText(
                     context.getString(
@@ -100,6 +102,7 @@ class VpnNotificationController(private val context: Context) {
                 builder.addAction(reconnectAction())
                 builder.addAction(stopAction())
             }
+
             is ConnectionState.Reconnecting -> {
                 builder.setContentText(
                     context.getString(R.string.notification_state_reconnecting, state.attempt)
@@ -108,6 +111,7 @@ class VpnNotificationController(private val context: Context) {
                 builder.addAction(reconnectAction())
                 builder.addAction(stopAction())
             }
+
             is ConnectionState.Error -> {
                 builder.setContentText(
                     context.getString(R.string.notification_state_error, state.message)
@@ -115,6 +119,7 @@ class VpnNotificationController(private val context: Context) {
                 builder.addAction(reconnectAction())
                 builder.addAction(stopAction())
             }
+
             is ConnectionState.Disconnected -> {
                 builder.setContentText(context.getString(R.string.notification_state_disconnected))
                 builder.addAction(stopAction())
