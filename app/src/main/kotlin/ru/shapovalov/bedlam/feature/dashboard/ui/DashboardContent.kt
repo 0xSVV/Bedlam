@@ -1,7 +1,16 @@
 package ru.shapovalov.bedlam.feature.dashboard.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,21 +32,26 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ElevatedAssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LargeFloatingActionButton
+import androidx.compose.material3.LargeExtendedFloatingActionButton
+import androidx.compose.material3.LoadingIndicatorDefaults
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.toPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -45,10 +59,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -57,8 +77,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.Morph
+import androidx.graphics.shapes.RoundedPolygon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.R
@@ -175,6 +200,7 @@ private fun DashboardTopBar(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ConnectionHero(
     connectionState: ConnectionState,
@@ -187,6 +213,63 @@ private fun ConnectionHero(
     val isConnected = connectionState is ConnectionState.Connected
     val isConnecting = connectionState is ConnectionState.Connecting ||
         connectionState is ConnectionState.Reconnecting
+
+    val restingButtonShape = MaterialShapes.Square
+    val loadingButtonShapes = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
+    var fromButtonShape by remember { mutableStateOf(restingButtonShape) }
+    var toButtonShape by remember { mutableStateOf(restingButtonShape) }
+    var showButtonIcon by remember { mutableStateOf(!isConnecting) }
+    val buttonMorphProgress = remember { Animatable(0f) }
+    val connectionButtonShape = remember(
+        fromButtonShape,
+        toButtonShape,
+        buttonMorphProgress.value,
+    ) {
+        ConnectionMorphShape(
+            morph = Morph(fromButtonShape, toButtonShape),
+            progress = buttonMorphProgress.value,
+        )
+    }
+
+    LaunchedEffect(isConnecting) {
+        suspend fun finishCurrentMorph() {
+            if (fromButtonShape != toButtonShape) {
+                buttonMorphProgress.animateTo(1f, ConnectionMorphAnimationSpec)
+                fromButtonShape = toButtonShape
+                buttonMorphProgress.snapTo(0f)
+            }
+        }
+
+        suspend fun morphTo(nextShape: RoundedPolygon) {
+            if (fromButtonShape == nextShape) return
+            toButtonShape = nextShape
+            buttonMorphProgress.snapTo(0f)
+            buttonMorphProgress.animateTo(1f, ConnectionMorphAnimationSpec)
+            fromButtonShape = nextShape
+            toButtonShape = nextShape
+            buttonMorphProgress.snapTo(0f)
+        }
+
+        finishCurrentMorph()
+        if (isConnecting) {
+            showButtonIcon = false
+            while (true) {
+                loadingButtonShapes.forEach { morphTo(it) }
+            }
+        } else {
+            morphTo(restingButtonShape)
+            showButtonIcon = true
+        }
+    }
+
+    val connectionButtonColor by animateColorAsState(
+        targetValue = when {
+            isConnecting -> MaterialTheme.colorScheme.primary
+            isConnected -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        label = "connection-button-color",
+    )
 
     val elapsedSeconds = remember(connectedSinceMillis) { mutableStateOf(0L) }
     LaunchedEffect(connectedSinceMillis) {
@@ -225,29 +308,25 @@ private fun ConnectionHero(
         val toggleCd = stringResource(
             if (isConnected) R.string.action_disconnect else R.string.action_connect
         )
-        LargeFloatingActionButton(
+        LargeExtendedFloatingActionButton(
             onClick = onToggle,
-            shape = RoundedCornerShape(spacing.xLarge),
-            containerColor = when {
-                isConnected -> MaterialTheme.colorScheme.primaryContainer
-                else -> MaterialTheme.colorScheme.surfaceContainerHigh
-            },
+            shape = connectionButtonShape,
+            containerColor = connectionButtonColor,
             modifier = Modifier
-                .size(96.dp)
+                .size(ConnectionFabContainerSize)
                 .semantics { contentDescription = toggleCd },
         ) {
-            when {
-                isConnecting -> CircularProgressIndicator(modifier = Modifier.size(40.dp))
-                isConnected -> Icon(
-                    painter = painterResource(R.drawable.ic_pause),
+            AnimatedVisibility(
+                visible = showButtonIcon,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Icon(
+                    painter = painterResource(
+                        if (isConnected) R.drawable.ic_pause else R.drawable.ic_power
+                    ),
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-                else -> Icon(
-                    painter = painterResource(R.drawable.ic_power),
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(FloatingActionButtonDefaults.LargeIconSize),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -259,18 +338,20 @@ private fun ConnectionHero(
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         }
         val openSessionCd = stringResource(R.string.dashboard_open_session_cd)
-        AssistChip(
+        ElevatedAssistChip(
             onClick = onOpenSession,
             label = { Text(connectionState.displayText()) },
             trailingIcon = {
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
-                    tint = chipLabelColor,
                     modifier = Modifier.size(18.dp),
                 )
             },
-            colors = AssistChipDefaults.assistChipColors(labelColor = chipLabelColor),
+            colors = AssistChipDefaults.elevatedAssistChipColors(
+                labelColor = chipLabelColor,
+                trailingIconContentColor = chipLabelColor,
+            ),
             modifier = Modifier.semantics { contentDescription = openSessionCd },
         )
         if (!hasActiveProfile && connectionState is ConnectionState.Disconnected) {
@@ -353,44 +434,60 @@ private fun ProfileRow(
     onOpenConfig: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
+    val rowInteractionSource = remember { MutableInteractionSource() }
+    val indicatorSize by animateDpAsState(
+        targetValue = if (isActive) 10.dp else 0.dp,
+        label = "profile-selection-indicator",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = rowInteractionSource,
+                indication = null,
+                onClick = onClick,
+            )
             .padding(horizontal = spacing.large, vertical = spacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
                 .size(10.dp)
-                .clip(CircleShape)
-                .background(
-                    if (isActive) MaterialTheme.colorScheme.primary
-                    else Color.Transparent
-                ),
-        )
+                .clip(CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(indicatorSize)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
         Spacer(Modifier.width(spacing.medium))
         Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    textAlign = TextAlign.Center,
+                    text = profile.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (latency !is LatencyResult.Idle) {
+                    Spacer(Modifier.width(spacing.small))
+                    LatencyLabel(latency = latency)
+                }
+            }
             Text(
-                text = profile.name,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = stringResource(
-                    R.string.profile_subtitle,
-                    stringResource(R.string.profile_protocol_hysteria),
-                    profile.config.server.address,
-                ),
+                text = profile.config.server.address,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        LatencyLabel(latency = latency, onClick = onPing)
         IconButton(onClick = onOpenConfig) {
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -402,7 +499,7 @@ private fun ProfileRow(
 }
 
 @Composable
-private fun LatencyLabel(latency: LatencyResult, onClick: () -> Unit) {
+private fun LatencyLabel(latency: LatencyResult) {
     val text = when (latency) {
         LatencyResult.Idle -> null
         LatencyResult.Measuring -> "..."
@@ -423,8 +520,6 @@ private fun LatencyLabel(latency: LatencyResult, onClick: () -> Unit) {
         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
         color = color,
         modifier = Modifier
-            .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp),
     )
 }
 
@@ -476,3 +571,28 @@ private fun formatDuration(totalSeconds: Long): String {
     val seconds = s % 60
     return "%02d:%02d:%02d".format(hours, minutes, seconds)
 }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+private class ConnectionMorphShape(
+    private val morph: Morph,
+    private val progress: Float,
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density,
+    ): Outline {
+        val path = morph.toPath(progress = progress)
+        path.transform(Matrix().apply { scale(x = size.width, y = size.height) })
+        path.translate(size.center - path.getBounds().center)
+        return Outline.Generic(path)
+    }
+}
+
+private val ConnectionMorphAnimationSpec = spring<Float>(
+    dampingRatio = Spring.DampingRatioMediumBouncy,
+    stiffness = Spring.StiffnessLow,
+    visibilityThreshold = 0.1f,
+)
+
+private val ConnectionFabContainerSize = 96.dp
