@@ -3,6 +3,7 @@ package ru.shapovalov.bedlam.core.vpn
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
 
 class DefaultNetworkListener(
     context: Context,
@@ -12,7 +13,11 @@ class DefaultNetworkListener(
         .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) = onChanged(network)
+        override fun onAvailable(network: Network) {
+            val caps = connectivityManager.getNetworkCapabilities(network)
+            if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) return
+            onChanged(network)
+        }
         override fun onLost(network: Network) = onChanged(null)
     }
 
