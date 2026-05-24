@@ -4,6 +4,16 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,56 +26,95 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
 import ru.shapovalov.bedlam.core.appfilter.domain.model.InstalledApp
 import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
+import androidx.core.graphics.createBitmap
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
-    val spacing = MaterialTheme.spacing
+    var searchVisible by rememberSaveable { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val isAllMode = state.mode == AppFilterMode.All
+
+    fun hideSearch() {
+        searchVisible = false
+        component.onQueryChanged("")
+    }
+
+    LaunchedEffect(isAllMode) {
+        if (isAllMode) hideSearch()
+    }
+    LaunchedEffect(searchVisible) {
+        if (searchVisible) {
+            delay(100)
+            focusRequester.requestFocus()
+        }
+    }
+
+    BackHandler(enabled = searchVisible) { hideSearch() }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.app_selection_title)) },
-                navigationIcon = {
-                    IconButton(onClick = component::onBackPressed) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back),
-                        )
-                    }
-                },
+            AppSelectionTopBar(
+                searchVisible = searchVisible,
+                query = state.query,
+                onQueryChange = component::onQueryChanged,
+                onToggleSearch = { searchVisible = true },
+                onCloseSearch = ::hideSearch,
+                onBack = component::onBackPressed,
+                showSearchButton = !isAllMode,
+                focusRequester = focusRequester,
             )
         },
     ) { padding ->
@@ -75,56 +124,151 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
                 onSelect = component::onModeSelected,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = spacing.large, vertical = spacing.small),
+                    .padding(
+                        horizontal = MaterialTheme.spacing.large,
+                        vertical = MaterialTheme.spacing.small,
+                    ),
             )
-
-            if (state.mode != AppFilterMode.All) {
-                OutlinedTextField(
-                    value = state.query,
-                    onValueChange = component::onQueryChanged,
-                    placeholder = { Text(stringResource(R.string.app_selection_search_hint)) },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = spacing.large, vertical = spacing.small),
-                )
-
-                when {
-                    state.isLoading -> LoadingBox()
-                    else -> AppsList(
-                        apps = state.filteredApps,
-                        selected = state.selectedPackages,
-                        onToggle = component::onTogglePackage,
-                    )
-                }
-            } else {
-                Text(
-                    text = stringResource(R.string.app_selection_all_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(spacing.large),
+            when {
+                isAllMode -> AllModeHint()
+                state.isLoading -> LoadingBox()
+                else -> AppsList(
+                    apps = state.filteredApps,
+                    selected = state.selectedPackages,
+                    onToggle = component::onTogglePackage,
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun AppSelectionTopBar(
+    searchVisible: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onToggleSearch: () -> Unit,
+    onCloseSearch: () -> Unit,
+    onBack: () -> Unit,
+    showSearchButton: Boolean,
+    focusRequester: FocusRequester,
+) {
+    TopAppBar(
+        navigationIcon = {
+            IconButton(onClick = if (searchVisible) onCloseSearch else onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.action_back),
+                )
+            }
+        },
+        title = {
+            AnimatedContent(
+                targetState = searchVisible,
+                transitionSpec = {
+                    if (targetState) {
+                        (fadeIn() + slideInHorizontally { it / 3 }) togetherWith
+                            (fadeOut() + slideOutHorizontally { -it / 3 })
+                    } else {
+                        (fadeIn() + slideInHorizontally { -it / 3 }) togetherWith
+                            (fadeOut() + slideOutHorizontally { it / 3 })
+                    }
+                },
+                label = "search-toggle",
+            ) { isSearching ->
+                if (isSearching) {
+                    BasicTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        singleLine = true,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester),
+                        decorationBox = { innerTextField ->
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.app_selection_search_hint),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            innerTextField()
+                        },
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.app_selection_title),
+                        style = MaterialTheme.typography.titleLargeEmphasized,
+                    )
+                }
+            }
+        },
+        actions = {
+            AnimatedVisibility(
+                visible = !searchVisible && showSearchButton,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+            ) {
+                IconButton(onClick = onToggleSearch) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = stringResource(R.string.app_selection_search_cd),
+                    )
+                }
+            }
+            AnimatedVisibility(
+                visible = searchVisible && query.isNotEmpty(),
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+            ) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = stringResource(R.string.app_selection_clear_search_cd),
+                    )
+                }
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ModeChips(
     selected: AppFilterMode,
     onSelect: (AppFilterMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val modes = AppFilterMode.entries
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
     ) {
-        AppFilterMode.entries.forEach { mode ->
-            FilterChip(
-                selected = selected == mode,
-                onClick = { onSelect(mode) },
-                label = { Text(stringResource(mode.labelRes())) },
-            )
+        modes.forEachIndexed { index, mode ->
+            ToggleButton(
+                checked = selected == mode,
+                onCheckedChange = { if (it) onSelect(mode) },
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { role = Role.RadioButton },
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+            ) {
+                Text(
+                    text = stringResource(mode.labelRes()),
+                    style = MaterialTheme.typography.labelLargeEmphasized,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -133,6 +277,23 @@ private fun ModeChips(
 private fun LoadingBox() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
+    }
+}
+
+@Composable
+private fun AllModeHint() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(MaterialTheme.spacing.large),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.app_selection_all_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -149,56 +310,40 @@ private fun AppsList(
                 isSelected = app.packageName in selected,
                 onToggle = { onToggle(app.packageName) },
             )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AppRow(
     app: InstalledApp,
     isSelected: Boolean,
     onToggle: () -> Unit,
 ) {
-    val spacing = MaterialTheme.spacing
     val context = LocalContext.current
-    val iconBitmap = remember(app.packageName) {
-        runCatching {
-            context.packageManager.getApplicationIcon(app.packageName).toBitmap()
-        }.getOrNull()
+    val iconBitmap by produceState<ImageBitmap?>(initialValue = null, key1 = app.packageName) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                context.packageManager.getApplicationIcon(app.packageName).toBitmap().asImageBitmap()
+            }.getOrNull()
+        }
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onToggle)
-            .padding(horizontal = spacing.large, vertical = spacing.medium),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (iconBitmap != null) {
-            Image(
-                bitmap = iconBitmap.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.size(40.dp),
-            )
-        } else {
-            Box(modifier = Modifier.size(40.dp))
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = spacing.medium),
-        ) {
+    ListItem(
+        headlineContent = {
             Text(
                 text = app.label,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = if (isSelected) {
+                    MaterialTheme.typography.titleMediumEmphasized
+                } else {
+                    MaterialTheme.typography.titleMedium
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        },
+        supportingContent = {
             Text(
                 text = app.packageName,
                 style = MaterialTheme.typography.labelSmall,
@@ -206,9 +351,23 @@ private fun AppRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
-        Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
-    }
+        },
+        leadingContent = {
+            Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                if (iconBitmap != null) {
+                    Image(
+                        bitmap = iconBitmap!!,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
+            }
+        },
+        trailingContent = {
+            Checkbox(checked = isSelected, onCheckedChange = null)
+        },
+        modifier = Modifier.clickable(onClick = onToggle),
+    )
 }
 
 private fun AppFilterMode.labelRes(): Int = when (this) {
@@ -221,7 +380,7 @@ private fun Drawable.toBitmap(): Bitmap {
     if (this is BitmapDrawable) return bitmap
     val width = intrinsicWidth.coerceAtLeast(1)
     val height = intrinsicHeight.coerceAtLeast(1)
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val bitmap = createBitmap(width, height)
     val canvas = Canvas(bitmap)
     setBounds(0, 0, width, height)
     draw(canvas)

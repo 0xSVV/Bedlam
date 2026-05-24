@@ -20,10 +20,13 @@ interface AppSelectionStore : Store<AppSelectionStore.Intent, AppSelectionStore.
         val isLoading: Boolean = true,
     ) {
         val filteredApps: List<InstalledApp>
-            get() = if (query.isBlank()) apps
-            else apps.filter {
-                it.label.contains(query, ignoreCase = true) ||
-                    it.packageName.contains(query, ignoreCase = true)
+            get() {
+                val base = if (query.isBlank()) apps
+                else apps.filter {
+                    it.label.contains(query, ignoreCase = true) ||
+                        it.packageName.contains(query, ignoreCase = true)
+                }
+                return base.sortedBy { it.packageName !in selectedPackages }
             }
     }
 }

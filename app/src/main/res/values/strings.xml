@@ -118,9 +118,11 @@
     <string name="app_selection_title">Apps to proxy</string>
     <string name="app_selection_search_hint">Search apps</string>
     <string name="app_selection_all_hint">All apps will route through the tunnel.</string>
+    <string name="app_selection_search_cd">Search</string>
+    <string name="app_selection_clear_search_cd">Clear search</string>
 
-    <string name="app_filter_mode_all">All apps</string>
-    <string name="app_filter_mode_allowlist">Only selected</string>
+    <string name="app_filter_mode_all">All</string>
+    <string name="app_filter_mode_allowlist">Selected</string>
     <string name="app_filter_mode_blocklist">All except selected</string>
 
     <string name="dashboard_open_session_cd">Open session details</string>
