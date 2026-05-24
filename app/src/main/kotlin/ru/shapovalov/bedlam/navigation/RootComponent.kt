@@ -6,7 +6,6 @@ import com.arkivanov.decompose.router.stack.StackNavigation
 import com.arkivanov.decompose.router.stack.bringToFront
 import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.router.stack.pop
-import com.arkivanov.decompose.router.stack.pushNew
 import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -50,7 +49,7 @@ class RootComponent(
                         DashboardComponent.OnStopVpn { onStopVpn.invoke() },
                         DashboardComponent.OnOpenSession { navigation.bringToFront(Config.Session) },
                         DashboardComponent.OnOpenProfileConfig { id ->
-                            navigation.pushNew(Config.ProfileConfig(id))
+                            navigation.bringToFront(Config.ProfileConfig(id))
                         },
                     )
                 )
