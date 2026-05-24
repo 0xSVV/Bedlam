@@ -28,7 +28,7 @@
     <string name="dashboard_action_import_cd">Import from clipboard</string>
     <string name="dashboard_connection_time">Connection Time</string>
     <string name="dashboard_empty_hint">Import a profile from clipboard to get started</string>
-    <string name="dashboard_profiles_section">LOCAL PROFILES</string>
+    <string name="dashboard_profiles_section">PROFILES</string>
     <string name="dashboard_action_delete_cd">Delete profile</string>
 
     <string name="dashboard_state_disconnected">Disconnected</string>

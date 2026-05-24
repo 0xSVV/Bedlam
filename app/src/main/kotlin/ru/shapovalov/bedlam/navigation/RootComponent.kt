@@ -45,10 +45,10 @@ class RootComponent(
                 Config.Dashboard -> Child.Dashboard(
                     dashboardFactory.create(
                         ctx,
-                        DashboardComponent.OnStartVpn { profile -> dispatchStartVpn(profile) },
-                        DashboardComponent.OnStopVpn { onStopVpn.invoke() },
-                        DashboardComponent.OnOpenSession { navigation.bringToFront(Config.Session) },
-                        DashboardComponent.OnOpenProfileConfig { id ->
+                        { profile -> dispatchStartVpn(profile) },
+                        { onStopVpn.invoke() },
+                        { navigation.bringToFront(Config.Session) },
+                        { id ->
                             navigation.bringToFront(Config.ProfileConfig(id))
                         },
                     )
@@ -111,7 +111,7 @@ class RootComponent(
         }
     }
 
-    enum class Tab { Dashboard, Settings, Logs }
+    enum class Tab { Logs, Dashboard, Settings }
 
     fun interface OnStartVpn { fun invoke(profileId: String, configJson: String, profileName: String) }
     fun interface OnStopVpn { fun invoke() }

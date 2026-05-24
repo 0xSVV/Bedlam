@@ -1,10 +1,10 @@
 package ru.shapovalov.bedlam
 
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -15,7 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.arkivanov.decompose.extensions.compose.stack.Children
 import com.arkivanov.decompose.extensions.compose.stack.animation.fade
@@ -44,8 +44,9 @@ fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
                     NavigationBarItem(
                         selected = activeTab == tab,
                         onClick = { component.onTabSelected(tab) },
-                        icon = { Icon(tab.icon(), contentDescription = null) },
+                        icon = { TabIcon(tab) },
                         label = { Text(stringResource(tab.labelRes())) },
+                        alwaysShowLabel = false
                     )
                 }
             }
@@ -53,7 +54,10 @@ fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
     ) { padding ->
         Children(
             stack = stack,
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .consumeWindowInsets(padding),
             animation = stackAnimation(fade()),
         ) { created ->
             when (val child = created.instance) {
@@ -73,8 +77,11 @@ private fun Tab.labelRes(): Int = when (this) {
     Tab.Logs -> R.string.nav_tab_logs
 }
 
-private fun Tab.icon(): ImageVector = when (this) {
-    Tab.Dashboard -> Icons.Default.Home
-    Tab.Settings -> Icons.Default.Settings
-    Tab.Logs -> Icons.AutoMirrored.Filled.List
+@Composable
+private fun TabIcon(tab: Tab) {
+    when (tab) {
+        Tab.Dashboard -> Icon(Icons.Default.Home, contentDescription = null)
+        Tab.Settings -> Icon(Icons.Default.Settings, contentDescription = null)
+        Tab.Logs -> Icon(painterResource(R.drawable.ic_logs), contentDescription = null)
+    }
 }
