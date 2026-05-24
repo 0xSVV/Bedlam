@@ -7,6 +7,13 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +32,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Card
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,7 +43,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -62,6 +69,12 @@ import ru.shapovalov.bedlam.ui.shimmer.ShimmerBounds
 import ru.shapovalov.bedlam.ui.shimmer.rememberShimmer
 import ru.shapovalov.bedlam.ui.shimmer.shimmer
 import ru.shapovalov.bedlam.ui.theme.spacing
+
+private sealed interface CardState {
+    data object Loading : CardState
+    data class Error(val message: String) : CardState
+    data class Success(val info: SessionInfo) : CardState
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -123,13 +136,32 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                 .padding(horizontal = spacing.large, vertical = spacing.medium),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
-            when {
-                state.isLoading -> SkeletonInfoCard()
-                state.errorMessage != null -> ErrorCard(
-                    message = state.errorMessage!!,
-                    onRetry = component::onRefresh,
-                )
-                state.info != null -> InfoCard(state.info!!)
+            val cardState: CardState = when {
+                state.isLoading -> CardState.Loading
+                state.errorMessage != null -> CardState.Error(state.errorMessage!!)
+                state.info != null -> CardState.Success(state.info!!)
+                else -> CardState.Loading
+            }
+
+            AnimatedContent(
+                targetState = cardState,
+                modifier = Modifier.fillMaxWidth(),
+                transitionSpec = {
+                    (fadeIn(tween(durationMillis = 220, delayMillis = 90)) +
+                        scaleIn(tween(durationMillis = 220, delayMillis = 90), initialScale = 0.96f))
+                        .togetherWith(
+                            fadeOut(tween(durationMillis = 90)) +
+                                scaleOut(tween(durationMillis = 90), targetScale = 0.96f),
+                        )
+                },
+                contentKey = { it::class },
+                label = "session-card",
+            ) { target ->
+                when (target) {
+                    CardState.Loading -> SkeletonInfoCard()
+                    is CardState.Error -> ErrorCard(message = target.message, onRetry = component::onRefresh)
+                    is CardState.Success -> InfoCard(info = target.info)
+                }
             }
 
             Text(
@@ -146,30 +178,12 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
     }
 }
 
-// Label widths sized to match titleSmall rendered width of each field label.
-// Value widths sized to match typical bodyMedium content width per field.
 private val SkeletonLabelWidths = listOf(
-    32.dp,  // "IPv4"
-    32.dp,  // "IPv6"
-    28.dp,  // "ASN"
-    112.dp, // "AS Organization"
-    52.dp,  // "Country"
-    28.dp,  // "City"
-    44.dp,  // "Region"
-    52.dp,  // "Latitude"
-    60.dp,  // "Longitude"
+    32.dp, 32.dp, 28.dp, 112.dp, 52.dp, 28.dp, 44.dp, 52.dp, 60.dp,
 )
 
 private val SkeletonValueWidths = listOf(
-    88.dp,  // "1.2.3.4" monospace
-    196.dp, // "2001:db8:85a3::8a2e:370:7334" monospace
-    52.dp,  // "AS12345"
-    140.dp, // "Cloudflare, Inc."
-    100.dp, // "United States"
-    88.dp,  // "San Francisco"
-    80.dp,  // "California"
-    64.dp,  // "37.7749" monospace
-    72.dp,  // "-122.4194" monospace
+    88.dp, 196.dp, 52.dp, 140.dp, 100.dp, 88.dp, 80.dp, 64.dp, 72.dp,
 )
 
 @Composable
@@ -246,7 +260,13 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
             Spacer(Modifier.height(spacing.xSmall))
-            TextButton(onClick = onRetry) {
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
                 Text(stringResource(R.string.session_action_retry))
             }
         }
@@ -278,15 +298,9 @@ private fun InfoCard(info: SessionInfo) {
             DividerRow()
             InfoRow(label = stringResource(R.string.session_field_region), value = info.region)
             DividerRow()
-            InfoRow(
-                label = stringResource(R.string.session_field_latitude),
-                value = info.latitude?.toString(),
-            )
+            InfoRow(label = stringResource(R.string.session_field_latitude), value = info.latitude?.toString())
             DividerRow()
-            InfoRow(
-                label = stringResource(R.string.session_field_longitude),
-                value = info.longitude?.toString(),
-            )
+            InfoRow(label = stringResource(R.string.session_field_longitude), value = info.longitude?.toString())
         }
     }
 }
@@ -330,11 +344,11 @@ private fun DividerRow() {
 @Composable
 private fun SpeedTestCard(onOpen: () -> Unit) {
     val spacing = MaterialTheme.spacing
-    Card(
+    ElevatedCard(
         onClick = onOpen,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
+        colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
     ) {
