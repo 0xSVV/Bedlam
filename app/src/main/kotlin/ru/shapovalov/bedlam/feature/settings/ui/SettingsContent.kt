@@ -8,15 +8,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,31 +47,29 @@ fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier)
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsRoot(
     onOpenAppSelection: () -> Unit,
     onOpenRouting: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.settings_title)) }) },
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            SettingsRow(
-                title = stringResource(R.string.settings_apps_title),
-                subtitle = stringResource(R.string.settings_apps_subtitle),
-                onClick = onOpenAppSelection,
-                modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
-            )
-            SettingsRow(
-                title = stringResource(R.string.settings_routing_title),
-                subtitle = stringResource(R.string.settings_routing_subtitle),
-                onClick = onOpenRouting,
-                modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
-            )
-        }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+    ) {
+        SettingsRow(
+            title = stringResource(R.string.settings_apps_title),
+            subtitle = stringResource(R.string.settings_apps_subtitle),
+            onClick = onOpenAppSelection,
+            modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
+        )
+        SettingsRow(
+            title = stringResource(R.string.settings_routing_title),
+            subtitle = stringResource(R.string.settings_routing_subtitle),
+            onClick = onOpenRouting,
+            modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
+        )
     }
 }
 
