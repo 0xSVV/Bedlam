@@ -124,8 +124,8 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
             when {
-                state.isLoading && state.info == null -> SkeletonInfoCard()
-                state.errorMessage != null && state.info == null -> ErrorCard(
+                state.isLoading -> SkeletonInfoCard()
+                state.errorMessage != null -> ErrorCard(
                     message = state.errorMessage!!,
                     onRetry = component::onRefresh,
                 )
@@ -213,9 +213,9 @@ private fun ShimmerBlock(width: Dp, height: Dp, shimmer: Shimmer) {
         modifier = Modifier
             .width(width)
             .height(height)
+            .shimmer(shimmer)
             .clip(RoundedCornerShape(percent = 50))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .shimmer(shimmer),
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     )
 }
 
