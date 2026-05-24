@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.feature.profileconfig.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,9 +47,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.shapovalov.bedlam.R
@@ -218,6 +221,7 @@ private fun ConfigBody(
             .padding(horizontal = spacing.large, vertical = spacing.medium),
         verticalArrangement = Arrangement.spacedBy(spacing.medium),
     ) {
+        DocsLink()
         ServerSection(draft, editMode, onDraftChanged)
         TlsSection(draft, editMode, onDraftChanged)
         ObfuscationSection(draft, editMode, onDraftChanged)
@@ -228,6 +232,21 @@ private fun ConfigBody(
         BehaviorSection(draft, editMode, onDraftChanged)
         Spacer(Modifier.height(spacing.xLarge))
     }
+}
+
+@Composable
+private fun DocsLink() {
+    val uriHandler = LocalUriHandler.current
+    val url = stringResource(R.string.profile_config_docs_url)
+    Text(
+        text = stringResource(R.string.profile_config_docs_link),
+        style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { uriHandler.openUri(url) }
+            .padding(vertical = MaterialTheme.spacing.xSmall),
+    )
 }
 
 @Composable

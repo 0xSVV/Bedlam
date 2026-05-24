@@ -168,6 +168,8 @@
     <string name="profile_config_delete_title">Delete profile?</string>
     <string name="profile_config_delete_message">This will remove the profile and its configuration. This cannot be undone.</string>
     <string name="profile_config_delete_confirm">Delete</string>
+    <string name="profile_config_docs_link">Field reference: hysteria.network full client config</string>
+    <string name="profile_config_docs_url" translatable="false">https://v2.hysteria.network/docs/advanced/Full-Client-Config/</string>
 
     <string name="profile_config_section_server">Server</string>
     <string name="profile_config_section_tls">TLS</string>
