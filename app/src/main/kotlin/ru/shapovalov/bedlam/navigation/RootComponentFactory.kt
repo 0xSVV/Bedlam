@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponentFactory
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponentFactory
+import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigComponentFactory
 import ru.shapovalov.bedlam.feature.session.presentation.SessionComponentFactory
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponentFactory
 
@@ -14,6 +15,7 @@ class RootComponentFactory(
     private val settingsFactory: SettingsComponentFactory,
     private val sessionFactory: SessionComponentFactory,
     private val logsFactory: LogsComponentFactory,
+    private val profileConfigFactory: ProfileConfigComponentFactory,
     private val json: Json,
 ) {
     fun create(
@@ -26,6 +28,7 @@ class RootComponentFactory(
         settingsFactory,
         sessionFactory,
         logsFactory,
+        profileConfigFactory,
         json,
         onStartVpn,
         onStopVpn,

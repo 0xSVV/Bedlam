@@ -6,6 +6,7 @@ import com.arkivanov.decompose.router.stack.StackNavigation
 import com.arkivanov.decompose.router.stack.bringToFront
 import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.router.stack.pop
+import com.arkivanov.decompose.router.stack.pushNew
 import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -14,6 +15,8 @@ import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponentFactory
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponent
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponentFactory
+import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigComponent
+import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigComponentFactory
 import ru.shapovalov.bedlam.feature.session.presentation.SessionComponent
 import ru.shapovalov.bedlam.feature.session.presentation.SessionComponentFactory
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
@@ -25,6 +28,7 @@ class RootComponent(
     private val settingsFactory: SettingsComponentFactory,
     private val sessionFactory: SessionComponentFactory,
     private val logsFactory: LogsComponentFactory,
+    private val profileConfigFactory: ProfileConfigComponentFactory,
     private val json: Json,
     private val onStartVpn: OnStartVpn,
     private val onStopVpn: OnStopVpn,
@@ -45,6 +49,9 @@ class RootComponent(
                         DashboardComponent.OnStartVpn { profile -> dispatchStartVpn(profile) },
                         DashboardComponent.OnStopVpn { onStopVpn.invoke() },
                         DashboardComponent.OnOpenSession { navigation.bringToFront(Config.Session) },
+                        DashboardComponent.OnOpenProfileConfig { id ->
+                            navigation.pushNew(Config.ProfileConfig(id))
+                        },
                     )
                 )
 
@@ -54,6 +61,14 @@ class RootComponent(
 
                 Config.Session -> Child.Session(
                     sessionFactory.create(ctx, SessionComponent.OnBack { navigation.pop() })
+                )
+
+                is Config.ProfileConfig -> Child.ProfileConfig(
+                    profileConfigFactory.create(
+                        ctx,
+                        config.profileId,
+                        ProfileConfigComponent.OnBack { navigation.pop() },
+                    )
                 )
             }
         },
@@ -91,6 +106,10 @@ class RootComponent(
         data class Session(val component: SessionComponent) : Child {
             override val tab: Tab get() = Tab.Dashboard
         }
+
+        data class ProfileConfig(val component: ProfileConfigComponent) : Child {
+            override val tab: Tab get() = Tab.Dashboard
+        }
     }
 
     enum class Tab { Dashboard, Settings, Logs }
@@ -111,5 +130,8 @@ class RootComponent(
 
         @Serializable
         data object Session : Config
+
+        @Serializable
+        data class ProfileConfig(val profileId: String) : Config
     }
 }
