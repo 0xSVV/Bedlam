@@ -33,7 +33,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -273,10 +273,11 @@ private fun ModeChips(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LoadingBox() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
+        CircularWavyProgressIndicator()
     }
 }
 
@@ -309,6 +310,7 @@ private fun AppsList(
                 app = app,
                 isSelected = app.packageName in selected,
                 onToggle = { onToggle(app.packageName) },
+                modifier = Modifier.animateItem(),
             )
         }
     }
@@ -320,6 +322,7 @@ private fun AppRow(
     app: InstalledApp,
     isSelected: Boolean,
     onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val iconBitmap by produceState<ImageBitmap?>(initialValue = null, key1 = app.packageName) {
@@ -366,7 +369,7 @@ private fun AppRow(
         trailingContent = {
             Checkbox(checked = isSelected, onCheckedChange = null)
         },
-        modifier = Modifier.clickable(onClick = onToggle),
+        modifier = modifier.clickable(onClick = onToggle),
     )
 }
 
