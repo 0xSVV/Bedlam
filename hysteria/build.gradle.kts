@@ -173,6 +173,7 @@ val buildGolib by tasks.registering(Exec::class) {
         "-target=android/arm64",
         "-androidapi", androidApi,
         "-tags", "with_gvisor",
+        "-ldflags=-s -w",
         "-o", aarPath,
         "."
     )
