@@ -1,7 +1,6 @@
 package ru.shapovalov.bedlam.feature.profileconfig.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +22,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.ElevatedAssistChip
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,7 +40,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,7 +53,6 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.shapovalov.bedlam.R
@@ -67,7 +67,7 @@ import ru.shapovalov.hysteria.config.defaultCongestionOptions
 import ru.shapovalov.hysteria.config.defaultQuicOptions
 import ru.shapovalov.hysteria.config.defaultTransportOptions
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
@@ -96,7 +96,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                     Text(
                         text = state.original?.name?.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.profile_config_title),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleLargeEmphasized,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -110,9 +110,6 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                     }
                 },
                 actions = { TopActions(state, component) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
             )
         },
         floatingActionButton = {
@@ -221,18 +218,21 @@ private fun ConfigBody(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = spacing.large, vertical = spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(spacing.medium),
+            .padding(horizontal = spacing.large),
     ) {
+        Spacer(Modifier.height(spacing.medium))
         DocsLink()
-        ServerSection(draft, editMode, onDraftChanged)
-        TlsSection(draft, editMode, onDraftChanged)
-        ObfuscationSection(draft, editMode, onDraftChanged)
-        QuicSection(draft, editMode, onDraftChanged)
-        CongestionSection(draft, editMode, onDraftChanged)
-        BandwidthSection(draft, editMode, onDraftChanged)
-        TransportSection(draft, editMode, onDraftChanged)
-        BehaviorSection(draft, editMode, onDraftChanged)
+        Spacer(Modifier.height(spacing.medium))
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
+            ServerSection(draft, editMode, onDraftChanged)
+            TlsSection(draft, editMode, onDraftChanged)
+            ObfuscationSection(draft, editMode, onDraftChanged)
+            QuicSection(draft, editMode, onDraftChanged)
+            CongestionSection(draft, editMode, onDraftChanged)
+            BandwidthSection(draft, editMode, onDraftChanged)
+            TransportSection(draft, editMode, onDraftChanged)
+            BehaviorSection(draft, editMode, onDraftChanged)
+        }
         Spacer(Modifier.height(spacing.xLarge))
     }
 }
@@ -241,14 +241,15 @@ private fun ConfigBody(
 private fun DocsLink() {
     val uriHandler = LocalUriHandler.current
     val url = stringResource(R.string.profile_config_docs_url)
-    Text(
-        text = stringResource(R.string.profile_config_docs_link),
-        style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { uriHandler.openUri(url) }
-            .padding(vertical = MaterialTheme.spacing.xSmall),
+    ElevatedAssistChip(
+        onClick = { uriHandler.openUri(url) },
+        label = {
+            Text(
+                text = stringResource(R.string.profile_config_docs_link),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
     )
 }
 
@@ -525,24 +526,22 @@ private fun BehaviorSection(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     val spacing = MaterialTheme.spacing
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(28.dp),
     ) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.titleSmallEmphasized,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small),
             )
-            Column(
-                verticalArrangement = Arrangement.spacedBy(spacing.xSmall),
-                content = content,
-            )
+            Column(content = content)
         }
     }
 }
@@ -644,17 +643,34 @@ private fun SwitchRow(
     onChange: (Boolean) -> Unit,
     caution: String? = null,
 ) {
+    val spacing = MaterialTheme.spacing
     if (!editMode) {
-        FieldRowFrame(label = label, caution = null) {
-            ReadOnlyValue(value = value.toString())
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.large, vertical = spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = value.toString(),
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
         return
     }
-    val spacing = MaterialTheme.spacing
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = spacing.large, vertical = spacing.xSmall),
+            .padding(horizontal = spacing.large, vertical = spacing.small),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -663,9 +679,9 @@ private fun SwitchRow(
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.labelMedium,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Switch(checked = value, onCheckedChange = onChange)
         }
@@ -683,7 +699,7 @@ private fun FieldRowFrame(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = spacing.large, vertical = spacing.xSmall),
+            .padding(horizontal = spacing.large, vertical = spacing.small),
         verticalArrangement = Arrangement.spacedBy(spacing.xSmall),
     ) {
         Text(
@@ -719,10 +735,11 @@ private fun ReadOnlyValue(value: String) {
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun CenteredSpinner() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
+        CircularWavyProgressIndicator()
     }
 }
 
