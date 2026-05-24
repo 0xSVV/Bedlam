@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -149,14 +150,9 @@ private fun DashboardTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.large, vertical = spacing.medium),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = stringResource(R.string.app_name),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
         IconButton(
             onClick = onImport,
             enabled = !isImporting,
@@ -242,12 +238,14 @@ private fun ConnectionHero(
         ) {
             when {
                 isConnecting -> CircularProgressIndicator(modifier = Modifier.size(40.dp))
-                isConnected -> PauseGlyph(
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(40.dp),
+                isConnected -> Icon(
+                    painter = painterResource(R.drawable.ic_pause),
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
                 else -> Icon(
-                    imageVector = Icons.Default.PlayArrow,
+                    painter = painterResource(R.drawable.ic_power),
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.onSurface,
