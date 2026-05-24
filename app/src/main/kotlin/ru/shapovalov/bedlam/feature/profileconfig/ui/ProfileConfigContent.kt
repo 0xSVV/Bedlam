@@ -575,6 +575,12 @@ private fun SwitchRow(
     onChange: (Boolean) -> Unit,
     caution: String? = null,
 ) {
+    if (!editMode) {
+        FieldRowFrame(label = label, caution = null) {
+            ReadOnlyValue(value = value.toString())
+        }
+        return
+    }
     val spacing = MaterialTheme.spacing
     Column(
         modifier = Modifier
@@ -592,9 +598,9 @@ private fun SwitchRow(
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Switch(checked = value, onCheckedChange = if (editMode) onChange else null)
+            Switch(checked = value, onCheckedChange = onChange)
         }
-        CautionLabel(caution.takeIf { editMode })
+        CautionLabel(caution)
     }
 }
 
