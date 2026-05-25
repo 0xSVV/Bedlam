@@ -30,13 +30,8 @@ internal class DashboardBootstrapper(
             }.collect(::dispatch)
         }
         scope.launch {
-            var connectedSince: Long? = null
             client.state.collect { state ->
-                connectedSince = when (state) {
-                    is ConnectionState.Connected -> connectedSince ?: System.currentTimeMillis()
-                    else -> null
-                }
-                dispatch(Action.ConnectionStateChanged(state, connectedSince))
+                dispatch(Action.ConnectionStateChanged(state, (state as? ConnectionState.Connected)?.connectedSinceMillis))
             }
         }
         scope.launch {

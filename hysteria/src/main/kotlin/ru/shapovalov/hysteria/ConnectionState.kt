@@ -18,7 +18,7 @@ sealed interface ConnectionState {
     data object Connecting : ConnectionState
 
     /** Tunnel is live and traffic flows through it. */
-    data class Connected(val info: ConnectionInfo) : ConnectionState
+    data class Connected(val info: ConnectionInfo, val connectedSinceMillis: Long) : ConnectionState
 
     /** A live connection was lost; reconnect is in progress. */
     data class Reconnecting(val attempt: Int, val reason: String) : ConnectionState

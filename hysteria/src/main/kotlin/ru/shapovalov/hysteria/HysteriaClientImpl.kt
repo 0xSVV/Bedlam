@@ -47,6 +47,7 @@ class HysteriaClientImpl : HysteriaClient {
 
     @Volatile private var serverAddress: String = ""
     @Volatile private var tunReady: Boolean = false
+    @Volatile private var sessionStartMillis: Long = 0L
 
     private val pendingConnect = AtomicReference<ConnectionInfo?>(null)
     private val lastConnectInfo = AtomicReference<ConnectionInfo?>(null)
@@ -86,6 +87,7 @@ class HysteriaClientImpl : HysteriaClient {
         _state.value = ConnectionState.Connecting
         serverAddress = config.server.address
         tunReady = false
+        sessionStartMillis = 0L
         pendingConnect.set(null)
     }
 
@@ -103,7 +105,8 @@ class HysteriaClientImpl : HysteriaClient {
             val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
             lastConnectInfo.set(info)
             if (tunReady) {
-                _state.value = ConnectionState.Connected(info)
+                if (sessionStartMillis == 0L) sessionStartMillis = System.currentTimeMillis()
+                _state.value = ConnectionState.Connected(info, sessionStartMillis)
             } else {
                 pendingConnect.set(info)
             }
@@ -141,7 +144,8 @@ class HysteriaClientImpl : HysteriaClient {
     private fun markTunReady() {
         tunReady = true
         pendingConnect.getAndSet(null)?.let {
-            _state.value = ConnectionState.Connected(it)
+            if (sessionStartMillis == 0L) sessionStartMillis = System.currentTimeMillis()
+            _state.value = ConnectionState.Connected(it, sessionStartMillis)
         }
     }
 
@@ -155,6 +159,7 @@ class HysteriaClientImpl : HysteriaClient {
             withContext(Dispatchers.IO) { closeSessionLocked() }
         }
         tunReady = false
+        sessionStartMillis = 0L
         pendingConnect.set(null)
         lastConnectInfo.set(null)
         _state.value = ConnectionState.Disconnected(reason)
