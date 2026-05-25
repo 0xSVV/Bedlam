@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.core.routing.domain.usecase
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
@@ -33,7 +34,7 @@ class RefreshRouteSourcesUseCase(
                         repo.recordResolution(resolved.source.id, emptyList(), error = it.message)
                     }
                 }
-            }.forEach { it.await() }
+            }.awaitAll()
         }
     }
 }

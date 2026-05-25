@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.core.routing.work
 
 import android.content.Context
+import android.util.Log
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -19,9 +20,13 @@ class RouteRefreshWorker(
     override suspend fun doWork(): Result = runCatching {
         applicationContext.appComponent.refreshRouteSources(staleAfterMillis = STALE_MS)
         Result.success()
-    }.getOrElse { Result.retry() }
+    }.getOrElse { e ->
+        Log.e(TAG, "Route refresh failed", e)
+        Result.retry()
+    }
 
     companion object {
+        private const val TAG = "RouteRefreshWorker"
         private const val WORK_NAME = "bedlam-route-refresh"
         val STALE_MS: Long = TimeUnit.HOURS.toMillis(20)
 

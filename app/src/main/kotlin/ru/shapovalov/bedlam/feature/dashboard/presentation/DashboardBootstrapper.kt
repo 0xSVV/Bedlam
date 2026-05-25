@@ -2,8 +2,6 @@ package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineBootstrapper
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.usecase.GetProfilesUseCase
@@ -30,15 +28,13 @@ internal class DashboardBootstrapper(
             }.collect(::dispatch)
         }
         scope.launch {
+            var wasConnected = false
             client.state.collect { state ->
+                val isConnected = state is ConnectionState.Connected
                 dispatch(Action.ConnectionStateChanged(state, (state as? ConnectionState.Connected)?.connectedSinceMillis))
+                if (isConnected && !wasConnected) dispatch(Action.TunnelConnected)
+                wasConnected = isConnected
             }
-        }
-        scope.launch {
-            client.state
-                .map { it is ConnectionState.Connected }
-                .distinctUntilChanged()
-                .collect { isConnected -> if (isConnected) dispatch(Action.TunnelConnected) }
         }
     }
 }

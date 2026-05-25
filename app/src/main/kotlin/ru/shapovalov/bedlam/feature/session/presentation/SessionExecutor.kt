@@ -21,6 +21,7 @@ internal class SessionExecutor(
     }
 
     private fun load() {
+        if (state().isLoading) return
         dispatch(Msg.LoadingStarted)
         scope.launch {
             repository.fetch()

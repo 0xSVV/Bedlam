@@ -445,7 +445,6 @@ private fun ProfileRow(
     onOpenConfig: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
-    val rowInteractionSource = remember { MutableInteractionSource() }
     val indicatorSize by animateDpAsState(
         targetValue = if (isActive) 10.dp else 0.dp,
         label = "profile-selection-indicator",
@@ -454,7 +453,7 @@ private fun ProfileRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(
-                interactionSource = rowInteractionSource,
+                interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
             )
@@ -490,10 +489,7 @@ private fun ProfileRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (latency !is LatencyResult.Idle) {
-                    Spacer(Modifier.width(spacing.small))
-                    LatencyLabel(latency = latency)
-                }
+                LatencyLabel(latency = latency)
             }
             Text(
                 text = profile.config.server.address,
@@ -516,7 +512,7 @@ private fun ProfileRow(
 @Composable
 private fun LatencyLabel(latency: LatencyResult) {
     val text = when (latency) {
-        LatencyResult.Idle -> null
+        LatencyResult.Idle -> return
         LatencyResult.Measuring -> "..."
         is LatencyResult.Success -> "${latency.ms} ms"
         LatencyResult.Unreachable -> "—"
@@ -530,11 +526,11 @@ private fun LatencyLabel(latency: LatencyResult) {
         LatencyResult.Unreachable -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    Spacer(Modifier.width(MaterialTheme.spacing.small))
     Text(
-        text = text ?: "",
+        text = text,
         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
         color = color,
-        modifier = Modifier
     )
 }
 
