@@ -225,15 +225,11 @@ private fun ConnectionHero(
     var toButtonShape by remember { mutableStateOf(restingButtonShape) }
     var showButtonIcon by remember { mutableStateOf(!isConnecting) }
     val buttonMorphProgress = remember { Animatable(0f) }
-    val connectionButtonShape = remember(
-        fromButtonShape,
-        toButtonShape,
-        buttonMorphProgress.value,
-    ) {
-        ConnectionMorphShape(
-            morph = Morph(fromButtonShape, toButtonShape),
-            progress = buttonMorphProgress.value,
-        )
+    val morph = remember(fromButtonShape, toButtonShape) {
+        Morph(fromButtonShape, toButtonShape)
+    }
+    val connectionButtonShape = remember(morph, buttonMorphProgress.value) {
+        ConnectionMorphShape(morph, buttonMorphProgress.value)
     }
 
     LaunchedEffect(isConnecting) {
