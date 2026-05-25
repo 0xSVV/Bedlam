@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -43,10 +44,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LargeExtendedFloatingActionButton
 import androidx.compose.material3.LoadingIndicatorDefaults
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ripple
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -64,12 +65,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -79,8 +79,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
@@ -228,9 +226,6 @@ private fun ConnectionHero(
     val morph = remember(fromButtonShape, toButtonShape) {
         Morph(fromButtonShape, toButtonShape)
     }
-    val connectionButtonShape = remember(morph, buttonMorphProgress.value) {
-        ConnectionMorphShape(morph, buttonMorphProgress.value)
-    }
 
     LaunchedEffect(isConnecting) {
         suspend fun returnToCurrentShape() {
@@ -320,10 +315,11 @@ private fun ConnectionHero(
                 else -> R.string.action_connect
             }
         )
-        LargeExtendedFloatingActionButton(
-            onClick = onToggle,
-            shape = connectionButtonShape,
+        ConnectionFab(
+            morph = morph,
+            progress = { buttonMorphProgress.value },
             containerColor = connectionButtonColor,
+            onClick = onToggle,
             modifier = Modifier
                 .size(ConnectionFabContainerSize)
                 .semantics { contentDescription = toggleCd },
@@ -592,19 +588,42 @@ private fun formatDuration(totalSeconds: Long): String {
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private class ConnectionMorphShape(
-    private val morph: Morph,
-    private val progress: Float,
-) : Shape {
-    override fun createOutline(
-        size: Size,
-        layoutDirection: LayoutDirection,
-        density: Density,
-    ): Outline {
-        val path = morph.toPath(progress = progress)
-        path.transform(Matrix().apply { scale(x = size.width, y = size.height) })
-        path.translate(size.center - path.getBounds().center)
-        return Outline.Generic(path)
+@Composable
+private fun ConnectionFab(
+    morph: Morph,
+    progress: () -> Float,
+    containerColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val morphClip = remember(morph) {
+        GenericShape { size, _ ->
+            val p = morph.toPath(progress = progress())
+            p.transform(Matrix().apply { scale(x = size.width, y = size.height) })
+            p.translate(size.center - p.getBounds().center)
+            addPath(p)
+        }
+    }
+    Box(
+        modifier = modifier
+            .shadow(6.dp, RoundedCornerShape(28.dp), clip = false)
+            .drawWithContent {
+                val path = morph.toPath(progress = progress())
+                path.transform(Matrix().apply { scale(x = size.width, y = size.height) })
+                path.translate(size.center - path.getBounds().center)
+                drawPath(path, color = containerColor)
+                drawContent()
+            }
+            .clip(morphClip)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(),
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }
 
