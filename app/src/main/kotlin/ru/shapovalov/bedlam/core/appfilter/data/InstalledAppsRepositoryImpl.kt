@@ -20,12 +20,9 @@ class InstalledAppsRepositoryImpl(
         val ownPackage = context.packageName
         pm.getInstalledApplications(PackageManager.GET_META_DATA)
             .asSequence()
-            .filter { it.packageName != ownPackage }
-            .filter {
-                pm.checkPermission(Manifest.permission.INTERNET, it.packageName) ==
-                    PackageManager.PERMISSION_GRANTED
-            }
-            .map { info ->
+            .mapNotNull { info ->
+                if (info.packageName == ownPackage) return@mapNotNull null
+                if (pm.checkPermission(Manifest.permission.INTERNET, info.packageName) != PackageManager.PERMISSION_GRANTED) return@mapNotNull null
                 InstalledApp(
                     packageName = info.packageName,
                     label = pm.getApplicationLabel(info).toString(),
