@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -44,6 +44,8 @@ internal sealed interface CardState {
     data class Success(val info: SessionInfo) : CardState
 }
 
+private val SkeletonBlockHeight = 20.dp
+
 private val SkeletonLabelWidths = listOf(
     32.dp, 32.dp, 28.dp, 112.dp, 52.dp, 28.dp, 44.dp, 52.dp, 60.dp,
 )
@@ -58,7 +60,7 @@ internal fun SkeletonInfoCard() {
     val shimmer = rememberShimmer(ShimmerBounds.Window)
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -82,8 +84,8 @@ private fun SkeletonRow(labelWidth: Dp, valueWidth: Dp, shimmer: Shimmer) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        ShimmerBlock(width = labelWidth, height = 20.dp, shimmer = shimmer)
-        ShimmerBlock(width = valueWidth, height = 20.dp, shimmer = shimmer)
+        ShimmerBlock(width = labelWidth, height = SkeletonBlockHeight, shimmer = shimmer)
+        ShimmerBlock(width = valueWidth, height = SkeletonBlockHeight, shimmer = shimmer)
     }
 }
 
@@ -94,7 +96,7 @@ private fun ShimmerBlock(width: Dp, height: Dp, shimmer: Shimmer) {
             .width(width)
             .height(height)
             .shimmer(shimmer)
-            .clip(RoundedCornerShape(percent = 50))
+            .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     )
 }
@@ -105,7 +107,7 @@ internal fun ErrorCard(message: String, onRetry: () -> Unit) {
     val spacing = MaterialTheme.spacing
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer,
         ),
@@ -145,7 +147,7 @@ internal fun InfoCard(info: SessionInfo) {
     val spacing = MaterialTheme.spacing
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -215,7 +217,7 @@ internal fun SpeedTestCard(onOpen: () -> Unit) {
     ElevatedCard(
         onClick = onOpen,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -56,6 +55,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.shapovalov.bedlam.R
+
+private val SaveProgressSize = 18.dp
 import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigComponent
 import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigStore
 import ru.shapovalov.bedlam.ui.theme.spacing
@@ -175,7 +176,7 @@ private fun TopActions(
         enabled = !state.isSaving && state.isDirty,
     ) {
         if (state.isSaving) {
-            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            CircularProgressIndicator(modifier = Modifier.size(SaveProgressSize), strokeWidth = 2.dp)
         } else {
             Text(stringResource(R.string.action_save))
         }
@@ -532,7 +533,7 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
     val spacing = MaterialTheme.spacing
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
     ) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
             Text(

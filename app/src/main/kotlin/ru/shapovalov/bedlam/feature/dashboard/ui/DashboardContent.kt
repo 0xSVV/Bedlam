@@ -189,7 +189,7 @@ private fun DashboardTopBar(
         ) {
             if (isImporting) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(SmallIconSize),
                     strokeWidth = 2.dp,
                 )
             } else {
@@ -358,7 +358,7 @@ private fun ConnectionHero(
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(ChipTrailingIconSize),
                 )
             },
             colors = AssistChipDefaults.elevatedAssistChipColors(
@@ -411,7 +411,7 @@ private fun ProfilesCard(
                         Icons.Default.Refresh,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(SmallIconSize),
                     )
                 }
             }
@@ -446,7 +446,7 @@ private fun ProfileRow(
 ) {
     val spacing = MaterialTheme.spacing
     val indicatorSize by animateDpAsState(
-        targetValue = if (isActive) 10.dp else 0.dp,
+        targetValue = if (isActive) ProfileDotSize else 0.dp,
         label = "profile-selection-indicator",
     )
     Row(
@@ -462,7 +462,7 @@ private fun ProfileRow(
     ) {
         Box(
             modifier = Modifier
-                .size(10.dp)
+                .size(ProfileDotSize)
                 .clip(CircleShape),
             contentAlignment = Alignment.Center,
         ) {
@@ -543,16 +543,16 @@ private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier) {
     ) {
         Box(
             modifier = Modifier
-                .width(8.dp)
-                .height(32.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .width(PauseBarWidth)
+                .height(PauseBarHeight)
+                .clip(RoundedCornerShape(PauseBarCorner))
                 .background(tint),
         )
         Box(
             modifier = Modifier
-                .width(8.dp)
-                .height(32.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .width(PauseBarWidth)
+                .height(PauseBarHeight)
+                .clip(RoundedCornerShape(PauseBarCorner))
                 .background(tint),
         )
     }
@@ -603,7 +603,7 @@ private fun ConnectionFab(
     }
     Box(
         modifier = modifier
-            .shadow(6.dp, RoundedCornerShape(28.dp), clip = false)
+            .shadow(ConnectionFabShadowElevation, MaterialTheme.shapes.extraLarge, clip = false)
             .drawWithContent {
                 val path = morph.toPath(progress = progress())
                 path.transform(Matrix().apply { scale(x = size.width, y = size.height) })
@@ -630,3 +630,10 @@ private val ConnectionMorphAnimationSpec = spring<Float>(
 )
 
 private val ConnectionFabContainerSize = 96.dp
+private val ConnectionFabShadowElevation = 6.dp
+private val SmallIconSize = 20.dp
+private val ChipTrailingIconSize = 18.dp
+private val ProfileDotSize = 10.dp
+private val PauseBarWidth = 8.dp
+private val PauseBarHeight = 32.dp
+private val PauseBarCorner = 2.dp

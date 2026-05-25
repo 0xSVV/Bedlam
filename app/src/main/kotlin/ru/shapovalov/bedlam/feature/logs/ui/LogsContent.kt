@@ -251,7 +251,7 @@ private fun LogList(entries: List<LogEntry>, isPaused: Boolean) {
             end = MaterialTheme.spacing.large,
             bottom = MaterialTheme.spacing.large,
         ),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(LogRowSpacing),
     ) {
         items(entries.size, key = { it }) { index ->
             LogRow(entries[index])
@@ -273,14 +273,14 @@ private fun LogRow(entry: LogEntry) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
+            .padding(vertical = LogRowSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .width(3.dp)
-                .height(32.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .width(LogAccentBarWidth)
+                .height(LogAccentBarHeight)
+                .clip(RoundedCornerShape(LogAccentBarCorner))
                 .background(accent),
         )
         Spacer(Modifier.width(spacing.small))
@@ -359,24 +359,33 @@ private fun LogLevel.label(): String = stringResource(
 private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(PauseBarSpacing, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .width(4.dp)
-                .height(14.dp)
-                .clip(RoundedCornerShape(1.dp))
+                .width(PauseBarWidth)
+                .height(PauseBarHeight)
+                .clip(RoundedCornerShape(PauseBarCorner))
                 .background(tint),
         )
         Box(
             modifier = Modifier
-                .width(4.dp)
-                .height(14.dp)
-                .clip(RoundedCornerShape(1.dp))
+                .width(PauseBarWidth)
+                .height(PauseBarHeight)
+                .clip(RoundedCornerShape(PauseBarCorner))
                 .background(tint),
         )
     }
 }
 
 private val TIMESTAMP_FORMAT = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+
+private val LogRowSpacing = 2.dp
+private val LogAccentBarWidth = 3.dp
+private val LogAccentBarHeight = 32.dp
+private val LogAccentBarCorner = 2.dp
+private val PauseBarSpacing = 3.dp
+private val PauseBarWidth = 4.dp
+private val PauseBarHeight = 14.dp
+private val PauseBarCorner = 1.dp

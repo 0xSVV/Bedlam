@@ -356,12 +356,12 @@ private fun AppRow(
             )
         },
         leadingContent = {
-            Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.size(AppIconSize), contentAlignment = Alignment.Center) {
                 if (iconBitmap != null) {
                     Image(
                         bitmap = iconBitmap!!,
                         contentDescription = null,
-                        modifier = Modifier.size(40.dp),
+                        modifier = Modifier.size(AppIconSize),
                     )
                 }
             }
@@ -372,6 +372,8 @@ private fun AppRow(
         modifier = modifier.clickable(onClick = onToggle),
     )
 }
+
+private val AppIconSize = 40.dp
 
 private fun AppFilterMode.labelRes(): Int = when (this) {
     AppFilterMode.All -> R.string.app_filter_mode_all

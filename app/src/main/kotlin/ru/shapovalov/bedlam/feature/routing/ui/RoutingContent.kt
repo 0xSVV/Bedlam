@@ -251,7 +251,7 @@ private fun BasicsCard(
     val ipv6Options = remember { Ipv6Mode.entries.toList() }
     val dnsOptions = remember { DnsMode.entries.toList() }
 
-    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
+    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
         Column(modifier = Modifier.padding(vertical = MaterialTheme.spacing.small)) {
             ToggleRow(
                 title = stringResource(R.string.routing_bypass_lan_title),
@@ -341,7 +341,7 @@ private fun SourcesHeaderCard(
     onPresets: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
-    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
+    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
             Row(
                 modifier = Modifier
@@ -383,7 +383,7 @@ private fun SourcesHeaderCard(
 
 @Composable
 private fun EmptySourcesRow(modifier: Modifier = Modifier) {
-    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
+    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
         Text(
             text = stringResource(R.string.routing_sources_empty),
             style = MaterialTheme.typography.bodyMedium,
@@ -437,7 +437,7 @@ private fun SwipeableSourceCard(
 
     ElevatedCard(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = SourceCardShape,
     ) {
         SwipeToDismissBox(
             state = state,
@@ -531,7 +531,7 @@ private fun SourceRowContent(
         ) {
             Box(
                 modifier = Modifier
-                    .size(10.dp)
+                    .size(SourceIndicatorSize)
                     .clip(CircleShape)
                     .background(
                         if (resolved.source.enabled) MaterialTheme.colorScheme.primary
@@ -660,7 +660,7 @@ private fun DetailRow(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(96.dp),
+            modifier = Modifier.width(DetailLabelWidth),
         )
         Text(
             text = value,
@@ -681,9 +681,9 @@ private fun KindChip(source: DirectRouteSource) {
     }
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
+            .clip(CircleShape)
             .background(color.copy(alpha = 0.18f))
-            .padding(horizontal = 8.dp, vertical = 2.dp),
+            .padding(horizontal = KindChipHPad, vertical = KindChipVPad),
     ) {
         Text(
             text = label,
@@ -959,7 +959,7 @@ private fun PresetRow(preset: RoutePreset, status: PresetStatus, onPick: () -> U
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(MaterialTheme.shapes.large)
             .let { if (enabled) it.clickable(onClick = onPick) else it }
             .padding(spacing.medium),
         verticalAlignment = Alignment.CenterVertically,
@@ -969,12 +969,12 @@ private fun PresetRow(preset: RoutePreset, status: PresetStatus, onPick: () -> U
                 Icons.Default.Check,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(PresetCheckIconSize),
             )
         } else {
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(PresetDotSize)
                     .clip(CircleShape)
                     .background(dotColor),
             )
@@ -1039,6 +1039,14 @@ private fun SourceKind.label(): String = stringResource(
         SourceKind.DOMAIN -> R.string.routing_kind_domain
     }
 )
+
+private val SourceCardShape = RoundedCornerShape(20.dp)
+private val DetailLabelWidth = 96.dp
+private val SourceIndicatorSize = 10.dp
+private val KindChipHPad = 8.dp
+private val KindChipVPad = 2.dp
+private val PresetDotSize = 8.dp
+private val PresetCheckIconSize = 16.dp
 
 @Composable
 private fun SourceKind.placeholder(): String = when (this) {
