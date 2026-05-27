@@ -99,10 +99,12 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                 .padding(horizontal = spacing.large, vertical = spacing.medium),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
+            val errorMessage = state.errorMessage
+            val info = state.info
             val cardState: CardState = when {
                 state.isLoading -> CardState.Loading
-                state.errorMessage != null -> CardState.Error(state.errorMessage)
-                state.info != null -> CardState.Success(state.info)
+                errorMessage != null -> CardState.Error(errorMessage)
+                info != null -> CardState.Success(info)
                 else -> CardState.Loading
             }
 

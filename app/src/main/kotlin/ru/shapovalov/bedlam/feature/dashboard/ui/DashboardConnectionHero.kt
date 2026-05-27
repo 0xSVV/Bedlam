@@ -54,6 +54,7 @@ import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import kotlinx.coroutines.delay
 import ru.shapovalov.bedlam.R
+import ru.shapovalov.bedlam.core.util.formatDuration
 import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.ConnectionState
 
@@ -280,14 +281,6 @@ private fun ConnectionState.displayText(): String = when (this) {
     is ConnectionState.Connected -> stringResource(R.string.dashboard_state_connected)
     is ConnectionState.Reconnecting -> stringResource(R.string.dashboard_state_reconnecting, attempt)
     is ConnectionState.Error -> stringResource(R.string.dashboard_state_error)
-}
-
-private fun formatDuration(totalSeconds: Long): String {
-    val s = totalSeconds.coerceAtLeast(0)
-    val hours = s / 3600
-    val minutes = (s % 3600) / 60
-    val seconds = s % 60
-    return "%02d:%02d:%02d".format(hours, minutes, seconds)
 }
 
 private val ConnectionMorphAnimationSpec = spring<Float>(

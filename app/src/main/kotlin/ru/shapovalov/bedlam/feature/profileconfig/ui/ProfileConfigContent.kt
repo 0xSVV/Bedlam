@@ -111,11 +111,12 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
         snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(snackbarData = it) } },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            val draft = state.draft
             when {
                 state.isLoading -> CenteredSpinner()
                 state.notFound -> NotFoundMessage()
-                state.draft != null -> ConfigBody(
-                    draft = state.draft,
+                draft != null -> ConfigBody(
+                    draft = draft,
                     editMode = state.editMode,
                     onDraftChanged = component::onDraftChanged,
                 )

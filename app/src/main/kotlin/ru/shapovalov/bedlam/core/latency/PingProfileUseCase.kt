@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.util.parseHost
+import ru.shapovalov.bedlam.core.util.parsePort
 import java.io.IOException
 import java.net.ConnectException
 import java.net.InetSocketAddress
@@ -52,15 +54,7 @@ class PingProfileUseCase(private val context: Context) {
         }
     }
 
-    private fun parseHost(address: String): String =
-        if (address.startsWith("[")) address.removePrefix("[").substringBefore("]")
-        else address.substringBeforeLast(":")
-
-    private fun parsePort(address: String): Int =
-        address.substringAfterLast(":").toIntOrNull() ?: DEFAULT_PORT
-
     private companion object {
         const val TIMEOUT_MS = 3000
-        const val DEFAULT_PORT = 443
     }
 }

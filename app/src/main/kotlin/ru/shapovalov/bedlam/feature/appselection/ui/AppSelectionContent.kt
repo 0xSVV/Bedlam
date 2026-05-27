@@ -1,9 +1,5 @@
 package ru.shapovalov.bedlam.feature.appselection.ui
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -75,8 +71,8 @@ import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
 import ru.shapovalov.bedlam.core.appfilter.domain.model.InstalledApp
 import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
+import ru.shapovalov.bedlam.core.util.toBitmap
 import ru.shapovalov.bedlam.ui.theme.spacing
-import androidx.core.graphics.createBitmap
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -379,15 +375,4 @@ private fun AppFilterMode.labelRes(): Int = when (this) {
     AppFilterMode.All -> R.string.app_filter_mode_all
     AppFilterMode.Allowlist -> R.string.app_filter_mode_allowlist
     AppFilterMode.Blocklist -> R.string.app_filter_mode_blocklist
-}
-
-private fun Drawable.toBitmap(): Bitmap {
-    if (this is BitmapDrawable) return bitmap
-    val width = intrinsicWidth.coerceAtLeast(1)
-    val height = intrinsicHeight.coerceAtLeast(1)
-    val bitmap = createBitmap(width, height)
-    val canvas = Canvas(bitmap)
-    setBounds(0, 0, width, height)
-    draw(canvas)
-    return bitmap
 }
