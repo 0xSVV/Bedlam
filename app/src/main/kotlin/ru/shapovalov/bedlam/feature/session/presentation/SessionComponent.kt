@@ -20,5 +20,7 @@ class SessionComponent(
     fun onRefresh() = store.accept(SessionStore.Intent.Refresh)
     fun onBackPressed() = onBack.invoke()
 
-    fun interface OnBack { fun invoke() }
+    fun interface OnBack {
+        fun invoke()
+    }
 }

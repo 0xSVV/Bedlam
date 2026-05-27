@@ -11,5 +11,7 @@ data class RoutingConfigEntity(
     val dnsMode: String = "Cloudflare",
     val customDnsCsv: String = "",
 ) {
-    companion object { const val SINGLETON_ID = 1 }
+    companion object {
+        const val SINGLETON_ID = 1
+    }
 }

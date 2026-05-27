@@ -11,7 +11,9 @@ import ru.shapovalov.hysteria.api.HysteriaClient
 
 internal sealed interface Action {
     data class ProfilesLoaded(val profiles: List<Profile>, val activeId: String?) : Action
-    data class ConnectionStateChanged(val state: ConnectionState, val connectedSinceMillis: Long?) : Action
+    data class ConnectionStateChanged(val state: ConnectionState, val connectedSinceMillis: Long?) :
+        Action
+
     data object TunnelConnected : Action
 }
 
@@ -31,7 +33,12 @@ internal class DashboardBootstrapper(
             var wasConnected = false
             client.state.collect { state ->
                 val isConnected = state is ConnectionState.Connected
-                dispatch(Action.ConnectionStateChanged(state, (state as? ConnectionState.Connected)?.connectedSinceMillis))
+                dispatch(
+                    Action.ConnectionStateChanged(
+                        state,
+                        (state as? ConnectionState.Connected)?.connectedSinceMillis
+                    )
+                )
                 if (isConnected && !wasConnected) dispatch(Action.TunnelConnected)
                 wasConnected = isConnected
             }

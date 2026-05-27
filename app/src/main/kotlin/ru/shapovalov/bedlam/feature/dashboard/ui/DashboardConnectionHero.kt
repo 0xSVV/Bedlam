@@ -70,7 +70,7 @@ internal fun ConnectionHero(
     val spacing = MaterialTheme.spacing
     val isConnected = connectionState is ConnectionState.Connected
     val isConnecting = connectionState is ConnectionState.Connecting ||
-        connectionState is ConnectionState.Reconnecting
+            connectionState is ConnectionState.Reconnecting
     val isError = connectionState is ConnectionState.Error
 
     val restingButtonShape = MaterialShapes.Square
@@ -138,7 +138,8 @@ internal fun ConnectionHero(
             elapsedSeconds.longValue = 0L
         } else {
             while (true) {
-                elapsedSeconds.longValue = (System.currentTimeMillis() - connectedSinceMillis) / 1000
+                elapsedSeconds.longValue =
+                    (System.currentTimeMillis() - connectedSinceMillis) / 1000
                 delay(1000)
             }
         }
@@ -279,7 +280,11 @@ private fun ConnectionState.displayText(): String = when (this) {
     is ConnectionState.Disconnected -> stringResource(R.string.dashboard_state_disconnected)
     ConnectionState.Connecting -> stringResource(R.string.dashboard_state_connecting)
     is ConnectionState.Connected -> stringResource(R.string.dashboard_state_connected)
-    is ConnectionState.Reconnecting -> stringResource(R.string.dashboard_state_reconnecting, attempt)
+    is ConnectionState.Reconnecting -> stringResource(
+        R.string.dashboard_state_reconnecting,
+        attempt
+    )
+
     is ConnectionState.Error -> stringResource(R.string.dashboard_state_error)
 }
 

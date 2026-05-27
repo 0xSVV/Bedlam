@@ -82,8 +82,13 @@ class RootComponent(
 
     enum class Tab { Logs, Dashboard, Settings }
 
-    fun interface OnStartVpn { fun invoke(profileId: String, configJson: String, profileName: String) }
-    fun interface OnStopVpn { fun invoke() }
+    fun interface OnStartVpn {
+        fun invoke(profileId: String, configJson: String, profileName: String)
+    }
+
+    fun interface OnStopVpn {
+        fun invoke()
+    }
 
     @Serializable
     private sealed interface Config {

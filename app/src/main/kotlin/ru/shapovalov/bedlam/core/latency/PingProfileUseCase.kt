@@ -50,7 +50,7 @@ class PingProfileUseCase(private val context: Context) {
         return cm.allNetworks.firstOrNull { network ->
             val caps = cm.getNetworkCapabilities(network) ?: return@firstOrNull false
             !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
-                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         }
     }
 

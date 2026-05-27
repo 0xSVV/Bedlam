@@ -24,7 +24,7 @@ sealed interface Cidr {
 
         override fun equals(other: Any?): Boolean =
             other is V4 && prefixLength == other.prefixLength &&
-                networkBytes.contentEquals(other.networkBytes)
+                    networkBytes.contentEquals(other.networkBytes)
 
         override fun hashCode(): Int = networkBytes.contentHashCode() * 31 + prefixLength
     }
@@ -45,7 +45,7 @@ sealed interface Cidr {
 
         override fun equals(other: Any?): Boolean =
             other is V6 && prefixLength == other.prefixLength &&
-                networkBytes.contentEquals(other.networkBytes)
+                    networkBytes.contentEquals(other.networkBytes)
 
         override fun hashCode(): Int = networkBytes.contentHashCode() * 31 + prefixLength
     }
@@ -115,7 +115,8 @@ internal fun parseIpv6ToBytes(addr: String): ByteArray {
     if (doubleColon >= 0) {
         require(addr.indexOf("::", doubleColon + 1) < 0) { "Multiple '::' in IPv6: $addr" }
         left = if (doubleColon == 0) emptyList() else addr.substring(0, doubleColon).split(':')
-        right = if (doubleColon + 2 >= addr.length) emptyList() else addr.substring(doubleColon + 2).split(':')
+        right = if (doubleColon + 2 >= addr.length) emptyList() else addr.substring(doubleColon + 2)
+            .split(':')
     } else {
         left = addr.split(':')
         right = emptyList()

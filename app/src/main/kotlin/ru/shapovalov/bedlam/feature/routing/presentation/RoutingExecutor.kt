@@ -25,27 +25,35 @@ internal class RoutingExecutor(
             is RoutingStore.Intent.SetBypassLan -> scope.launch {
                 routingRepository.setBypassLan(intent.enabled)
             }
+
             is RoutingStore.Intent.SetIpv6Mode -> scope.launch {
                 routingRepository.setIpv6Mode(intent.mode)
             }
+
             is RoutingStore.Intent.SetDnsMode -> scope.launch {
                 routingRepository.setDnsMode(intent.mode)
             }
+
             is RoutingStore.Intent.SetCustomDns -> scope.launch {
                 routingRepository.setCustomDns(intent.servers)
             }
+
             is RoutingStore.Intent.AddSource -> scope.launch {
                 addSource(intent.source)
             }
+
             is RoutingStore.Intent.RemoveSource -> scope.launch {
                 routingRepository.removeSource(intent.id)
             }
+
             is RoutingStore.Intent.SetSourceEnabled -> scope.launch {
                 routingRepository.setSourceEnabled(intent.id, intent.enabled)
             }
+
             is RoutingStore.Intent.AddPreset -> scope.launch {
                 addPreset(intent.presetId)
             }
+
             RoutingStore.Intent.RefreshAll -> scope.launch {
                 dispatch(Msg.RefreshingChanged(true))
                 try {

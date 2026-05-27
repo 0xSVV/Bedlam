@@ -145,7 +145,12 @@ class CidrMathTest {
             assertTrue(coversAddress(result, Cidr.parse("1.2.3.3/32").networkBytes))
             assertTrue(coversAddress(result, Cidr.parse("1.2.3.5/32").networkBytes))
             assertTrue(coversAddress(result, byteArrayOf(0, 0, 0, 0)))
-            assertTrue(coversAddress(result, byteArrayOf(255.toByte(), 255.toByte(), 255.toByte(), 255.toByte())))
+            assertTrue(
+                coversAddress(
+                    result,
+                    byteArrayOf(255.toByte(), 255.toByte(), 255.toByte(), 255.toByte())
+                )
+            )
         }
 
         @Test

@@ -48,6 +48,7 @@ fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier)
                 onOpenAppSelection = component::onOpenAppSelection,
                 onOpenRouting = component::onOpenRouting,
             )
+
             is Child.AppSelection -> AppSelectionContent(child.component)
             is Child.Routing -> RoutingContent(child.component)
         }

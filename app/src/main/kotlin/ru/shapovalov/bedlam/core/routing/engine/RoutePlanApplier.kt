@@ -36,6 +36,7 @@ class RoutePlanApplier {
                         } else throw e
                     }
             }
+
             AppFilterMode.Blocklist -> plan.appFilter.packages.forEach { pkg ->
                 runCatching { builder.addDisallowedApplication(pkg) }
                     .onFailure { e ->
@@ -75,5 +76,7 @@ class RoutePlanApplier {
 
     private fun Cidr.toIpPrefix(): IpPrefix = IpPrefix(toInetAddress(), prefixLength)
 
-    companion object { private const val TAG = "RoutePlanApplier" }
+    companion object {
+        private const val TAG = "RoutePlanApplier"
+    }
 }

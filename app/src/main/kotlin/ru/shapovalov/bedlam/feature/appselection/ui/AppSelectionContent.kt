@@ -70,8 +70,8 @@ import kotlinx.coroutines.withContext
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
 import ru.shapovalov.bedlam.core.appfilter.domain.model.InstalledApp
-import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
 import ru.shapovalov.bedlam.core.util.toBitmap
+import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -114,7 +114,9 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
             )
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)) {
             ModeChips(
                 selected = state.mode,
                 onSelect = component::onModeSelected,
@@ -165,10 +167,10 @@ private fun AppSelectionTopBar(
                 transitionSpec = {
                     if (targetState) {
                         (fadeIn() + slideInHorizontally { it / 3 }) togetherWith
-                            (fadeOut() + slideOutHorizontally { -it / 3 })
+                                (fadeOut() + slideOutHorizontally { -it / 3 })
                     } else {
                         (fadeIn() + slideInHorizontally { -it / 3 }) togetherWith
-                            (fadeOut() + slideOutHorizontally { it / 3 })
+                                (fadeOut() + slideOutHorizontally { it / 3 })
                     }
                 },
                 label = "search-toggle",
@@ -324,7 +326,8 @@ private fun AppRow(
     val iconBitmap by produceState<ImageBitmap?>(initialValue = null, key1 = app.packageName) {
         value = withContext(Dispatchers.IO) {
             runCatching {
-                context.packageManager.getApplicationIcon(app.packageName).toBitmap().asImageBitmap()
+                context.packageManager.getApplicationIcon(app.packageName).toBitmap()
+                    .asImageBitmap()
             }.getOrNull()
         }
     }

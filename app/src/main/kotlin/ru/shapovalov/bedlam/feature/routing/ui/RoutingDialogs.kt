@@ -65,9 +65,11 @@ internal fun AddSourceDialog(
             SourceKind.CIDR -> Cidr.parseOrNull(v)?.let {
                 DirectRouteSource.Cidr(UUID.randomUUID().toString(), it, comment, true, 0)
             }
+
             SourceKind.ASN -> v.removePrefix("AS").removePrefix("as").trim().toIntOrNull()?.let {
                 DirectRouteSource.Asn(UUID.randomUUID().toString(), it, comment, true, 0)
             }
+
             SourceKind.DOMAIN -> if (v.contains('.') && !v.contains(' ')) {
                 DirectRouteSource.Domain(UUID.randomUUID().toString(), v, comment, true, 0)
             } else null
@@ -115,6 +117,7 @@ internal fun AddSourceDialog(
                         isDuplicate -> {
                             { Text(stringResource(R.string.routing_sources_add_duplicate)) }
                         }
+
                         else -> null
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -185,11 +188,13 @@ private fun PresetRow(
     val enabled = !status.isFullyAdded
     val (dotColor, statusLabel) = when {
         status.isFullyAdded -> MaterialTheme.colorScheme.outline.copy(alpha = 0.4f) to
-            stringResource(R.string.routing_preset_added)
+                stringResource(R.string.routing_preset_added)
+
         status.isPartial -> MaterialTheme.colorScheme.tertiary to
-            stringResource(R.string.routing_preset_partial, status.present, status.total)
+                stringResource(R.string.routing_preset_partial, status.present, status.total)
+
         else -> MaterialTheme.colorScheme.primary to
-            stringResource(R.string.routing_preset_asn_count, status.total)
+                stringResource(R.string.routing_preset_asn_count, status.total)
     }
     Row(
         modifier = Modifier

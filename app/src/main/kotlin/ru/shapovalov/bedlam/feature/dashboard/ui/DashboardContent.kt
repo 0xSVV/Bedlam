@@ -24,7 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -68,7 +67,9 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
         snackbarHostState.showSnackbar(msg)
     }
 
-    Box(modifier = modifier.fillMaxSize().statusBarsPadding()) {
+    Box(modifier = modifier
+        .fillMaxSize()
+        .statusBarsPadding()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()

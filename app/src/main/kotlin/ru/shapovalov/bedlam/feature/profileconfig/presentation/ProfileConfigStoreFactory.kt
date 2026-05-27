@@ -17,12 +17,13 @@ class ProfileConfigStoreFactory(
     private val client: HysteriaClient,
 ) {
     fun create(profileId: String): ProfileConfigStore =
-        object : ProfileConfigStore, Store<ProfileConfigStore.Intent, ProfileConfigStore.State, Nothing>
-        by storeFactory.create(
-            name = "ProfileConfigStore",
-            initialState = ProfileConfigStore.State(profileId = profileId),
-            bootstrapper = ProfileConfigBootstrapper(profileId, observeProfile),
-            executorFactory = { ProfileConfigExecutor(saveProfile, deleteProfile, client) },
-            reducer = ProfileConfigReducer,
-        ) {}
+        object : ProfileConfigStore,
+            Store<ProfileConfigStore.Intent, ProfileConfigStore.State, Nothing>
+            by storeFactory.create(
+                name = "ProfileConfigStore",
+                initialState = ProfileConfigStore.State(profileId = profileId),
+                bootstrapper = ProfileConfigBootstrapper(profileId, observeProfile),
+                executorFactory = { ProfileConfigExecutor(saveProfile, deleteProfile, client) },
+                reducer = ProfileConfigReducer,
+            ) {}
 }

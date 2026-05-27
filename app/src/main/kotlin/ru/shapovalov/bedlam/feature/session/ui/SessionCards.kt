@@ -66,10 +66,11 @@ internal fun SkeletonInfoCard() {
         ),
     ) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
-            SkeletonLabelWidths.zip(SkeletonValueWidths).forEachIndexed { index, (labelWidth, valueWidth) ->
-                SkeletonRow(labelWidth = labelWidth, valueWidth = valueWidth, shimmer = shimmer)
-                if (index != SkeletonLabelWidths.lastIndex) DividerRow()
-            }
+            SkeletonLabelWidths.zip(SkeletonValueWidths)
+                .forEachIndexed { index, (labelWidth, valueWidth) ->
+                    SkeletonRow(labelWidth = labelWidth, valueWidth = valueWidth, shimmer = shimmer)
+                    if (index != SkeletonLabelWidths.lastIndex) DividerRow()
+                }
         }
     }
 }
@@ -153,13 +154,24 @@ internal fun InfoCard(info: SessionInfo) {
         ),
     ) {
         Column(modifier = Modifier.padding(vertical = spacing.small)) {
-            InfoRow(label = stringResource(R.string.session_field_ipv4), value = info.ipv4, monoValue = true)
+            InfoRow(
+                label = stringResource(R.string.session_field_ipv4),
+                value = info.ipv4,
+                monoValue = true
+            )
             DividerRow()
-            InfoRow(label = stringResource(R.string.session_field_ipv6), value = info.ipv6, monoValue = true)
+            InfoRow(
+                label = stringResource(R.string.session_field_ipv6),
+                value = info.ipv6,
+                monoValue = true
+            )
             DividerRow()
             InfoRow(label = stringResource(R.string.session_field_asn), value = info.asn)
             DividerRow()
-            InfoRow(label = stringResource(R.string.session_field_as_org), value = info.asOrganization)
+            InfoRow(
+                label = stringResource(R.string.session_field_as_org),
+                value = info.asOrganization
+            )
             DividerRow()
             InfoRow(label = stringResource(R.string.session_field_country), value = info.country)
             DividerRow()
@@ -167,9 +179,15 @@ internal fun InfoCard(info: SessionInfo) {
             DividerRow()
             InfoRow(label = stringResource(R.string.session_field_region), value = info.region)
             DividerRow()
-            InfoRow(label = stringResource(R.string.session_field_latitude), value = info.latitude?.toString())
+            InfoRow(
+                label = stringResource(R.string.session_field_latitude),
+                value = info.latitude?.toString()
+            )
             DividerRow()
-            InfoRow(label = stringResource(R.string.session_field_longitude), value = info.longitude?.toString())
+            InfoRow(
+                label = stringResource(R.string.session_field_longitude),
+                value = info.longitude?.toString()
+            )
         }
     }
 }

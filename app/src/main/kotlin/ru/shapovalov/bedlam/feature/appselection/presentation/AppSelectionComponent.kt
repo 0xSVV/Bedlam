@@ -18,10 +18,14 @@ class AppSelectionComponent(
 
     val state: StateFlow<AppSelectionStore.State> = store.stateFlow(scope)
 
-    fun onModeSelected(mode: AppFilterMode) = store.accept(AppSelectionStore.Intent.ChangeMode(mode))
+    fun onModeSelected(mode: AppFilterMode) =
+        store.accept(AppSelectionStore.Intent.ChangeMode(mode))
+
     fun onTogglePackage(pkg: String) = store.accept(AppSelectionStore.Intent.TogglePackage(pkg))
     fun onQueryChanged(query: String) = store.accept(AppSelectionStore.Intent.UpdateQuery(query))
     fun onBackPressed() = onBack.invoke()
 
-    fun interface OnBack { fun invoke() }
+    fun interface OnBack {
+        fun invoke()
+    }
 }

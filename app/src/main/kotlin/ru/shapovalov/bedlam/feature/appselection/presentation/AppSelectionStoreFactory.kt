@@ -17,12 +17,13 @@ class AppSelectionStoreFactory(
     private val togglePackage: ToggleAppFilterPackageUseCase,
 ) {
     fun create(): AppSelectionStore =
-        object : AppSelectionStore, Store<AppSelectionStore.Intent, AppSelectionStore.State, Nothing>
-        by storeFactory.create(
-            name = "AppSelectionStore",
-            initialState = AppSelectionStore.State(),
-            bootstrapper = AppSelectionBootstrapper(observeAppFilter, getInstalledApps),
-            executorFactory = { AppSelectionExecutor(setMode, togglePackage) },
-            reducer = AppSelectionReducer,
-        ) {}
+        object : AppSelectionStore,
+            Store<AppSelectionStore.Intent, AppSelectionStore.State, Nothing>
+            by storeFactory.create(
+                name = "AppSelectionStore",
+                initialState = AppSelectionStore.State(),
+                bootstrapper = AppSelectionBootstrapper(observeAppFilter, getInstalledApps),
+                executorFactory = { AppSelectionExecutor(setMode, togglePackage) },
+                reducer = AppSelectionReducer,
+            ) {}
 }

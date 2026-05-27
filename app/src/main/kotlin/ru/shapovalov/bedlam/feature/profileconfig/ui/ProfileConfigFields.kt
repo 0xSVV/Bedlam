@@ -20,12 +20,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.ui.theme.spacing
-import androidx.compose.ui.res.stringResource
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -227,7 +227,8 @@ private fun CautionLabel(caution: String?) {
 @Composable
 private fun ReadOnlyValue(value: String) {
     Text(
-        text = value.takeIf { it.isNotBlank() } ?: stringResource(R.string.profile_config_field_empty),
+        text = value.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.profile_config_field_empty),
         style = MaterialTheme.typography.bodyMedium,
         fontFamily = FontFamily.Monospace,
         color = MaterialTheme.colorScheme.onSurface,

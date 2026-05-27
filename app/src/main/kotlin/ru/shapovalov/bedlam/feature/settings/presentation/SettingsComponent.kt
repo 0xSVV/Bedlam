@@ -30,8 +30,11 @@ class SettingsComponent(
             when (config) {
                 Config.Root -> Child.Root
                 Config.AppSelection -> Child.AppSelection(
-                    appSelectionFactory.create(ctx, AppSelectionComponent.OnBack { navigation.pop() })
+                    appSelectionFactory.create(
+                        ctx,
+                        AppSelectionComponent.OnBack { navigation.pop() })
                 )
+
                 Config.Routing -> Child.Routing(
                     routingFactory.create(ctx, RoutingComponent.OnBack { navigation.pop() })
                 )

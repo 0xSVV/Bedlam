@@ -33,7 +33,11 @@ class RoutePlannerTest {
         )
     }
 
-    private fun asnSource(id: String, cidrs: List<String>, enabled: Boolean = true): ResolvedSource =
+    private fun asnSource(
+        id: String,
+        cidrs: List<String>,
+        enabled: Boolean = true
+    ): ResolvedSource =
         ResolvedSource(
             source = DirectRouteSource.Asn(id, 13238, "", enabled, 0),
             cidrs = cidrs.map(Cidr::parse),
@@ -111,7 +115,14 @@ class RoutePlannerTest {
         @Test
         fun `asn source CIDRs propagate to excluded set`() {
             val plan = planner().plan(
-                RoutingConfig(sources = listOf(asnSource("asn1", listOf("5.45.192.0/18", "77.88.0.0/18")))),
+                RoutingConfig(
+                    sources = listOf(
+                        asnSource(
+                            "asn1",
+                            listOf("5.45.192.0/18", "77.88.0.0/18")
+                        )
+                    )
+                ),
                 AppFilter(),
             )
             assertTrue(plan.excludedV4.any { it == Cidr.parse("5.45.192.0/18") })

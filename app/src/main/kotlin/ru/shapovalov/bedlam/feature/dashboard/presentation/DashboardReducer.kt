@@ -22,6 +22,7 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             connectionState = msg.state,
             connectedSinceMillis = msg.connectedSinceMillis,
         )
+
         Msg.ImportStarted -> copy(isImporting = true, error = null)
         Msg.ImportFinished -> copy(isImporting = false)
         is Msg.ErrorRaised -> copy(error = msg.reason)

@@ -28,6 +28,7 @@ internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
             isLoading = false,
             notFound = false,
         )
+
         Msg.ProfileMissing -> copy(isLoading = false, notFound = true)
         Msg.EditModeEntered -> copy(editMode = true, saveError = null)
         Msg.ChangesDiscarded -> copy(
@@ -35,6 +36,7 @@ internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
             editMode = false,
             saveError = null,
         )
+
         is Msg.DraftUpdated -> copy(draft = msg.config)
         Msg.SaveStarted -> copy(isSaving = true, saveError = null)
         is Msg.SaveSucceeded -> copy(
@@ -44,6 +46,7 @@ internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
             isSaving = false,
             saveError = null,
         )
+
         is Msg.SaveFailed -> copy(isSaving = false, saveError = msg.message)
         Msg.DeleteRequested -> copy(pendingDeleteConfirmation = true)
         Msg.DeleteCancelled -> copy(pendingDeleteConfirmation = false)

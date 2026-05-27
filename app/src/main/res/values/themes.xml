@@ -1,4 +1,4 @@
 <resources>
-    <style name="Theme.Bedlam" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-    </style>
+
+    <style name="Theme.Bedlam" parent="Theme.MaterialComponents.DayNight.NoActionBar"></style>
 </resources>

@@ -22,7 +22,14 @@ class RoutingStoreFactory(
             name = "RoutingStore",
             initialState = RoutingStore.State(),
             bootstrapper = RoutingBootstrapper(routingRepository),
-            executorFactory = { RoutingExecutor(routingRepository, addSource, addPreset, refreshAll) },
+            executorFactory = {
+                RoutingExecutor(
+                    routingRepository,
+                    addSource,
+                    addPreset,
+                    refreshAll
+                )
+            },
             reducer = RoutingReducer,
         ) {}
 }

@@ -25,8 +25,8 @@ class RoutePlanner(
         val lanExclusionsV6 = if (config.bypassLan) LanRanges.IPV6 else emptyList()
 
         val budget = maxTotalRoutes - baseV4.size - baseV6.size -
-            systemExclusionsV4.size - systemExclusionsV6.size -
-            lanExclusionsV4.size - lanExclusionsV6.size
+                systemExclusionsV4.size - systemExclusionsV6.size -
+                lanExclusionsV4.size - lanExclusionsV6.size
 
         val enabledSources = config.sources
             .filter { it.source.enabled && it.cidrs.isNotEmpty() }
@@ -38,7 +38,7 @@ class RoutePlanner(
                 android.util.Log.w(
                     TAG,
                     "Source dropped (over budget): ${resolved.source.label()} " +
-                        "(${resolved.cidrs.size} CIDRs, budget remaining ${budget - used})"
+                            "(${resolved.cidrs.size} CIDRs, budget remaining ${budget - used})"
                 )
                 continue
             }
@@ -90,12 +90,14 @@ class RoutePlanner(
             "2606:4700:4700::1111",
             "2606:4700:4700::1001",
         )
+
         DnsMode.Google -> listOf(
             "8.8.8.8",
             "8.8.4.4",
             "2001:4860:4860::8888",
             "2001:4860:4860::8844",
         )
+
         DnsMode.Custom -> config.customDns
             .map { it.trim() }
             .filter { it.isNotEmpty() }

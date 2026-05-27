@@ -37,15 +37,28 @@ class DashboardComponent(
     fun onToggleConnection() = store.accept(DashboardStore.Intent.ToggleConnection)
     fun onSelectProfile(id: String) = store.accept(DashboardStore.Intent.SelectProfile(id))
     fun onDeleteProfile(id: String) = store.accept(DashboardStore.Intent.DeleteProfile(id))
-    fun onImportFromClipboard(uri: String) = store.accept(DashboardStore.Intent.ImportProfileFromUri(uri))
+    fun onImportFromClipboard(uri: String) =
+        store.accept(DashboardStore.Intent.ImportProfileFromUri(uri))
+
     fun onDismissError() = store.accept(DashboardStore.Intent.DismissError)
     fun onOpenSession() = onOpenSession.invoke()
     fun onOpenProfileConfig(id: String) = onOpenProfileConfig.invoke(id)
     fun onPingProfile(id: String) = store.accept(DashboardStore.Intent.PingProfile(id))
     fun onPingAllProfiles() = store.accept(DashboardStore.Intent.PingAllProfiles)
 
-    fun interface OnStartVpn { fun invoke(profile: Profile) }
-    fun interface OnStopVpn { fun invoke() }
-    fun interface OnOpenSession { fun invoke() }
-    fun interface OnOpenProfileConfig { fun invoke(profileId: String) }
+    fun interface OnStartVpn {
+        fun invoke(profile: Profile)
+    }
+
+    fun interface OnStopVpn {
+        fun invoke()
+    }
+
+    fun interface OnOpenSession {
+        fun invoke()
+    }
+
+    fun interface OnOpenProfileConfig {
+        fun invoke(profileId: String)
+    }
 }

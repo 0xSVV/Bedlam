@@ -21,8 +21,14 @@ class TunConfigTest {
     fun `internal CIDR constants are well-formed`() {
         requireCidr(TunConfig.IPV4_CIDR, "IPV4_CIDR", IpFamily.V4)
         requireCidr(TunConfig.IPV6_CIDR, "IPV6_CIDR", IpFamily.V6)
-        assertEquals("${TunConfig.IPV4_ADDRESS}/${TunConfig.IPV4_PREFIX_LENGTH}", TunConfig.IPV4_CIDR)
-        assertEquals("${TunConfig.IPV6_ADDRESS}/${TunConfig.IPV6_PREFIX_LENGTH}", TunConfig.IPV6_CIDR)
+        assertEquals(
+            "${TunConfig.IPV4_ADDRESS}/${TunConfig.IPV4_PREFIX_LENGTH}",
+            TunConfig.IPV4_CIDR
+        )
+        assertEquals(
+            "${TunConfig.IPV6_ADDRESS}/${TunConfig.IPV6_PREFIX_LENGTH}",
+            TunConfig.IPV6_CIDR
+        )
     }
 
     @ParameterizedTest

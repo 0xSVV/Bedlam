@@ -5,7 +5,8 @@ import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.hysteria.ConnectionState
 
-interface DashboardStore : Store<DashboardStore.Intent, DashboardStore.State, DashboardStore.Label> {
+interface DashboardStore :
+    Store<DashboardStore.Intent, DashboardStore.State, DashboardStore.Label> {
 
     sealed interface Intent {
         data object ToggleConnection : Intent

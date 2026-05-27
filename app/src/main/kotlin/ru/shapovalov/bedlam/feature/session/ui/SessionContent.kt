@@ -65,7 +65,9 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                 },
                 navigationIcon = {
                     IconButton(
-                        onClick = { if (showSpeedTest) showSpeedTest = false else component.onBackPressed() },
+                        onClick = {
+                            if (showSpeedTest) showSpeedTest = false else component.onBackPressed()
+                        },
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
@@ -87,7 +89,9 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
         },
     ) { padding ->
         if (showSpeedTest) {
-            SpeedTestWebView(modifier = Modifier.fillMaxSize().padding(padding))
+            SpeedTestWebView(modifier = Modifier
+                .fillMaxSize()
+                .padding(padding))
             return@Scaffold
         }
 
@@ -116,10 +120,13 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                         EnterTransition.None togetherWith ExitTransition.None
                     } else {
                         (fadeIn(tween(durationMillis = 220, delayMillis = 90)) +
-                            scaleIn(tween(durationMillis = 220, delayMillis = 90), initialScale = 0.96f))
+                                scaleIn(
+                                    tween(durationMillis = 220, delayMillis = 90),
+                                    initialScale = 0.96f
+                                ))
                             .togetherWith(
                                 fadeOut(tween(durationMillis = 90)) +
-                                    scaleOut(tween(durationMillis = 90), targetScale = 0.96f),
+                                        scaleOut(tween(durationMillis = 90), targetScale = 0.96f),
                             )
                     }
                 },
@@ -128,7 +135,11 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
             ) { target ->
                 when (target) {
                     CardState.Loading -> SkeletonInfoCard()
-                    is CardState.Error -> ErrorCard(message = target.message, onRetry = component::onRefresh)
+                    is CardState.Error -> ErrorCard(
+                        message = target.message,
+                        onRetry = component::onRefresh
+                    )
+
                     is CardState.Success -> InfoCard(info = target.info)
                 }
             }

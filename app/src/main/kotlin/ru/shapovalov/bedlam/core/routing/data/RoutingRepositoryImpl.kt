@@ -116,9 +116,11 @@ private fun RouteSourceEntity.toDomainOrNull(): DirectRouteSource? = when (kind)
     RouteSourceEntity.KIND_CIDR -> Cidr.parseOrNull(rawValue)?.let {
         DirectRouteSource.Cidr(id, it, comment, enabled, orderIndex)
     }
+
     RouteSourceEntity.KIND_ASN -> rawValue.toIntOrNull()?.let {
         DirectRouteSource.Asn(id, it, comment, enabled, orderIndex)
     }
+
     RouteSourceEntity.KIND_DOMAIN -> DirectRouteSource.Domain(
         id = id,
         hostname = rawValue,
@@ -126,6 +128,7 @@ private fun RouteSourceEntity.toDomainOrNull(): DirectRouteSource? = when (kind)
         enabled = enabled,
         orderIndex = orderIndex,
     )
+
     else -> null
 }
 
@@ -140,6 +143,7 @@ private fun DirectRouteSource.toEntity(): RouteSourceEntity = when (this) {
         lastResolvedMillis = null,
         lastError = null,
     )
+
     is DirectRouteSource.Asn -> RouteSourceEntity(
         id = id,
         kind = RouteSourceEntity.KIND_ASN,
@@ -150,6 +154,7 @@ private fun DirectRouteSource.toEntity(): RouteSourceEntity = when (this) {
         lastResolvedMillis = null,
         lastError = null,
     )
+
     is DirectRouteSource.Domain -> RouteSourceEntity(
         id = id,
         kind = RouteSourceEntity.KIND_DOMAIN,

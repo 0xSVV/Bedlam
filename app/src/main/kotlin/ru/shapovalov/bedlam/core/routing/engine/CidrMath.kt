@@ -17,7 +17,7 @@ object CidrMath {
         val excV4: List<Cidr> = exclude.filterIsInstance<Cidr.V4>()
         val excV6: List<Cidr> = exclude.filterIsInstance<Cidr.V6>()
         return subtractSameFamily(baseV4, excV4) +
-            subtractSameFamily(baseV6, excV6)
+                subtractSameFamily(baseV6, excV6)
     }
 
     fun contains(outer: Cidr, inner: Cidr): Boolean {

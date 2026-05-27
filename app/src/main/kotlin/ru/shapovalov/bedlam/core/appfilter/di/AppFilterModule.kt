@@ -15,5 +15,6 @@ interface AppFilterModule {
 
     @AppScope
     @Provides
-    fun bindInstalledAppsRepository(impl: InstalledAppsRepositoryImpl): InstalledAppsRepository = impl
+    fun bindInstalledAppsRepository(impl: InstalledAppsRepositoryImpl): InstalledAppsRepository =
+        impl
 }

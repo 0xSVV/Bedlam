@@ -67,8 +67,13 @@ class DashboardContainerComponent(
         data class ProfileConfig(val component: ProfileConfigComponent) : Child
     }
 
-    fun interface OnStartVpn { fun invoke(profile: Profile) }
-    fun interface OnStopVpn { fun invoke() }
+    fun interface OnStartVpn {
+        fun invoke(profile: Profile)
+    }
+
+    fun interface OnStopVpn {
+        fun invoke()
+    }
 
     @Serializable
     private sealed interface Config {

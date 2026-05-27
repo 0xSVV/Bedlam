@@ -21,6 +21,7 @@ internal class LogsExecutor(
                 if (s.isPaused) dispatch(Msg.Resumed)
                 else dispatch(Msg.Paused(s.liveEntries))
             }
+
             LogsStore.Intent.Clear -> {
                 buffer.clear()
                 dispatch(Msg.Resumed)

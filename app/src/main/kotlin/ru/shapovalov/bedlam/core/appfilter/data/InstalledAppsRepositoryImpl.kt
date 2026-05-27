@@ -22,7 +22,11 @@ class InstalledAppsRepositoryImpl(
             .asSequence()
             .mapNotNull { info ->
                 if (info.packageName == ownPackage) return@mapNotNull null
-                if (pm.checkPermission(Manifest.permission.INTERNET, info.packageName) != PackageManager.PERMISSION_GRANTED) return@mapNotNull null
+                if (pm.checkPermission(
+                        Manifest.permission.INTERNET,
+                        info.packageName
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) return@mapNotNull null
                 InstalledApp(
                     packageName = info.packageName,
                     label = pm.getApplicationLabel(info).toString(),

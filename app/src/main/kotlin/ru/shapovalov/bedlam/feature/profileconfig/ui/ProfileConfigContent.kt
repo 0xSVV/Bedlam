@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -98,7 +97,8 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
             )
         },
         floatingActionButton = {
-            val showFab = state.draft != null && !state.editMode && !state.isLoading && !state.notFound
+            val showFab =
+                state.draft != null && !state.editMode && !state.isLoading && !state.notFound
             if (showFab) {
                 FloatingActionButton(onClick = component::onEnterEditMode) {
                     Icon(
@@ -110,7 +110,9 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
         },
         snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(snackbarData = it) } },
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)) {
             val draft = state.draft
             when {
                 state.isLoading -> CenteredSpinner()
@@ -161,7 +163,10 @@ private fun TopActions(
         enabled = !state.isSaving && state.isDirty,
     ) {
         if (state.isSaving) {
-            CircularProgressIndicator(modifier = Modifier.size(SaveProgressSize), strokeWidth = 2.dp)
+            CircularProgressIndicator(
+                modifier = Modifier.size(SaveProgressSize),
+                strokeWidth = 2.dp
+            )
         } else {
             Text(stringResource(R.string.action_save))
         }
@@ -251,7 +256,9 @@ private fun CenteredSpinner() {
 private fun NotFoundMessage() {
     val spacing = MaterialTheme.spacing
     Box(
-        modifier = Modifier.fillMaxSize().padding(spacing.large),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(spacing.large),
         contentAlignment = Alignment.Center,
     ) {
         Text(

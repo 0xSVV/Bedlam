@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -89,7 +88,9 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
                     .padding(horizontal = spacing.large, vertical = spacing.small),
             )
 
-            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            Box(modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)) {
                 val visible = state.visibleEntries
                 if (visible.isEmpty()) {
                     EmptyState(isPaused = state.isPaused)
@@ -216,7 +217,9 @@ private fun LevelFilterRow(
 private fun EmptyState(isPaused: Boolean) {
     val spacing = MaterialTheme.spacing
     Box(
-        modifier = Modifier.fillMaxSize().padding(spacing.large),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(spacing.large),
         contentAlignment = Alignment.Center,
     ) {
         Text(

@@ -183,6 +183,7 @@ private fun LatencyLabel(latency: LatencyResult) {
             latency.ms < 300 -> MaterialTheme.colorScheme.secondary
             else -> MaterialTheme.colorScheme.error
         }
+
         LatencyResult.Unreachable -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }

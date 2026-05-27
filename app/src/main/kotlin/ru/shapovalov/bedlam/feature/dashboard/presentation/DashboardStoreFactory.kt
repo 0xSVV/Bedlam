@@ -23,12 +23,20 @@ class DashboardStoreFactory(
     private val pingProfile: PingProfileUseCase,
 ) {
     fun create(): DashboardStore =
-        object : DashboardStore, Store<DashboardStore.Intent, DashboardStore.State, DashboardStore.Label>
-        by storeFactory.create(
-            name = "DashboardStore",
-            initialState = DashboardStore.State(connectionState = client.state.value),
-            bootstrapper = DashboardBootstrapper(getProfiles, observeActiveId, client),
-            executorFactory = { DashboardExecutor(setActiveProfile, deleteProfile, importFromUri, pingProfile) },
-            reducer = DashboardReducer,
-        ) {}
+        object : DashboardStore,
+            Store<DashboardStore.Intent, DashboardStore.State, DashboardStore.Label>
+            by storeFactory.create(
+                name = "DashboardStore",
+                initialState = DashboardStore.State(connectionState = client.state.value),
+                bootstrapper = DashboardBootstrapper(getProfiles, observeActiveId, client),
+                executorFactory = {
+                    DashboardExecutor(
+                        setActiveProfile,
+                        deleteProfile,
+                        importFromUri,
+                        pingProfile
+                    )
+                },
+                reducer = DashboardReducer,
+            ) {}
 }

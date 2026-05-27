@@ -21,7 +21,9 @@ class ProfileConfigComponent(
 
     fun onEnterEditMode() = store.accept(ProfileConfigStore.Intent.EnterEditMode)
     fun onDiscardChanges() = store.accept(ProfileConfigStore.Intent.DiscardChanges)
-    fun onDraftChanged(config: HysteriaConfig) = store.accept(ProfileConfigStore.Intent.UpdateDraft(config))
+    fun onDraftChanged(config: HysteriaConfig) =
+        store.accept(ProfileConfigStore.Intent.UpdateDraft(config))
+
     fun onSave() = store.accept(ProfileConfigStore.Intent.Save)
     fun onRequestDelete() = store.accept(ProfileConfigStore.Intent.RequestDelete)
     fun onCancelDelete() = store.accept(ProfileConfigStore.Intent.CancelDelete)
@@ -29,5 +31,7 @@ class ProfileConfigComponent(
     fun onDismissError() = store.accept(ProfileConfigStore.Intent.DismissError)
     fun onBackPressed() = onBack.invoke()
 
-    fun interface OnBack { fun invoke() }
+    fun interface OnBack {
+        fun invoke()
+    }
 }

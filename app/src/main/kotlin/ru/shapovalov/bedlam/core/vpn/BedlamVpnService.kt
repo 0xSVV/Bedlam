@@ -44,8 +44,10 @@ class BedlamVpnService : VpnService() {
     private var networkObserver: UnderlyingNetworkObserver? = null
     private var notificationJob: Job? = null
 
-    @Volatile private var currentRoutePlan: RoutePlan? = null
-    @Volatile private var connectionName: String = ""
+    @Volatile
+    private var currentRoutePlan: RoutePlan? = null
+    @Volatile
+    private var connectionName: String = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -71,6 +73,7 @@ class BedlamVpnService : VpnService() {
                 stop()
                 return START_NOT_STICKY
             }
+
             ACTION_RECONNECT -> {
                 scope.launch {
                     runCatching { client.resetConnections() }

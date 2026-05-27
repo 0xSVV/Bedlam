@@ -1,7 +1,9 @@
 package ru.shapovalov.hysteria.api
 
 data class TunConfig(val mtu: Int = DEFAULT_MTU) {
-    init { require(mtu in MIN_MTU..MAX_MTU) { "MTU out of range: $mtu" } }
+    init {
+        require(mtu in MIN_MTU..MAX_MTU) { "MTU out of range: $mtu" }
+    }
 
     companion object {
         const val DEFAULT_MTU: Int = 1280

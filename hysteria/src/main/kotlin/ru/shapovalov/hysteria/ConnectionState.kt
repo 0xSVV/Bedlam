@@ -12,7 +12,8 @@ import ru.shapovalov.hysteria.api.DisconnectReason
  */
 sealed interface ConnectionState {
     /** No active tunnel. Carries the reason if a previous session ended. */
-    data class Disconnected(val reason: DisconnectReason = DisconnectReason.NEVER_STARTED) : ConnectionState
+    data class Disconnected(val reason: DisconnectReason = DisconnectReason.NEVER_STARTED) :
+        ConnectionState
 
     /** Initial dial in progress. */
     data object Connecting : ConnectionState

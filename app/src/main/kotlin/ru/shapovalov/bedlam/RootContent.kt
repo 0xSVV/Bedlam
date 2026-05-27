@@ -21,14 +21,14 @@ import com.arkivanov.decompose.extensions.compose.stack.Children
 import com.arkivanov.decompose.extensions.compose.stack.animation.fade
 import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
-import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponent.Child as DashboardChild
 import ru.shapovalov.bedlam.feature.dashboard.ui.DashboardContainerContent
 import ru.shapovalov.bedlam.feature.logs.ui.LogsContent
-import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child as SettingsChild
 import ru.shapovalov.bedlam.feature.settings.ui.SettingsContent
 import ru.shapovalov.bedlam.navigation.RootComponent
 import ru.shapovalov.bedlam.navigation.RootComponent.Child
 import ru.shapovalov.bedlam.navigation.RootComponent.Tab
+import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponent.Child as DashboardChild
+import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child as SettingsChild
 
 @Composable
 fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
@@ -79,6 +79,7 @@ private fun Child.shouldShowBottomNavigation(): Boolean = when (this) {
         val dashboardStack by component.childStack.subscribeAsState()
         dashboardStack.active.instance is DashboardChild.Root
     }
+
     is Child.Logs -> true
     is Child.Settings -> {
         val settingsStack by component.childStack.subscribeAsState()

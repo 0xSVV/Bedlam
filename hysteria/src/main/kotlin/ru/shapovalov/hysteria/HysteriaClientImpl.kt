@@ -42,12 +42,16 @@ class HysteriaClientImpl : HysteriaClient {
     )
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
-    @Volatile private var session: Session? = null
+    @Volatile
+    private var session: Session? = null
     private val sessionLock = Mutex()
 
-    @Volatile private var serverAddress: String = ""
-    @Volatile private var tunReady: Boolean = false
-    @Volatile private var sessionStartMillis: Long = 0L
+    @Volatile
+    private var serverAddress: String = ""
+    @Volatile
+    private var tunReady: Boolean = false
+    @Volatile
+    private var sessionStartMillis: Long = 0L
 
     private val pendingConnect = AtomicReference<ConnectionInfo?>(null)
     private val lastConnectInfo = AtomicReference<ConnectionInfo?>(null)
@@ -78,6 +82,7 @@ class HysteriaClientImpl : HysteriaClient {
             is ConnectionState.Connecting,
             is ConnectionState.Connected,
             is ConnectionState.Reconnecting -> throw IllegalStateException("client already $current")
+
             is ConnectionState.Disconnected, is ConnectionState.Error -> Unit
         }
         if (session != null) throw IllegalStateException("session already exists")

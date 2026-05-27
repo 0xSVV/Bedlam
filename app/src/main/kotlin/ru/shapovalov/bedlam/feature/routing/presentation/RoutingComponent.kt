@@ -24,13 +24,18 @@ class RoutingComponent(
     fun onSetBypassLan(v: Boolean) = store.accept(RoutingStore.Intent.SetBypassLan(v))
     fun onSetIpv6Mode(m: Ipv6Mode) = store.accept(RoutingStore.Intent.SetIpv6Mode(m))
     fun onSetDnsMode(m: DnsMode) = store.accept(RoutingStore.Intent.SetDnsMode(m))
-    fun onSetCustomDns(servers: List<String>) = store.accept(RoutingStore.Intent.SetCustomDns(servers))
+    fun onSetCustomDns(servers: List<String>) =
+        store.accept(RoutingStore.Intent.SetCustomDns(servers))
+
     fun onAddSource(source: DirectRouteSource) = store.accept(RoutingStore.Intent.AddSource(source))
     fun onRemoveSource(id: String) = store.accept(RoutingStore.Intent.RemoveSource(id))
     fun onSetSourceEnabled(id: String, enabled: Boolean) =
         store.accept(RoutingStore.Intent.SetSourceEnabled(id, enabled))
+
     fun onAddPreset(presetId: String) = store.accept(RoutingStore.Intent.AddPreset(presetId))
     fun onRefreshAll() = store.accept(RoutingStore.Intent.RefreshAll)
 
-    fun interface OnBack { fun invoke() }
+    fun interface OnBack {
+        fun invoke()
+    }
 }

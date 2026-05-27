@@ -18,6 +18,7 @@ class DefaultNetworkListener(
             if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) return
             onChanged(network)
         }
+
         override fun onLost(network: Network) = onChanged(null)
     }
 

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+
     <style name="Theme.Bedlam.SplashOverlay" parent="Theme.SplashScreen">
         <item name="windowSplashScreenAnimatedIcon">@drawable/bedlam_splash_icon</item>
         <item name="windowSplashScreenBackground">@color/bedlam_splash_background</item>

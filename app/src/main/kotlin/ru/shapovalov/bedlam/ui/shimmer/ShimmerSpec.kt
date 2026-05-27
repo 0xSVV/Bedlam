@@ -1,6 +1,5 @@
 package ru.shapovalov.bedlam.ui.shimmer
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationConstants.DefaultDurationMillis
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.KeyframesSpec

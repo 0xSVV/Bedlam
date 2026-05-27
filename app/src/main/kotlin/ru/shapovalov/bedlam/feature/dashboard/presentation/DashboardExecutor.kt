@@ -4,7 +4,6 @@ import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.latency.PingProfileUseCase
-import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileFromUriUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
@@ -19,8 +18,20 @@ internal class DashboardExecutor(
 
     override fun executeAction(action: Action) {
         when (action) {
-            is Action.ProfilesLoaded -> dispatch(Msg.ProfilesLoaded(action.profiles, action.activeId))
-            is Action.ConnectionStateChanged -> dispatch(Msg.ConnectionChanged(action.state, action.connectedSinceMillis))
+            is Action.ProfilesLoaded -> dispatch(
+                Msg.ProfilesLoaded(
+                    action.profiles,
+                    action.activeId
+                )
+            )
+
+            is Action.ConnectionStateChanged -> dispatch(
+                Msg.ConnectionChanged(
+                    action.state,
+                    action.connectedSinceMillis
+                )
+            )
+
             Action.TunnelConnected -> pingActiveProfile()
         }
     }

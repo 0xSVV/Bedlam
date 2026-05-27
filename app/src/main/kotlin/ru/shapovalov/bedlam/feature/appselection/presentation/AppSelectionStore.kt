@@ -24,7 +24,7 @@ interface AppSelectionStore : Store<AppSelectionStore.Intent, AppSelectionStore.
                 val base = if (query.isBlank()) apps
                 else apps.filter {
                     it.label.contains(query, ignoreCase = true) ||
-                        it.packageName.contains(query, ignoreCase = true)
+                            it.packageName.contains(query, ignoreCase = true)
                 }
                 return base.sortedBy { it.packageName !in selectedPackages }
             }

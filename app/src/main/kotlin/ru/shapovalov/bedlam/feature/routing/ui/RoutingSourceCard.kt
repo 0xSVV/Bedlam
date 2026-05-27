@@ -81,6 +81,7 @@ internal fun SwipeableSourceCard(
                     latestOnDelete(latestResolved.source.id)
                     true
                 }
+
                 SwipeToDismissBoxValue.StartToEnd -> {
                     if (armed) {
                         armed = false
@@ -88,6 +89,7 @@ internal fun SwipeableSourceCard(
                     }
                     false
                 }
+
                 SwipeToDismissBoxValue.Settled -> false
             }
         },
@@ -107,7 +109,12 @@ internal fun SwipeableSourceCard(
     ) {
         SwipeToDismissBox(
             state = state,
-            backgroundContent = { SwipeBackground(state.dismissDirection, resolved.source.enabled) },
+            backgroundContent = {
+                SwipeBackground(
+                    state.dismissDirection,
+                    resolved.source.enabled
+                )
+            },
             gesturesEnabled = !expanded,
             content = {
                 SourceRowContent(
@@ -135,6 +142,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
             ),
             align = Alignment.CenterStart,
         )
+
         SwipeToDismissBoxValue.EndToStart -> SwipeBgSpec(
             bg = MaterialTheme.colorScheme.errorContainer,
             fg = MaterialTheme.colorScheme.onErrorContainer,
@@ -142,6 +150,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
             label = stringResource(R.string.routing_sources_delete_cd),
             align = Alignment.CenterEnd,
         )
+
         SwipeToDismissBoxValue.Settled -> return
     }
     Box(
@@ -288,7 +297,11 @@ private fun SourceDetails(resolved: ResolvedSource) {
                 val v4 = resolved.cidrs.count { it is Cidr.V4 }
                 val v6 = resolved.cidrs.count { it is Cidr.V6 }
                 Text(
-                    text = stringResource(R.string.routing_source_details_networks_breakdown, v4, v6),
+                    text = stringResource(
+                        R.string.routing_source_details_networks_breakdown,
+                        v4,
+                        v6
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -370,7 +383,11 @@ private fun resolutionSummary(resolved: ResolvedSource, isRefreshing: Boolean): 
         return stringResource(R.string.routing_source_pending)
     }
     val updated = resolved.lastResolvedMillis?.let { formatRelative(it) }
-    return if (updated != null) stringResource(R.string.routing_source_count_with_time, count, updated)
+    return if (updated != null) stringResource(
+        R.string.routing_source_count_with_time,
+        count,
+        updated
+    )
     else stringResource(R.string.routing_source_count, count)
 }
 

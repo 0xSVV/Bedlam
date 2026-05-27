@@ -73,7 +73,7 @@ private fun rebuildRoutingConfig(db: SupportSQLiteDatabase) {
     )
     db.execSQL(
         "INSERT INTO routing_config_new (id, bypassLan, ipv6Mode, dnsMode, customDnsCsv) " +
-            "SELECT id, bypassLan, ipv6Mode, dnsMode, customDnsCsv FROM routing_config"
+                "SELECT id, bypassLan, ipv6Mode, dnsMode, customDnsCsv FROM routing_config"
     )
     db.execSQL("DROP TABLE routing_config")
     db.execSQL("ALTER TABLE routing_config_new RENAME TO routing_config")

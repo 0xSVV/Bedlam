@@ -20,8 +20,8 @@ class RefreshRouteSourcesUseCase(
             .filter { it.source !is DirectRouteSource.Cidr }
             .filter {
                 staleAfterMillis == null ||
-                    it.lastResolvedMillis == null ||
-                    (now - it.lastResolvedMillis) > staleAfterMillis
+                        it.lastResolvedMillis == null ||
+                        (now - it.lastResolvedMillis) > staleAfterMillis
             }
         coroutineScope {
             sources.map { resolved ->
