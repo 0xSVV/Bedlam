@@ -92,7 +92,7 @@ class BedlamVpnService : VpnService() {
         startNetworkObserver()
         startNotificationLoop()
         launchTunnel(config)
-        return START_NOT_STICKY
+        return START_REDELIVER_INTENT
     }
 
     private fun parseConfig(intent: Intent?): HysteriaConfig? {
