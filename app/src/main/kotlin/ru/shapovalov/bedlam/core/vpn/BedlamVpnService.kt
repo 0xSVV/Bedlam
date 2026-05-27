@@ -72,7 +72,10 @@ class BedlamVpnService : VpnService() {
                 return START_NOT_STICKY
             }
             ACTION_RECONNECT -> {
-                scope.launch { runCatching { client.resetConnections() } }
+                scope.launch {
+                    runCatching { client.resetConnections() }
+                        .onFailure { Log.w(TAG, "resetConnections failed", it) }
+                }
                 return START_NOT_STICKY
             }
         }
@@ -145,6 +148,7 @@ class BedlamVpnService : VpnService() {
         releaseForegroundResources()
         scope.launch {
             runCatching { client.stop(reason) }
+                .onFailure { Log.w(TAG, "client.stop failed", it) }
             stopSelf()
         }
     }
@@ -179,7 +183,10 @@ class BedlamVpnService : VpnService() {
             scope = scope,
             onAvailable = { network -> setUnderlyingNetworks(network?.let { arrayOf(it) }) },
             onSettledChange = {
-                scope.launch { runCatching { client.resetConnections() } }
+                scope.launch {
+                    runCatching { client.resetConnections() }
+                        .onFailure { Log.w(TAG, "resetConnections failed", it) }
+                }
             },
         ).also { it.start() }
     }
