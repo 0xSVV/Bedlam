@@ -65,6 +65,12 @@ sealed interface Cidr {
             }
         }
 
+        fun parseV4(s: String): V4 = parse(s) as? V4
+            ?: throw IllegalArgumentException("Expected IPv4 CIDR: $s")
+
+        fun parseV6(s: String): V6 = parse(s) as? V6
+            ?: throw IllegalArgumentException("Expected IPv6 CIDR: $s")
+
         fun parseOrNull(s: String): Cidr? = runCatching { parse(s) }.getOrNull()
     }
 }

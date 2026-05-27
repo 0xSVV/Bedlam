@@ -105,7 +105,7 @@ class RoutePlanner(
         private const val TAG = "RoutePlanner"
         const val DEFAULT_MAX_TOTAL_ROUTES: Int = 8192
 
-        val IPV4_DEFAULT: Cidr.V4 = Cidr.parse("0.0.0.0/0") as Cidr.V4
-        val IPV6_DEFAULT: Cidr.V6 = Cidr.parse("::/0") as Cidr.V6
+        val IPV4_DEFAULT: Cidr.V4 = Cidr.parseV4("0.0.0.0/0")
+        val IPV6_DEFAULT: Cidr.V6 = Cidr.parseV6("::/0")
     }
 }

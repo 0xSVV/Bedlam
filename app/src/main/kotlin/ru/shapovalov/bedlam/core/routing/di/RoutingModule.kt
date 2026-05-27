@@ -25,7 +25,7 @@ interface RoutingModule {
     @Provides
     fun provideRoutePlanner(): RoutePlanner = RoutePlanner(
         supportsExcludeRoute = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
-        tunPrefixV4 = Cidr.parse(TunConfig.IPV4_CIDR) as Cidr.V4,
-        tunPrefixV6 = Cidr.parse(TunConfig.IPV6_CIDR) as Cidr.V6,
+        tunPrefixV4 = Cidr.parseV4(TunConfig.IPV4_CIDR),
+        tunPrefixV6 = Cidr.parseV6(TunConfig.IPV6_CIDR),
     )
 }

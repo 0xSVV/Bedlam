@@ -12,11 +12,11 @@ object LanRanges {
         "100.64.0.0/10",
         "224.0.0.0/4",
         "255.255.255.255/32",
-    ).map { Cidr.parse(it) as Cidr.V4 }
+    ).map { Cidr.parseV4(it) }
 
     val IPV6: List<Cidr.V6> = listOf(
         "fc00::/7",
         "fe80::/10",
         "ff00::/8",
-    ).map { Cidr.parse(it) as Cidr.V6 }
+    ).map { Cidr.parseV6(it) }
 }
