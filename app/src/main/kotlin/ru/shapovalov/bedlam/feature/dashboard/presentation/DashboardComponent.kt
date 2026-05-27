@@ -1,17 +1,13 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import com.arkivanov.decompose.ComponentContext
-import com.arkivanov.essenty.lifecycle.doOnDestroy
 import com.arkivanov.mvikotlin.core.instancekeeper.getStore
 import com.arkivanov.mvikotlin.extensions.coroutines.labels
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.util.componentScope
 
 class DashboardComponent(
     componentContext: ComponentContext,
@@ -23,7 +19,7 @@ class DashboardComponent(
 ) : ComponentContext by componentContext {
 
     private val store = instanceKeeper.getStore { storeFactory.create() }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = componentScope()
 
     val state: StateFlow<DashboardStore.State> = store.stateFlow(scope)
 
@@ -36,7 +32,6 @@ class DashboardComponent(
                 }
             }
         }
-        lifecycle.doOnDestroy { scope.cancel() }
     }
 
     fun onToggleConnection() = store.accept(DashboardStore.Intent.ToggleConnection)

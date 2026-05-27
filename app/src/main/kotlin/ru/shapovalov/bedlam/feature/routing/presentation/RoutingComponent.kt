@@ -1,17 +1,13 @@
 package ru.shapovalov.bedlam.feature.routing.presentation
 
 import com.arkivanov.decompose.ComponentContext
-import com.arkivanov.essenty.lifecycle.doOnDestroy
 import com.arkivanov.mvikotlin.core.instancekeeper.getStore
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
 import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
+import ru.shapovalov.bedlam.core.util.componentScope
 
 class RoutingComponent(
     componentContext: ComponentContext,
@@ -20,13 +16,9 @@ class RoutingComponent(
 ) : ComponentContext by componentContext {
 
     private val store = instanceKeeper.getStore { storeFactory.create() }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = componentScope()
 
     val state: StateFlow<RoutingStore.State> = store.stateFlow(scope)
-
-    init {
-        lifecycle.doOnDestroy { scope.cancel() }
-    }
 
     fun onBackPressed() = onBack.invoke()
     fun onSetBypassLan(v: Boolean) = store.accept(RoutingStore.Intent.SetBypassLan(v))

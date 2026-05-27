@@ -1,14 +1,10 @@
 package ru.shapovalov.bedlam.feature.profileconfig.presentation
 
 import com.arkivanov.decompose.ComponentContext
-import com.arkivanov.essenty.lifecycle.doOnDestroy
 import com.arkivanov.mvikotlin.core.instancekeeper.getStore
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
+import ru.shapovalov.bedlam.core.util.componentScope
 import ru.shapovalov.hysteria.config.HysteriaConfig
 
 class ProfileConfigComponent(
@@ -19,13 +15,9 @@ class ProfileConfigComponent(
 ) : ComponentContext by componentContext {
 
     private val store = instanceKeeper.getStore { storeFactory.create(profileId) }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = componentScope()
 
     val state: StateFlow<ProfileConfigStore.State> = store.stateFlow(scope)
-
-    init {
-        lifecycle.doOnDestroy { scope.cancel() }
-    }
 
     fun onEnterEditMode() = store.accept(ProfileConfigStore.Intent.EnterEditMode)
     fun onDiscardChanges() = store.accept(ProfileConfigStore.Intent.DiscardChanges)
