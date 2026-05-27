@@ -101,8 +101,8 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
         ) {
             val cardState: CardState = when {
                 state.isLoading -> CardState.Loading
-                state.errorMessage != null -> CardState.Error(state.errorMessage!!)
-                state.info != null -> CardState.Success(state.info!!)
+                state.errorMessage != null -> CardState.Error(state.errorMessage)
+                state.info != null -> CardState.Success(state.info)
                 else -> CardState.Loading
             }
 

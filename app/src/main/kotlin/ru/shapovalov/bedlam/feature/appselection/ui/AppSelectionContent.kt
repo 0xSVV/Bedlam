@@ -357,9 +357,9 @@ private fun AppRow(
         },
         leadingContent = {
             Box(modifier = Modifier.size(AppIconSize), contentAlignment = Alignment.Center) {
-                if (iconBitmap != null) {
+                iconBitmap?.let { bitmap ->
                     Image(
-                        bitmap = iconBitmap!!,
+                        bitmap = bitmap,
                         contentDescription = null,
                         modifier = Modifier.size(AppIconSize),
                     )

@@ -115,7 +115,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 state.isLoading -> CenteredSpinner()
                 state.notFound -> NotFoundMessage()
                 state.draft != null -> ConfigBody(
-                    draft = state.draft!!,
+                    draft = state.draft,
                     editMode = state.editMode,
                     onDraftChanged = component::onDraftChanged,
                 )
