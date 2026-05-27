@@ -43,6 +43,7 @@ class BedlamVpnService : VpnService() {
     private lateinit var wakeLock: WakeLockHolder
     private var networkObserver: UnderlyingNetworkObserver? = null
     private var notificationJob: Job? = null
+    private var reconnectTimeoutJob: Job? = null
 
     @Volatile
     private var currentRoutePlan: RoutePlan? = null
@@ -91,6 +92,7 @@ class BedlamVpnService : VpnService() {
         wakeLock.acquire()
         startNetworkObserver()
         startNotificationLoop()
+        startReconnectWatchdog()
         launchTunnel(config)
         return START_REDELIVER_INTENT
     }
@@ -157,6 +159,8 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun releaseForegroundResources() {
+        reconnectTimeoutJob?.cancel()
+        reconnectTimeoutJob = null
         notificationJob?.cancel()
         notificationJob = null
         networkObserver?.stop()
@@ -194,6 +198,31 @@ class BedlamVpnService : VpnService() {
         ).also { it.start() }
     }
 
+    private fun startReconnectWatchdog() {
+        scope.launch {
+            client.state.collect { state ->
+                when (state) {
+                    is ConnectionState.Reconnecting -> {
+                        if (reconnectTimeoutJob == null) {
+                            reconnectTimeoutJob = scope.launch {
+                                delay(RECONNECT_TIMEOUT_MS)
+                                if (client.state.value is ConnectionState.Reconnecting) {
+                                    Log.w(TAG, "Reconnect timed out, stopping service")
+                                    stop()
+                                }
+                            }
+                        }
+                    }
+                    is ConnectionState.Connected -> {
+                        reconnectTimeoutJob?.cancel()
+                        reconnectTimeoutJob = null
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
     private fun startNotificationLoop() {
         notificationJob?.cancel()
         val ticker = flow {
@@ -219,6 +248,7 @@ class BedlamVpnService : VpnService() {
     companion object {
         private const val TAG = "BedlamVpn"
         private const val NOTIFICATION_REFRESH_MS = 1000L
+        private const val RECONNECT_TIMEOUT_MS = 3 * 60 * 1000L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"
