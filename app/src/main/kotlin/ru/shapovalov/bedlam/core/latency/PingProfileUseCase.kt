@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import java.io.IOException
 import java.net.ConnectException
 import java.net.InetSocketAddress
 
@@ -30,13 +31,13 @@ class PingProfileUseCase(private val context: Context) {
                     socket.connect(InetSocketAddress(host, port), TIMEOUT_MS)
                 } catch (_: ConnectException) {
                     // RST received — port closed but host responded; RTT is still valid
-                } catch (_: Exception) {
+                } catch (_: IOException) {
                     return@use LatencyResult.Unreachable
                 }
                 val ms = System.currentTimeMillis() - start
                 if (ms < TIMEOUT_MS) LatencyResult.Success(ms) else LatencyResult.Unreachable
             }
-        } catch (_: Exception) {
+        } catch (_: IOException) {
             LatencyResult.Unreachable
         }
     }
