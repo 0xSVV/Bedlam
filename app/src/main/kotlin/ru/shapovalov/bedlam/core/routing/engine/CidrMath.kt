@@ -6,16 +6,16 @@ import ru.shapovalov.bedlam.core.routing.domain.model.normalize
 object CidrMath {
 
     fun coalesce(cidrs: List<Cidr>): List<Cidr> {
-        val v4 = cidrs.filterIsInstance<Cidr.V4>().map { it as Cidr }
-        val v6 = cidrs.filterIsInstance<Cidr.V6>().map { it as Cidr }
+        val v4: List<Cidr> = cidrs.filterIsInstance<Cidr.V4>()
+        val v6: List<Cidr> = cidrs.filterIsInstance<Cidr.V6>()
         return coalesceSameFamily(v4) + coalesceSameFamily(v6)
     }
 
     fun subtract(base: List<Cidr>, exclude: List<Cidr>): List<Cidr> {
-        val baseV4 = base.filterIsInstance<Cidr.V4>().map { it as Cidr }
-        val baseV6 = base.filterIsInstance<Cidr.V6>().map { it as Cidr }
-        val excV4 = exclude.filterIsInstance<Cidr.V4>().map { it as Cidr }
-        val excV6 = exclude.filterIsInstance<Cidr.V6>().map { it as Cidr }
+        val baseV4: List<Cidr> = base.filterIsInstance<Cidr.V4>()
+        val baseV6: List<Cidr> = base.filterIsInstance<Cidr.V6>()
+        val excV4: List<Cidr> = exclude.filterIsInstance<Cidr.V4>()
+        val excV6: List<Cidr> = exclude.filterIsInstance<Cidr.V6>()
         return subtractSameFamily(baseV4, excV4) +
             subtractSameFamily(baseV6, excV6)
     }
