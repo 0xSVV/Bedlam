@@ -25,7 +25,7 @@ class SettingsComponent(
         source = navigation,
         serializer = Config.serializer(),
         initialConfiguration = Config.Root,
-        handleBackButton = true,
+        handleBackButton = false,
         childFactory = { config, ctx ->
             when (config) {
                 Config.Root -> Child.Root
@@ -38,6 +38,10 @@ class SettingsComponent(
             }
         },
     )
+
+    fun onBack() {
+        navigation.pop()
+    }
 
     fun onOpenAppSelection() {
         navigation.pushNew(Config.AppSelection)

@@ -21,10 +21,9 @@ import com.arkivanov.decompose.extensions.compose.stack.Children
 import com.arkivanov.decompose.extensions.compose.stack.animation.fade
 import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
-import ru.shapovalov.bedlam.feature.dashboard.ui.DashboardContent
+import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponent.Child as DashboardChild
+import ru.shapovalov.bedlam.feature.dashboard.ui.DashboardContainerContent
 import ru.shapovalov.bedlam.feature.logs.ui.LogsContent
-import ru.shapovalov.bedlam.feature.profileconfig.ui.ProfileConfigContent
-import ru.shapovalov.bedlam.feature.session.ui.SessionContent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child as SettingsChild
 import ru.shapovalov.bedlam.feature.settings.ui.SettingsContent
 import ru.shapovalov.bedlam.navigation.RootComponent
@@ -66,11 +65,9 @@ fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
             animation = stackAnimation(fade()),
         ) { created ->
             when (val child = created.instance) {
-                is Child.Dashboard -> DashboardContent(child.component)
+                is Child.Dashboard -> DashboardContainerContent(child.component)
                 is Child.Settings -> SettingsContent(child.component)
                 is Child.Logs -> LogsContent(child.component)
-                is Child.Session -> SessionContent(child.component)
-                is Child.ProfileConfig -> ProfileConfigContent(child.component)
             }
         }
     }
@@ -78,12 +75,15 @@ fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
 
 @Composable
 private fun Child.shouldShowBottomNavigation(): Boolean = when (this) {
-    is Child.Dashboard, is Child.Logs -> true
+    is Child.Dashboard -> {
+        val dashboardStack by component.childStack.subscribeAsState()
+        dashboardStack.active.instance is DashboardChild.Root
+    }
+    is Child.Logs -> true
     is Child.Settings -> {
         val settingsStack by component.childStack.subscribeAsState()
         settingsStack.active.instance == SettingsChild.Root
     }
-    is Child.Session, is Child.ProfileConfig -> false
 }
 
 private fun Tab.labelRes(): Int = when (this) {

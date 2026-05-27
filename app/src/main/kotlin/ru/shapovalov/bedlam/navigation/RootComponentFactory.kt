@@ -3,19 +3,15 @@ package ru.shapovalov.bedlam.navigation
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Inject
-import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponentFactory
+import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponentFactory
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponentFactory
-import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigComponentFactory
-import ru.shapovalov.bedlam.feature.session.presentation.SessionComponentFactory
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponentFactory
 
 @Inject
 class RootComponentFactory(
-    private val dashboardFactory: DashboardComponentFactory,
+    private val dashboardContainerFactory: DashboardContainerComponentFactory,
     private val settingsFactory: SettingsComponentFactory,
-    private val sessionFactory: SessionComponentFactory,
     private val logsFactory: LogsComponentFactory,
-    private val profileConfigFactory: ProfileConfigComponentFactory,
     private val json: Json,
 ) {
     fun create(
@@ -24,11 +20,9 @@ class RootComponentFactory(
         onStopVpn: RootComponent.OnStopVpn,
     ): RootComponent = RootComponent(
         componentContext,
-        dashboardFactory,
+        dashboardContainerFactory,
         settingsFactory,
-        sessionFactory,
         logsFactory,
-        profileConfigFactory,
         json,
         onStartVpn,
         onStopVpn,

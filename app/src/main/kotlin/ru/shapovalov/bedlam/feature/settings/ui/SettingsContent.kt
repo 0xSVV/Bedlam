@@ -19,8 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import com.arkivanov.decompose.ExperimentalDecomposeApi
 import com.arkivanov.decompose.extensions.compose.stack.Children
-import com.arkivanov.decompose.extensions.compose.stack.animation.slide
+import com.arkivanov.decompose.extensions.compose.stack.animation.fade
+import com.arkivanov.decompose.extensions.compose.stack.animation.predictiveback.predictiveBackAnimation
 import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.appselection.ui.AppSelectionContent
@@ -29,12 +31,17 @@ import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child
 import ru.shapovalov.bedlam.ui.theme.spacing
 
+@OptIn(ExperimentalDecomposeApi::class)
 @Composable
 fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier) {
     Children(
         stack = component.childStack,
         modifier = modifier.fillMaxSize(),
-        animation = stackAnimation(slide()),
+        animation = predictiveBackAnimation(
+            backHandler = component.backHandler,
+            fallbackAnimation = stackAnimation(fade()),
+            onBack = component::onBack,
+        ),
     ) { created ->
         when (val child = created.instance) {
             Child.Root -> SettingsRoot(
