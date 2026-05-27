@@ -50,6 +50,10 @@
     <string name="settings_routing_title">Routing</string>
     <string name="settings_routing_subtitle">LAN bypass, IPv6, DNS, direct routes by IP/ASN/domain</string>
 
+    <string name="settings_battery_title">Battery optimization</string>
+    <string name="settings_battery_subtitle_restricted">Restricted — the system may kill the tunnel while the screen is off</string>
+    <string name="settings_battery_subtitle_unrestricted">Unrestricted</string>
+
     <string name="action_back">Back</string>
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
