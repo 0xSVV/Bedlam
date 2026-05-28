@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.core.routing.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.tatarka.inject.annotations.Inject
@@ -26,9 +27,9 @@ class RoutingRepositoryImpl(
 
     override fun observe(): Flow<RoutingConfig> =
         combine(
-            dao.observeConfig(),
-            dao.observeSources(),
-            dao.observeAllResolved(),
+            dao.observeConfig().distinctUntilChanged(),
+            dao.observeSources().distinctUntilChanged(),
+            dao.observeAllResolved().distinctUntilChanged(),
         ) { cfg, sources, resolved ->
             buildConfig(cfg, sources, resolved)
         }

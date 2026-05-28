@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.core.appfilter.data
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -19,7 +20,9 @@ class AppFilterRepositoryImpl(
     private val mutex = Mutex()
 
     override fun observe(): Flow<AppFilter> =
-        dao.observe().map { it?.toAppFilter() ?: AppFilter() }
+        dao.observe()
+            .map { it?.toAppFilter() ?: AppFilter() }
+            .distinctUntilChanged()
 
     override suspend fun get(): AppFilter =
         dao.get()?.toAppFilter() ?: AppFilter()

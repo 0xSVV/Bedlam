@@ -64,10 +64,10 @@
     <string name="action_done">Done</string>
 
     <string name="routing_title">Routing</string>
-    <string name="routing_reconnect_hint">Changes take effect on the next tunnel start.</string>
+    <string name="routing_reconnect_hint">Changes apply immediately — the tunnel briefly reconnects</string>
 
     <string name="routing_bypass_lan_title">Bypass LAN</string>
-    <string name="routing_bypass_lan_subtitle">RFC1918, link-local and multicast skip the tunnel.</string>
+    <string name="routing_bypass_lan_subtitle">RFC1918, link-local and multicast skip the tunnel</string>
 
     <string name="routing_ipv6_title">IPv6</string>
     <string name="routing_ipv6_enabled">Enabled</string>
@@ -79,7 +79,7 @@
     <string name="routing_dns_cloudflare">Cloudflare</string>
     <string name="routing_dns_google">Google</string>
     <string name="routing_dns_custom">Custom</string>
-    <string name="routing_dns_system_warning">System DNS bypasses the tunnel — your LAN and ISP can see queries.</string>
+    <string name="routing_dns_system_warning">System DNS bypasses the tunnel — your LAN and ISP can see queries</string>
     <string name="routing_dns_custom_label">DNS servers</string>
     <string name="routing_dns_custom_placeholder">9.9.9.9, 149.112.112.112</string>
 
@@ -188,14 +188,14 @@
     <string name="profile_config_section_transport">Transport (port hopping)</string>
     <string name="profile_config_section_behavior">Behavior</string>
 
-    <string name="profile_config_caution_auth">Authentication credential — share carefully.</string>
-    <string name="profile_config_caution_tls_insecure">Disables certificate verification. Vulnerable to MitM.</string>
+    <string name="profile_config_caution_auth">Authentication credential — share carefully</string>
+    <string name="profile_config_caution_tls_insecure">Disables certificate verification. Vulnerable to MitM</string>
     <string name="profile_config_caution_tls_pin">Pinned hash overrides normal certificate validation.</string>
-    <string name="profile_config_caution_tls_ca">Custom CA replaces the system trust store for this profile.</string>
-    <string name="profile_config_caution_tls_client">mTLS material must match what the server expects.</string>
-    <string name="profile_config_caution_obfs">Type and password must match the server.</string>
-    <string name="profile_config_caution_quic">Tuning these can break the connection.</string>
-    <string name="profile_config_caution_congestion">Unsupported algorithm or BBR profile may be rejected.</string>
-    <string name="profile_config_caution_bandwidth">Misreporting causes congestion-control issues.</string>
-    <string name="profile_config_caution_hop">Hop intervals must agree with the server.</string>
+    <string name="profile_config_caution_tls_ca">Custom CA replaces the system trust store for this profile</string>
+    <string name="profile_config_caution_tls_client">mTLS material must match what the server expects</string>
+    <string name="profile_config_caution_obfs">Type and password must match the server</string>
+    <string name="profile_config_caution_quic">Tuning these can break the connection</string>
+    <string name="profile_config_caution_congestion">Unsupported algorithm or BBR profile may be rejected</string>
+    <string name="profile_config_caution_bandwidth">Misreporting causes congestion-control issues</string>
+    <string name="profile_config_caution_hop">Hop intervals must agree with the server</string>
 </resources>

@@ -7,18 +7,25 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.R
+import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutePlan
+import ru.shapovalov.bedlam.core.routing.domain.repository.RoutingRepository
 import ru.shapovalov.bedlam.core.routing.domain.usecase.BuildRoutePlanUseCase
 import ru.shapovalov.bedlam.core.routing.engine.RoutePlanApplier
 import ru.shapovalov.bedlam.core.vpn.notification.VpnNotificationController
@@ -38,15 +45,20 @@ class BedlamVpnService : VpnService() {
     private val json: Json by injected { json }
     private val buildRoutePlan: BuildRoutePlanUseCase by injected { buildRoutePlan }
     private val routePlanApplier: RoutePlanApplier by injected { routePlanApplier }
+    private val routingRepository: RoutingRepository by injected { routingRepository }
+    private val appFilterRepository: AppFilterRepository by injected { appFilterRepository }
 
     private lateinit var notifications: VpnNotificationController
     private lateinit var wakeLock: WakeLockHolder
     private var networkObserver: UnderlyingNetworkObserver? = null
     private var notificationJob: Job? = null
     private var reconnectTimeoutJob: Job? = null
+    private var settingsWatcherJob: Job? = null
 
     @Volatile
     private var currentRoutePlan: RoutePlan? = null
+    @Volatile
+    private var currentConfig: HysteriaConfig? = null
     @Volatile
     private var connectionName: String = ""
 
@@ -114,6 +126,7 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun launchTunnel(config: HysteriaConfig) {
+        currentConfig = config
         scope.launch {
             try {
                 currentRoutePlan = buildRoutePlan()
@@ -123,6 +136,7 @@ class BedlamVpnService : VpnService() {
                     protector = { fd -> protect(fd) },
                     tun = { tunConfig -> establishTun(tunConfig) },
                 )
+                startSettingsWatcher()
             } catch (e: Exception) {
                 Log.e(TAG, "VPN startup failed", e)
                 if (client.state.value is ConnectionState.Error) {
@@ -132,6 +146,65 @@ class BedlamVpnService : VpnService() {
                     stop()
                 }
             }
+        }
+    }
+
+    @OptIn(FlowPreview::class)
+    private fun startSettingsWatcher() {
+        settingsWatcherJob?.cancel()
+        settingsWatcherJob = scope.launch {
+            var lastPlan = currentRoutePlan
+            combine(
+                routingRepository.observe(),
+                appFilterRepository.observe(),
+            ) { _, _ -> Unit }
+                .debounce(SETTINGS_REAPPLY_DEBOUNCE_MS)
+                .collect {
+                    val newPlan = runCatching { buildRoutePlan() }.getOrNull() ?: return@collect
+                    if (newPlan == lastPlan) return@collect
+
+                    val settledState = withTimeoutOrNull(CONNECT_SETTLE_TIMEOUT_MS) {
+                        client.state.first {
+                            it is ConnectionState.Connected ||
+                                it is ConnectionState.Disconnected ||
+                                it is ConnectionState.Error
+                        }
+                    } ?: return@collect
+
+                    if (settledState !is ConnectionState.Connected) return@collect
+
+                    lastPlan = newPlan
+                    reapplyTunnel(newPlan)
+                }
+        }
+    }
+
+    private suspend fun reapplyTunnel(plan: RoutePlan) {
+        val config = currentConfig ?: return
+        try {
+            Log.i(TAG, "Reapplying tunnel after settings change")
+            reconnectTimeoutJob?.cancel()
+            reconnectTimeoutJob = null
+            currentRoutePlan = plan
+            client.stop(DisconnectReason.USER)
+            client.start(
+                config = config,
+                tunConfig = TunConfig.Default,
+                protector = { fd -> protect(fd) },
+                tun = { tunConfig -> establishTun(tunConfig) },
+            )
+            withTimeoutOrNull(REAPPLY_SETTLE_TIMEOUT_MS) {
+                client.state.first {
+                    it is ConnectionState.Connected ||
+                        it is ConnectionState.Error ||
+                        it is ConnectionState.Disconnected
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Reapply failed", e)
+            stop()
         }
     }
 
@@ -150,6 +223,7 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun stop(reason: DisconnectReason = DisconnectReason.USER) {
+        currentConfig = null
         releaseForegroundResources()
         scope.launch {
             runCatching { client.stop(reason) }
@@ -159,6 +233,8 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun releaseForegroundResources() {
+        settingsWatcherJob?.cancel()
+        settingsWatcherJob = null
         reconnectTimeoutJob?.cancel()
         reconnectTimeoutJob = null
         notificationJob?.cancel()
@@ -249,6 +325,9 @@ class BedlamVpnService : VpnService() {
         private const val TAG = "BedlamVpn"
         private const val NOTIFICATION_REFRESH_MS = 1000L
         private const val RECONNECT_TIMEOUT_MS = 3 * 60 * 1000L
+        private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
+        private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
+        private const val REAPPLY_SETTLE_TIMEOUT_MS = 15_000L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"
