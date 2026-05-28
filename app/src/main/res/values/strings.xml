@@ -51,8 +51,12 @@
     <string name="settings_routing_subtitle">LAN bypass, IPv6, DNS, direct routes by IP/ASN/domain</string>
 
     <string name="settings_battery_title">Battery optimization</string>
-    <string name="settings_battery_subtitle_restricted">Restricted — the system may kill the tunnel while the screen is off</string>
+    <string name="settings_battery_subtitle_restricted">Enable for more stable connection</string>
     <string name="settings_battery_subtitle_unrestricted">Unrestricted</string>
+    <string name="settings_battery_info_cd">About battery optimization</string>
+    <string name="settings_battery_tip_title">Why this helps</string>
+    <string name="settings_battery_tip_body">Some vendors pause apps in the background by default to save battery, which can drop the tunnel when the screen is off. Allowing background activity keeps the connection stable\n\nBedlam runs efficiently and this won\'t noticeably affect battery life</string>
+    <string name="action_got_it">Got it</string>
 
     <string name="action_back">Back</string>
     <string name="action_save">Save</string>

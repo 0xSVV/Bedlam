@@ -2,7 +2,6 @@ package ru.shapovalov.bedlam.feature.settings.ui
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.clickable
@@ -17,22 +16,27 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.arkivanov.decompose.ExperimentalDecomposeApi
 import com.arkivanov.decompose.extensions.compose.stack.Children
 import com.arkivanov.decompose.extensions.compose.stack.animation.fade
@@ -78,7 +82,8 @@ private fun SettingsRoot(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .padding(top = MaterialTheme.spacing.small),
     ) {
         SettingsRow(
             title = stringResource(R.string.settings_apps_title),
@@ -117,24 +122,62 @@ private fun BatteryOptimizationRow(modifier: Modifier = Modifier) {
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    SettingsRow(
-        title = stringResource(R.string.settings_battery_title),
-        subtitle = stringResource(
-            if (unrestricted) R.string.settings_battery_subtitle_unrestricted
-            else R.string.settings_battery_subtitle_restricted,
-        ),
-        onClick = {
-            if (!unrestricted) {
-                @Suppress("BatteryLife")
-                val intent = Intent(
-                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    Uri.parse("package:${context.packageName}"),
-                )
-                context.startActivity(intent)
+    var showInfoDialog by rememberSaveable { mutableStateOf(false) }
+    val spacing = MaterialTheme.spacing
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable {
+                if (!unrestricted) {
+                    @Suppress("BatteryLife")
+                    val intent = Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        "package:${context.packageName}".toUri(),
+                    )
+                    context.startActivity(intent)
+                }
             }
-        },
-        modifier = modifier,
-    )
+            .padding(horizontal = spacing.large, vertical = spacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.settings_battery_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.size(spacing.xSmall))
+            Text(
+                text = stringResource(
+                    if (unrestricted) R.string.settings_battery_subtitle_unrestricted
+                    else R.string.settings_battery_subtitle_restricted,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (unrestricted) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.error,
+            )
+        }
+        Icon(
+            modifier = Modifier.clickable(onClick = {
+                showInfoDialog = true
+            }),
+            imageVector = Icons.Default.Info,
+            contentDescription = stringResource(R.string.settings_battery_info_cd),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    if (showInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showInfoDialog = false },
+            title = { Text(stringResource(R.string.settings_battery_tip_title)) },
+            text = { Text(stringResource(R.string.settings_battery_tip_body)) },
+            confirmButton = {
+                TextButton(onClick = { showInfoDialog = false }) {
+                    Text(stringResource(R.string.action_got_it))
+                }
+            },
+        )
+    }
 }
 
 @Composable
