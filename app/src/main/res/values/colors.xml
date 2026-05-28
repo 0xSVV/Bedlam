@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bedlam_notification_color">#FF3E9C</color>
     <color name="bedlam_splash_background">#0A0410</color>
 </resources>

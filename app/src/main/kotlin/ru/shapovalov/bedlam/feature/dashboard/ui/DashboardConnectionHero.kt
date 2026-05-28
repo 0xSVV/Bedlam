@@ -157,7 +157,7 @@ internal fun ConnectionHero(
         )
         Spacer(Modifier.height(spacing.xSmall))
         Text(
-            text = formatDuration(elapsedSeconds.value),
+            text = formatDuration(elapsedSeconds.longValue),
             style = MaterialTheme.typography.displayMediumEmphasized.copy(
                 fontFeatureSettings = "tnum",
             ),

@@ -5,6 +5,7 @@ import android.net.IpPrefix
 import android.net.VpnService
 import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
@@ -56,6 +57,7 @@ class RoutePlanApplier {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun excludeRouteSafely(builder: VpnService.Builder, cidr: Cidr) {
         try {
             builder.excludeRoute(cidr.toIpPrefix())
@@ -74,6 +76,7 @@ class RoutePlanApplier {
 
     private fun Cidr.toInetAddress(): InetAddress = InetAddress.getByAddress(networkBytes)
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun Cidr.toIpPrefix(): IpPrefix = IpPrefix(toInetAddress(), prefixLength)
 
     companion object {

@@ -74,6 +74,7 @@ internal fun SwipeableSourceCard(
 
     var armed by remember { mutableStateOf(true) }
 
+    @Suppress("DEPRECATION")
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
