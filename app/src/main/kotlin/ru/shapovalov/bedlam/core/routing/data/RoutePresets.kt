@@ -50,7 +50,16 @@ object RoutePresets {
                 RoutePreset.AsnEntry(13335, "Cloudflare"),
             ),
         ),
-    )
+        RoutePreset(
+            id = "google",
+            name = "Google",
+            description = "Google services and Google Cloud.",
+            asns = listOf(
+                RoutePreset.AsnEntry(15169, "Google"),
+                RoutePreset.AsnEntry(396982, "Google Cloud"),
+                RoutePreset.AsnEntry(36492, "Google"),
+            ),
+    ),
 
     fun byId(id: String): RoutePreset? = ALL.firstOrNull { it.id == id }
 }
