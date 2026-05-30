@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -20,10 +21,16 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
+import ru.shapovalov.bedlam.core.power.domain.model.AlwaysOnVpnState
+import ru.shapovalov.bedlam.core.power.domain.repository.PowerReliabilityRepository
+import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutePlan
 import ru.shapovalov.bedlam.core.routing.domain.repository.RoutingRepository
 import ru.shapovalov.bedlam.core.routing.domain.usecase.BuildRoutePlanUseCase
@@ -47,11 +54,20 @@ class BedlamVpnService : VpnService() {
     private val routePlanApplier: RoutePlanApplier by injected { routePlanApplier }
     private val routingRepository: RoutingRepository by injected { routingRepository }
     private val appFilterRepository: AppFilterRepository by injected { appFilterRepository }
+    private val profileRepository: ProfileRepository by injected { profileRepository }
+    private val powerReliabilityRepository: PowerReliabilityRepository by injected {
+        powerReliabilityRepository
+    }
 
     private lateinit var notifications: VpnNotificationController
     private lateinit var wakeLock: WakeLockHolder
     private var networkObserver: UnderlyingNetworkObserver? = null
     private var notificationJob: Job? = null
+
+    @Volatile
+    private var startJob: Job? = null
+    private val startMutex = Mutex()
+    private var reconnectWatchdogJob: Job? = null
     private var reconnectTimeoutJob: Job? = null
     private var settingsWatcherJob: Job? = null
 
@@ -61,18 +77,27 @@ class BedlamVpnService : VpnService() {
     private var currentConfig: HysteriaConfig? = null
     @Volatile
     private var connectionName: String = ""
+    @Volatile
+    private var lastAlwaysOnVpnState: AlwaysOnVpnState? = null
+    @Volatile
+    private var lastAlwaysOnVpnStateWriteMillis: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
         notifications = VpnNotificationController(this)
         wakeLock = WakeLockHolder(this, scope)
         notifications.createChannel()
+        scheduleAlwaysOnVpnStateUpdate()
     }
 
     override fun onRevoke() = stop(DisconnectReason.REVOKED)
 
     override fun onDestroy() {
+        startJob?.cancel()
         notificationJob?.cancel()
+        reconnectWatchdogJob?.cancel()
+        reconnectTimeoutJob?.cancel()
+        settingsWatcherJob?.cancel()
         networkObserver?.stop()
         wakeLock.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -96,7 +121,11 @@ class BedlamVpnService : VpnService() {
             }
         }
 
-        val config = parseConfig(intent) ?: return START_NOT_STICKY
+        if (startJob?.isActive == true) {
+            Log.i(TAG, "Ignoring VPN start while startup is already in progress")
+            return START_REDELIVER_INTENT
+        }
+
         connectionName = intent?.getStringExtra(EXTRA_PROFILE_NAME).orEmpty()
         notifications.connectionName = connectionName
 
@@ -105,46 +134,82 @@ class BedlamVpnService : VpnService() {
         startNetworkObserver()
         startNotificationLoop()
         startReconnectWatchdog()
-        launchTunnel(config)
+
+        scheduleAlwaysOnVpnStateUpdate()
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            startMutex.withLock {
+                val request = resolveStartRequest(intent)
+                if (request == null) {
+                    Log.e(TAG, "No VPN config provided and no active profile is saved")
+                    releaseAndStopSelf(startId)
+                    return@withLock
+                }
+
+                if (client.state.value.isActiveTunnel()) {
+                    if (currentConfig == request.config) {
+                        updateConnectionName(request.profileName)
+                        Log.i(TAG, "Ignoring duplicate VPN start while tunnel is active")
+                    } else {
+                        Log.w(TAG, "Ignoring VPN start for a different config while tunnel is active")
+                    }
+                    return@withLock
+                }
+
+                updateConnectionName(request.profileName)
+                launchTunnel(request.config)
+            }
+        }
+        startJob = job
+        job.invokeOnCompletion {
+            if (startJob === job) startJob = null
+        }
+        job.start()
         return START_REDELIVER_INTENT
     }
 
-    private fun parseConfig(intent: Intent?): HysteriaConfig? {
+    private suspend fun resolveStartRequest(intent: Intent?): StartRequest? {
         val configJson = intent?.getStringExtra(EXTRA_CONFIG_JSON)
-        if (configJson.isNullOrEmpty()) {
-            Log.e(TAG, "No config provided")
-            stopSelf()
-            return null
+        if (!configJson.isNullOrEmpty()) {
+            val config = decodeConfig(configJson) ?: return null
+            return StartRequest(
+                config = config,
+                profileName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty(),
+            )
         }
+
+        val activeId = profileRepository.getActiveId() ?: return null
+        val profile = profileRepository.get(activeId) ?: return null
+        return StartRequest(config = profile.config, profileName = profile.name)
+    }
+
+    private fun decodeConfig(configJson: String): HysteriaConfig? {
         return try {
             json.decodeFromString<HysteriaConfig>(configJson)
         } catch (e: Exception) {
             Log.e(TAG, "Invalid config JSON", e)
-            stopSelf()
             null
         }
     }
 
-    private fun launchTunnel(config: HysteriaConfig) {
+    private suspend fun launchTunnel(config: HysteriaConfig) {
         currentConfig = config
-        scope.launch {
-            try {
-                currentRoutePlan = buildRoutePlan()
-                client.start(
-                    config = config,
-                    tunConfig = TunConfig.Default,
-                    protector = { fd -> protect(fd) },
-                    tun = { tunConfig -> establishTun(tunConfig) },
-                )
-                startSettingsWatcher()
-            } catch (e: Exception) {
-                Log.e(TAG, "VPN startup failed", e)
-                if (client.state.value is ConnectionState.Error) {
-                    releaseForegroundResources()
-                    stopSelf()
-                } else {
-                    stop()
-                }
+        try {
+            currentRoutePlan = buildRoutePlan()
+            client.start(
+                config = config,
+                tunConfig = TunConfig.Default,
+                protector = { fd -> protect(fd) },
+                tun = { tunConfig -> establishTun(tunConfig) },
+            )
+            startSettingsWatcher()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "VPN startup failed", e)
+            if (client.state.value is ConnectionState.Error) {
+                releaseAndStopSelf()
+            } else {
+                stopAfterStartFailure()
             }
         }
     }
@@ -224,8 +289,10 @@ class BedlamVpnService : VpnService() {
 
     private fun stop(reason: DisconnectReason = DisconnectReason.USER) {
         currentConfig = null
-        releaseForegroundResources()
-        scope.launch {
+        startJob?.cancel()
+        startJob = null
+        scope.launch(Dispatchers.Main.immediate) {
+            releaseForegroundResources()
             runCatching { client.stop(reason) }
                 .onFailure { Log.w(TAG, "client.stop failed", it) }
             stopSelf()
@@ -239,6 +306,8 @@ class BedlamVpnService : VpnService() {
         reconnectTimeoutJob = null
         notificationJob?.cancel()
         notificationJob = null
+        reconnectWatchdogJob?.cancel()
+        reconnectWatchdogJob = null
         networkObserver?.stop()
         networkObserver = null
         wakeLock.release()
@@ -275,7 +344,8 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun startReconnectWatchdog() {
-        scope.launch {
+        if (reconnectWatchdogJob != null) return
+        reconnectWatchdogJob = scope.launch {
             client.state.collect { state ->
                 when (state) {
                     is ConnectionState.Reconnecting -> {
@@ -312,6 +382,7 @@ class BedlamVpnService : VpnService() {
             var prevRx = 0L
             combine(client.state, ticker) { state, _ -> state }.collect { state ->
                 val s = client.stats() ?: HysteriaClient.TrafficStats(0, 0)
+                updateAlwaysOnVpnState()
                 val txRate = (s.txBytes - prevTx).coerceAtLeast(0)
                 val rxRate = (s.rxBytes - prevRx).coerceAtLeast(0)
                 prevTx = s.txBytes
@@ -328,9 +399,74 @@ class BedlamVpnService : VpnService() {
         private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
         private const val REAPPLY_SETTLE_TIMEOUT_MS = 15_000L
+        private const val ALWAYS_ON_STATE_REFRESH_MS = 30_000L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"
         const val EXTRA_PROFILE_NAME = "profile_name"
     }
+
+    private suspend fun updateConnectionName(name: String) {
+        withContext(Dispatchers.Main.immediate) {
+            connectionName = name
+            notifications.connectionName = name
+        }
+    }
+
+    private suspend fun releaseAndStopSelf(startId: Int? = null) {
+        withContext(Dispatchers.Main.immediate) {
+            releaseForegroundResources()
+            if (startId != null) stopSelf(startId) else stopSelf()
+        }
+    }
+
+    private suspend fun stopAfterStartFailure() {
+        currentConfig = null
+        withContext(Dispatchers.Main.immediate) {
+            releaseForegroundResources()
+        }
+        runCatching { client.stop() }
+            .onFailure { Log.w(TAG, "client.stop failed", it) }
+        withContext(Dispatchers.Main.immediate) {
+            stopSelf()
+        }
+    }
+
+    private fun scheduleAlwaysOnVpnStateUpdate() {
+        scope.launch { updateAlwaysOnVpnState() }
+    }
+
+    private suspend fun updateAlwaysOnVpnState() {
+        val state = withContext(Dispatchers.Main.immediate) {
+            when {
+                !isAlwaysOn -> AlwaysOnVpnState.Disabled
+                isLockdownEnabled -> AlwaysOnVpnState.EnabledWithLockdown
+                else -> AlwaysOnVpnState.Enabled
+            }
+        }
+        val now = System.currentTimeMillis()
+        if (
+            state == lastAlwaysOnVpnState &&
+            now - lastAlwaysOnVpnStateWriteMillis < ALWAYS_ON_STATE_REFRESH_MS
+        ) {
+            return
+        }
+
+        runCatching { powerReliabilityRepository.writeAlwaysOnState(state) }
+            .onSuccess {
+                lastAlwaysOnVpnState = state
+                lastAlwaysOnVpnStateWriteMillis = now
+            }
+            .onFailure { Log.w(TAG, "Failed to persist Always-on VPN state", it) }
+    }
+
+    private data class StartRequest(
+        val config: HysteriaConfig,
+        val profileName: String,
+    )
 }
+
+private fun ConnectionState.isActiveTunnel(): Boolean =
+    this is ConnectionState.Connecting ||
+        this is ConnectionState.Connected ||
+        this is ConnectionState.Reconnecting

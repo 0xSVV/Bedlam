@@ -61,12 +61,118 @@
     <string name="settings_quick_tile_subtitle_manual">Open quick settings edit mode to add Bedlam</string>
     <string name="settings_quick_tile_manual_hint">Open quick settings edit mode and add Bedlam</string>
 
-    <string name="settings_battery_title">Battery optimization</string>
-    <string name="settings_battery_subtitle_restricted">Enable for more stable connection</string>
-    <string name="settings_battery_subtitle_unrestricted">Unrestricted</string>
-    <string name="settings_battery_info_cd">About battery optimization</string>
-    <string name="settings_battery_tip_title">Why this helps</string>
-    <string name="settings_battery_tip_body">Some vendors pause apps in the background by default to save battery, which can drop the tunnel when the screen is off. Allowing background activity keeps the connection stable\n\nBedlam runs efficiently and this won\'t noticeably affect battery life</string>
+    <string name="settings_reliability_title">Keep VPN alive</string>
+    <string name="settings_reliability_subtitle_action">%1$s needs a reliability check</string>
+    <string name="settings_reliability_subtitle_ok">%1$s looks good</string>
+    <string name="settings_reliability_risk_low">Looks good</string>
+    <string name="settings_reliability_risk_medium">Check recommended</string>
+    <string name="settings_reliability_risk_high">Action needed</string>
+    <string name="settings_reliability_hero_confirmed_title">Reliability checklist completed</string>
+    <string name="settings_reliability_hero_confirmed_body">Bedlam will remember this until the phone software changes. If %1$s resets battery settings after an update, this page will ask you to review it again</string>
+    <string name="settings_reliability_hero_high_title">This phone may stop Bedlam</string>
+    <string name="settings_reliability_hero_high_body">%1$s can apply extra battery rules beyond Android battery optimization. Review the checklist before relying on the tunnel with the screen off</string>
+    <string name="settings_reliability_hero_medium_title">A reliability check is recommended</string>
+    <string name="settings_reliability_hero_medium_body">%1$s may limit long-running background apps on some firmware builds. These settings make the tunnel less likely to be stopped</string>
+    <string name="settings_reliability_hero_low_title">This device looks normal</string>
+    <string name="settings_reliability_hero_low_body">%1$s is not known to need aggressive vendor workarounds. You can still enable Always-on VPN for easier recovery after reboots</string>
+    <string name="settings_reliability_checklist_title">Checklist</string>
+    <string name="settings_reliability_checklist_body">These are the settings that matter for a foreground VPN service. Some can be opened directly; vendor battery pages still need a manual tap</string>
+    <string name="settings_reliability_check_battery_title">Android battery optimization</string>
+    <string name="settings_reliability_check_battery_body">Allows Bedlam to keep network access and its wake lock during Doze</string>
+    <string name="settings_reliability_check_vendor_title">Vendor background activity</string>
+    <string name="settings_reliability_check_vendor_body_risky">%1$s has an extra app battery policy that can stop VPNs even after Android battery optimization is allowed</string>
+    <string name="settings_reliability_check_vendor_body_normal">%1$s usually does not need an extra vendor-specific battery setting for a foreground VPN</string>
+    <string name="settings_reliability_check_restricted_title">Android background restriction</string>
+    <string name="settings_reliability_check_restricted_body">Current standby bucket: %1$s. Restricted apps may lose background work even when a service is visible</string>
+    <string name="settings_reliability_check_notifications_title">VPN notification</string>
+    <string name="settings_reliability_check_notifications_body">Android requires Bedlam to keep a visible notification while the tunnel is active</string>
+    <string name="settings_reliability_check_always_on_title">Always-on VPN</string>
+    <string name="settings_reliability_check_always_on_body">Lets Android restart Bedlam after boot or system restarts. Enable lockdown only if you want all traffic blocked until the tunnel is up</string>
+    <string name="settings_reliability_status_unrestricted">Unrestricted</string>
+    <string name="settings_reliability_status_needs_action">Needs action</string>
+    <string name="settings_reliability_status_not_needed">Not needed</string>
+    <string name="settings_reliability_status_marked_done">Marked done</string>
+    <string name="settings_reliability_status_review">Review</string>
+    <string name="settings_reliability_status_restricted">Restricted</string>
+    <string name="settings_reliability_status_allowed">Allowed</string>
+    <string name="settings_reliability_status_blocked">Blocked</string>
+    <string name="settings_reliability_status_enabled">Enabled</string>
+    <string name="settings_reliability_status_lockdown">Lockdown on</string>
+    <string name="settings_reliability_status_off">Off</string>
+    <string name="settings_reliability_status_other_vpn">Other VPN</string>
+    <string name="settings_reliability_status_unknown">Unknown</string>
+    <string name="settings_reliability_bucket_active">Active</string>
+    <string name="settings_reliability_bucket_working_set">Working set</string>
+    <string name="settings_reliability_bucket_frequent">Frequent</string>
+    <string name="settings_reliability_bucket_rare">Rare</string>
+    <string name="settings_reliability_bucket_restricted">Restricted</string>
+    <string name="settings_reliability_bucket_exempted">Exempted</string>
+    <string name="settings_reliability_bucket_unknown">Unknown</string>
+    <string name="settings_reliability_action_allow">Allow battery optimization exception</string>
+    <string name="settings_reliability_action_app_info">Open Bedlam app info</string>
+    <string name="settings_reliability_action_notifications">Open notification settings</string>
+    <string name="settings_reliability_action_vpn_settings">Open VPN settings</string>
+    <string name="settings_reliability_action_vendor_manager">Open battery/autostart manager</string>
+    <string name="settings_reliability_action_mark_done">I changed these settings</string>
+    <string name="settings_reliability_action_marked_done">Marked as done</string>
+    <string name="settings_reliability_vendor_title">%1$s steps</string>
+    <string name="settings_reliability_vendor_body_oneplus">On OxygenOS, the important screen is usually App info -> Battery usage. Pick the option that says background activity is allowed</string>
+    <string name="settings_reliability_vendor_body_coloros">ColorOS and realme UI often split this into background activity plus autostart. Enable both when they are visible</string>
+    <string name="settings_reliability_vendor_body_xiaomi">MIUI and HyperOS often require both No restrictions and Autostart. Some builds also stop apps that are not locked in Recents</string>
+    <string name="settings_reliability_vendor_body_huawei">EMUI and MagicOS usually require manual app launch management. Enable every launch/background toggle for Bedlam</string>
+    <string name="settings_reliability_vendor_body_vivo">vivo and iQOO firmware commonly separates autostart from background power use. Bedlam needs both allowed</string>
+    <string name="settings_reliability_vendor_body_generic_aggressive">This vendor sometimes adds extra battery managers. Look for background activity, autostart, protected apps, or battery saver for Bedlam</string>
+    <string name="settings_reliability_vendor_body_samsung">Samsung is usually fine for foreground VPNs. Only use these steps if the phone starts sleeping Bedlam</string>
+    <string name="settings_reliability_vendor_body_normal">No special vendor setting was detected. Keep Android battery optimization allowed and use Always-on VPN if you want automatic restart</string>
+    <string name="settings_reliability_explain_title">Why Bedlam cannot do this automatically</string>
+    <string name="settings_reliability_explain_body">Android lets Bedlam request the standard battery exception, but many vendors add private battery managers with no public API. Bedlam can open nearby settings and explain the path; only you can approve the vendor-specific switch</string>
+
+    <string-array name="settings_reliability_steps_oneplus">
+        <item>Open Bedlam app info</item>
+        <item>Tap Battery usage or Battery</item>
+        <item>Select Allow background activity</item>
+        <item>If visible, also allow foreground activity and auto launch</item>
+    </string-array>
+    <string-array name="settings_reliability_steps_coloros">
+        <item>Open Bedlam app info</item>
+        <item>Open Battery usage or App battery management</item>
+        <item>Allow background activity</item>
+        <item>Enable Auto launch if the phone shows that switch</item>
+    </string-array>
+    <string-array name="settings_reliability_steps_xiaomi">
+        <item>Open Bedlam app info</item>
+        <item>Open Battery saver and choose No restrictions</item>
+        <item>Open Autostart and enable Bedlam</item>
+        <item>If the tunnel still stops, lock Bedlam in Recents</item>
+    </string-array>
+    <string-array name="settings_reliability_steps_huawei">
+        <item>Open Battery -> App launch</item>
+        <item>Find Bedlam and disable automatic management</item>
+        <item>Enable auto-launch, secondary launch, and run in background</item>
+        <item>Confirm the changes and reconnect the tunnel</item>
+    </string-array>
+    <string-array name="settings_reliability_steps_vivo">
+        <item>Open Autostart and enable Bedlam</item>
+        <item>Open Battery or Background power consumption</item>
+        <item>Allow Bedlam to run in background</item>
+        <item>Reconnect the tunnel after changing the setting</item>
+    </string-array>
+    <string-array name="settings_reliability_steps_generic_aggressive">
+        <item>Open Bedlam app info</item>
+        <item>Set Battery to Unrestricted or No restrictions</item>
+        <item>Enable Autostart or Protected app if available</item>
+        <item>Allow background activity for Bedlam</item>
+    </string-array>
+    <string-array name="settings_reliability_steps_samsung">
+        <item>Open Bedlam app info</item>
+        <item>Set Battery to Unrestricted if Bedlam is being stopped</item>
+        <item>In Background usage limits, add Bedlam to Never sleeping apps if needed</item>
+    </string-array>
+    <string-array name="settings_reliability_steps_normal">
+        <item>Allow the Android battery optimization exception</item>
+        <item>Enable Always-on VPN if you want automatic restart after boot</item>
+        <item>Keep Bedlam notifications allowed while the tunnel is active</item>
+    </string-array>
     <string name="action_got_it">Got it</string>
 
     <string name="action_back">Back</string>

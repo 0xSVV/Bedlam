@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
-import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.clickable
@@ -15,50 +14,46 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.core.net.toUri
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
 import com.arkivanov.decompose.ExperimentalDecomposeApi
 import com.arkivanov.decompose.extensions.compose.stack.Children
 import com.arkivanov.decompose.extensions.compose.stack.animation.fade
 import com.arkivanov.decompose.extensions.compose.stack.animation.predictiveback.predictiveBackAnimation
 import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
 import ru.shapovalov.bedlam.R
+import ru.shapovalov.bedlam.core.power.domain.PowerReliabilityRules
+import ru.shapovalov.bedlam.core.power.domain.model.PowerReliabilitySnapshot
 import ru.shapovalov.bedlam.core.vpn.tile.BedlamTileService
-import ru.shapovalov.bedlam.core.vpn.tile.QuickSettingsTileState
 import ru.shapovalov.bedlam.feature.appselection.ui.AppSelectionContent
 import ru.shapovalov.bedlam.feature.routing.ui.RoutingContent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child
 import ru.shapovalov.bedlam.ui.theme.spacing
 
-@OptIn(ExperimentalDecomposeApi::class)
+@OptIn(ExperimentalDecomposeApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier) {
+    val state by component.state.collectAsState()
+
     Children(
         stack = component.childStack,
         modifier = modifier.fillMaxSize(),
@@ -72,10 +67,21 @@ fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier)
             Child.Root -> SettingsRoot(
                 onOpenAppSelection = component::onOpenAppSelection,
                 onOpenRouting = component::onOpenRouting,
+                onOpenBatteryReliability = component::onOpenBatteryReliability,
+                quickSettingsTileAdded = state.quickSettingsTileAdded,
+                onQuickSettingsTileAdded = component::onSetQuickSettingsTileAdded,
+                reliabilitySnapshot = state.reliabilitySnapshot,
+                confirmedReliabilityFingerprint = state.confirmedReliabilityFingerprint,
             )
 
             is Child.AppSelection -> AppSelectionContent(child.component)
             is Child.Routing -> RoutingContent(child.component)
+            Child.BatteryReliability -> BatteryReliabilityContent(
+                snapshot = state.reliabilitySnapshot,
+                confirmedFingerprint = state.confirmedReliabilityFingerprint,
+                onMarkConfirmed = component::onMarkReliabilityConfirmed,
+                onBack = component::onBack,
+            )
         }
     }
 }
@@ -84,75 +90,63 @@ fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier)
 private fun SettingsRoot(
     onOpenAppSelection: () -> Unit,
     onOpenRouting: () -> Unit,
+    onOpenBatteryReliability: () -> Unit,
+    quickSettingsTileAdded: Boolean,
+    onQuickSettingsTileAdded: (Boolean) -> Unit,
+    reliabilitySnapshot: PowerReliabilitySnapshot,
+    confirmedReliabilityFingerprint: String?,
 ) {
     val spacing = MaterialTheme.spacing
+    val context = LocalContext.current
+    val needsReliabilityAttention = PowerReliabilityRules.needsAttention(
+        snapshot = reliabilitySnapshot,
+        confirmedFingerprint = confirmedReliabilityFingerprint,
+    )
     Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(top = MaterialTheme.spacing.small),
+            .padding(top = spacing.small),
     ) {
         SettingsRow(
             title = stringResource(R.string.settings_apps_title),
             subtitle = stringResource(R.string.settings_apps_subtitle),
             onClick = onOpenAppSelection,
-            modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
         )
+        SettingsDivider()
         SettingsRow(
             title = stringResource(R.string.settings_routing_title),
             subtitle = stringResource(R.string.settings_routing_subtitle),
             onClick = onOpenRouting,
-            modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
         )
-        QuickSettingsTileRow(
-            modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
+        SettingsDivider()
+        SettingsRow(
+            title = stringResource(R.string.settings_reliability_title),
+            subtitle = stringResource(
+                if (needsReliabilityAttention) {
+                    R.string.settings_reliability_subtitle_action
+                } else {
+                    R.string.settings_reliability_subtitle_ok
+                },
+                reliabilitySnapshot.vendor.displayName,
+            ),
+            subtitleEmphasized = needsReliabilityAttention,
+            onClick = onOpenBatteryReliability,
         )
-        BatteryOptimizationRow(
-            modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
-        )
-    }
-}
-
-@Composable
-private fun QuickSettingsTileRow(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val spacing = MaterialTheme.spacing
-    var added by remember { mutableStateOf(QuickSettingsTileState.isAdded(context)) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                added = QuickSettingsTileState.isAdded(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    val action = { requestQuickSettingsTile(context) { added = it } }
-    val subtitleRes = when {
-        added -> R.string.settings_quick_tile_subtitle_enabled
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
-            R.string.settings_quick_tile_subtitle_disabled
-        else -> R.string.settings_quick_tile_subtitle_manual
-    }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = action)
-            .padding(horizontal = spacing.large, vertical = spacing.medium),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.settings_quick_tile_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.size(spacing.xSmall))
-            Text(
-                text = stringResource(subtitleRes),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (added) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.error,
+        if (!quickSettingsTileAdded) {
+            SettingsDivider()
+            SettingsRow(
+                title = stringResource(R.string.settings_quick_tile_title),
+                subtitle = stringResource(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        R.string.settings_quick_tile_subtitle_disabled
+                    } else {
+                        R.string.settings_quick_tile_subtitle_manual
+                    },
+                ),
+                subtitleEmphasized = true,
+                showNavigationIcon = false,
+                onClick = { requestQuickSettingsTile(context, onQuickSettingsTileAdded) },
             )
         }
     }
@@ -170,7 +164,6 @@ private fun requestQuickSettingsTile(context: Context, onAddedChanged: (Boolean)
             val added = result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
                 result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED
             if (added) {
-                QuickSettingsTileState.setAdded(context, true)
                 onAddedChanged(true)
             }
         }
@@ -195,86 +188,12 @@ private fun requestQuickSettingsTile(context: Context, onAddedChanged: (Boolean)
 private const val ACTION_QUICK_SETTINGS_SETTINGS = "android.settings.QUICK_SETTINGS_SETTINGS"
 
 @Composable
-private fun BatteryOptimizationRow(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val powerManager = remember {
-        context.getSystemService(Context.POWER_SERVICE) as PowerManager
-    }
-    var unrestricted by remember {
-        mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName))
-    }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                unrestricted = powerManager.isIgnoringBatteryOptimizations(context.packageName)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    var showInfoDialog by rememberSaveable { mutableStateOf(false) }
-    val spacing = MaterialTheme.spacing
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable {
-                if (!unrestricted) {
-                    @Suppress("BatteryLife")
-                    val intent = Intent(
-                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        "package:${context.packageName}".toUri(),
-                    )
-                    context.startActivity(intent)
-                }
-            }
-            .padding(horizontal = spacing.large, vertical = spacing.medium),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.settings_battery_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.size(spacing.xSmall))
-            Text(
-                text = stringResource(
-                    if (unrestricted) R.string.settings_battery_subtitle_unrestricted
-                    else R.string.settings_battery_subtitle_restricted,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (unrestricted) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.error,
-            )
-        }
-        Icon(
-            modifier = Modifier.clickable(onClick = {
-                showInfoDialog = true
-            }),
-            imageVector = Icons.Default.Info,
-            contentDescription = stringResource(R.string.settings_battery_info_cd),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-
-    if (showInfoDialog) {
-        AlertDialog(
-            onDismissRequest = { showInfoDialog = false },
-            title = { Text(stringResource(R.string.settings_battery_tip_title)) },
-            text = { Text(stringResource(R.string.settings_battery_tip_body)) },
-            confirmButton = {
-                TextButton(onClick = { showInfoDialog = false }) {
-                    Text(stringResource(R.string.action_got_it))
-                }
-            },
-        )
-    }
-}
-
-@Composable
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 private fun SettingsRow(
     title: String,
-    subtitle: String?,
+    subtitle: String,
+    subtitleEmphasized: Boolean = false,
+    showNavigationIcon: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -282,26 +201,41 @@ private fun SettingsRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = SettingsItemMinHeight)
             .clickable(onClick = onClick)
-            .padding(horizontal = spacing.large, vertical = spacing.medium),
+            .padding(horizontal = spacing.large, vertical = spacing.small),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            if (subtitle != null) {
-                Spacer(Modifier.size(spacing.xSmall))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(title, style = MaterialTheme.typography.titleMediumEmphasized)
+            Spacer(Modifier.size(spacing.xSmall))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (subtitleEmphasized) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
         }
-        Spacer(Modifier.width(spacing.small))
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (showNavigationIcon) {
+            Spacer(Modifier.width(spacing.small))
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
+
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large),
+        color = MaterialTheme.colorScheme.outlineVariant,
+    )
+}
+
+private val SettingsItemMinHeight = 84.dp

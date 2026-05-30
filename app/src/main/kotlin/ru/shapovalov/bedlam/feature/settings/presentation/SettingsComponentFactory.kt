@@ -9,7 +9,13 @@ import ru.shapovalov.bedlam.feature.routing.presentation.RoutingComponentFactory
 class SettingsComponentFactory(
     private val appSelectionFactory: AppSelectionComponentFactory,
     private val routingFactory: RoutingComponentFactory,
+    private val storeFactory: SettingsStoreFactory,
 ) {
     fun create(componentContext: ComponentContext): SettingsComponent =
-        SettingsComponent(componentContext, appSelectionFactory, routingFactory)
+        SettingsComponent(
+            componentContext = componentContext,
+            appSelectionFactory = appSelectionFactory,
+            routingFactory = routingFactory,
+            storeFactory = storeFactory,
+        )
 }

@@ -19,6 +19,7 @@ import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
 import ru.shapovalov.bedlam.core.vpn.VpnServiceLauncher
+import ru.shapovalov.bedlam.core.vpn.tile.domain.repository.QuickSettingsTileRepository
 import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.api.HysteriaClient
@@ -28,23 +29,26 @@ class BedlamTileService : TileService() {
     private val client: HysteriaClient by injected { hysteriaClient }
     private val profileRepository: ProfileRepository by injected { profileRepository }
     private val vpnServiceLauncher: VpnServiceLauncher by injected { vpnServiceLauncher }
+    private val quickSettingsTileRepository: QuickSettingsTileRepository by injected {
+        quickSettingsTileRepository
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stateJob: Job? = null
     private var clickJob: Job? = null
 
     override fun onTileAdded() {
         super.onTileAdded()
-        QuickSettingsTileState.setAdded(this, true)
+        scope.launch { quickSettingsTileRepository.setAdded(true) }
     }
 
     override fun onTileRemoved() {
-        QuickSettingsTileState.setAdded(this, false)
+        scope.launch { quickSettingsTileRepository.setAdded(false) }
         super.onTileRemoved()
     }
 
     override fun onStartListening() {
         super.onStartListening()
-        QuickSettingsTileState.setAdded(this, true)
+        scope.launch { quickSettingsTileRepository.setAdded(true) }
         stateJob?.cancel()
         stateJob = scope.launch {
             combine(client.state, profileRepository.observeActiveId()) { state, activeId ->
