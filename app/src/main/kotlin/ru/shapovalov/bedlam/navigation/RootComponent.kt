@@ -7,7 +7,6 @@ import com.arkivanov.decompose.router.stack.bringToFront
 import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponent
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponentFactory
@@ -21,7 +20,6 @@ class RootComponent(
     private val dashboardContainerFactory: DashboardContainerComponentFactory,
     private val settingsFactory: SettingsComponentFactory,
     private val logsFactory: LogsComponentFactory,
-    private val json: Json,
     private val onStartVpn: OnStartVpn,
     private val onStopVpn: OnStopVpn,
 ) : ComponentContext by componentContext {
@@ -60,8 +58,7 @@ class RootComponent(
     }
 
     private fun dispatchStartVpn(profile: Profile) {
-        val payload = json.encodeToString(profile.config)
-        onStartVpn.invoke(profile.id, payload, profile.name)
+        onStartVpn.invoke(profile)
     }
 
     sealed interface Child {
@@ -83,7 +80,7 @@ class RootComponent(
     enum class Tab { Logs, Dashboard, Settings }
 
     fun interface OnStartVpn {
-        fun invoke(profileId: String, configJson: String, profileName: String)
+        fun invoke(profile: Profile)
     }
 
     fun interface OnStopVpn {

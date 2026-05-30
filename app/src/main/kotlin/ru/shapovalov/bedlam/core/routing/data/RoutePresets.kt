@@ -59,7 +59,8 @@ object RoutePresets {
                 RoutePreset.AsnEntry(396982, "Google Cloud"),
                 RoutePreset.AsnEntry(36492, "Google"),
             ),
-    ),
+        ),
+    )
 
     fun byId(id: String): RoutePreset? = ALL.firstOrNull { it.id == id }
 }

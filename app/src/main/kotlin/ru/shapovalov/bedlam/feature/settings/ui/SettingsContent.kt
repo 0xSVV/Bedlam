@@ -1,9 +1,14 @@
 package ru.shapovalov.bedlam.feature.settings.ui
 
+import android.app.StatusBarManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
+import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,6 +48,8 @@ import com.arkivanov.decompose.extensions.compose.stack.animation.fade
 import com.arkivanov.decompose.extensions.compose.stack.animation.predictiveback.predictiveBackAnimation
 import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
 import ru.shapovalov.bedlam.R
+import ru.shapovalov.bedlam.core.vpn.tile.BedlamTileService
+import ru.shapovalov.bedlam.core.vpn.tile.QuickSettingsTileState
 import ru.shapovalov.bedlam.feature.appselection.ui.AppSelectionContent
 import ru.shapovalov.bedlam.feature.routing.ui.RoutingContent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
@@ -97,11 +104,95 @@ private fun SettingsRoot(
             onClick = onOpenRouting,
             modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
         )
+        QuickSettingsTileRow(
+            modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
+        )
         BatteryOptimizationRow(
             modifier = Modifier.padding(horizontal = spacing.small, vertical = spacing.small),
         )
     }
 }
+
+@Composable
+private fun QuickSettingsTileRow(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val spacing = MaterialTheme.spacing
+    var added by remember { mutableStateOf(QuickSettingsTileState.isAdded(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                added = QuickSettingsTileState.isAdded(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val action = { requestQuickSettingsTile(context) { added = it } }
+    val subtitleRes = when {
+        added -> R.string.settings_quick_tile_subtitle_enabled
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+            R.string.settings_quick_tile_subtitle_disabled
+        else -> R.string.settings_quick_tile_subtitle_manual
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = action)
+            .padding(horizontal = spacing.large, vertical = spacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.settings_quick_tile_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.size(spacing.xSmall))
+            Text(
+                text = stringResource(subtitleRes),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (added) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+private fun requestQuickSettingsTile(context: Context, onAddedChanged: (Boolean) -> Unit) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val manager = context.getSystemService(StatusBarManager::class.java) ?: return
+        manager.requestAddTileService(
+            ComponentName(context, BedlamTileService::class.java),
+            context.getString(R.string.qs_tile_label),
+            Icon.createWithResource(context, R.drawable.ic_qs_tunnel),
+            context.mainExecutor,
+        ) { result ->
+            val added = result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
+                result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED
+            if (added) {
+                QuickSettingsTileState.setAdded(context, true)
+                onAddedChanged(true)
+            }
+        }
+    } else {
+        Toast.makeText(
+            context,
+            R.string.settings_quick_tile_manual_hint,
+            Toast.LENGTH_LONG,
+        ).show()
+        val intent = Intent(ACTION_QUICK_SETTINGS_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+            .onFailure {
+                context.startActivity(
+                    Intent(Settings.ACTION_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+    }
+}
+
+private const val ACTION_QUICK_SETTINGS_SETTINGS = "android.settings.QUICK_SETTINGS_SETTINGS"
 
 @Composable
 private fun BatteryOptimizationRow(modifier: Modifier = Modifier) {
