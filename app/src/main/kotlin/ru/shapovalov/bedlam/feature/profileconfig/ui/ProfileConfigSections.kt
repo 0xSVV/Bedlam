@@ -29,6 +29,7 @@ internal fun ServerSection(
             value = draft.server.auth,
             editMode = editMode,
             caution = stringResource(R.string.profile_config_caution_auth),
+            showDivider = false,
             onChange = { onDraftChanged(draft.copy(server = draft.server.copy(auth = it))) },
         )
     }
@@ -84,6 +85,7 @@ internal fun TlsSection(
             editMode = editMode,
             singleLine = false,
             caution = stringResource(R.string.profile_config_caution_tls_client),
+            showDivider = false,
             onChange = { onDraftChanged(draft.copy(tls = tls.copy(tlsClientKey = it))) },
         )
     }
@@ -110,6 +112,7 @@ internal fun ObfuscationSection(
             value = obfs.obfuscationPassword,
             editMode = editMode,
             caution = caution,
+            showDivider = false,
             onChange = { onDraftChanged(draft.copy(obfuscation = obfs.copy(obfuscationPassword = it))) },
         )
     }
@@ -171,6 +174,7 @@ internal fun QuicSection(
             value = quic.disablePathMTUDiscovery,
             editMode = editMode,
             caution = caution,
+            showDivider = false,
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(disablePathMTUDiscovery = it))) },
         )
     }
@@ -197,6 +201,7 @@ internal fun CongestionSection(
             value = congestion.bbrProfile,
             editMode = editMode,
             caution = caution,
+            showDivider = false,
             onChange = { onDraftChanged(draft.copy(congestion = congestion.copy(bbrProfile = it))) },
         )
     }
@@ -223,6 +228,7 @@ internal fun BandwidthSection(
             value = bandwidth.maxRxMbps,
             editMode = editMode,
             caution = caution,
+            showDivider = false,
             onChange = { onDraftChanged(draft.copy(bandwidth = bandwidth.copy(maxRxMbps = it))) },
         )
     }
@@ -256,6 +262,7 @@ internal fun TransportSection(
             value = transport.maxHopIntervalSec,
             editMode = editMode,
             caution = caution,
+            showDivider = false,
             onChange = { onDraftChanged(draft.copy(transport = transport.copy(maxHopIntervalSec = it))) },
         )
     }
@@ -279,6 +286,7 @@ internal fun BehaviorSection(
             label = "lazy",
             value = behavior.lazy,
             editMode = editMode,
+            showDivider = false,
             onChange = { onDraftChanged(draft.copy(behavior = behavior.copy(lazy = it))) },
         )
     }
