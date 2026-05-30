@@ -21,9 +21,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +36,7 @@ import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.session.domain.model.SessionInfo
 import ru.shapovalov.bedlam.ui.shimmer.Shimmer
 import ru.shapovalov.bedlam.ui.shimmer.ShimmerBounds
+import ru.shapovalov.bedlam.ui.shimmer.defaultShimmerTheme
 import ru.shapovalov.bedlam.ui.shimmer.rememberShimmer
 import ru.shapovalov.bedlam.ui.shimmer.shimmer
 import ru.shapovalov.bedlam.ui.theme.spacing
@@ -54,10 +57,12 @@ private val SkeletonValueWidths = listOf(
     88.dp, 196.dp, 52.dp, 140.dp, 100.dp, 88.dp, 80.dp, 64.dp, 72.dp,
 )
 
+private val SkeletonGray = Color.Gray.copy(alpha = 0.45f)
+
 @Composable
 internal fun SkeletonInfoCard() {
     val spacing = MaterialTheme.spacing
-    val shimmer = rememberShimmer(ShimmerBounds.Window)
+    val shimmer = rememberGrayShimmer()
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -73,6 +78,20 @@ internal fun SkeletonInfoCard() {
                 }
         }
     }
+}
+
+@Composable
+private fun rememberGrayShimmer(): Shimmer {
+    val theme = remember {
+        defaultShimmerTheme.copy(
+            shaderColors = listOf(
+                Color.Gray.copy(alpha = 0.28f),
+                Color.Gray.copy(alpha = 0.72f),
+                Color.Gray.copy(alpha = 0.28f),
+            ),
+        )
+    }
+    return rememberShimmer(ShimmerBounds.Window, theme)
 }
 
 @Composable
@@ -98,7 +117,7 @@ private fun ShimmerBlock(width: Dp, height: Dp, shimmer: Shimmer) {
             .height(height)
             .shimmer(shimmer)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            .background(SkeletonGray),
     )
 }
 
@@ -157,20 +176,21 @@ internal fun InfoCard(info: SessionInfo) {
             InfoRow(
                 label = stringResource(R.string.session_field_ipv4),
                 value = info.ipv4,
-                monoValue = true
+                monoValue = true,
             )
             DividerRow()
             InfoRow(
                 label = stringResource(R.string.session_field_ipv6),
                 value = info.ipv6,
-                monoValue = true
+                emptyValue = stringResource(R.string.session_value_unavailable),
+                monoValue = true,
             )
             DividerRow()
             InfoRow(label = stringResource(R.string.session_field_asn), value = info.asn)
             DividerRow()
             InfoRow(
                 label = stringResource(R.string.session_field_as_org),
-                value = info.asOrganization
+                value = info.asOrganization,
             )
             DividerRow()
             InfoRow(label = stringResource(R.string.session_field_country), value = info.country)
@@ -181,20 +201,26 @@ internal fun InfoCard(info: SessionInfo) {
             DividerRow()
             InfoRow(
                 label = stringResource(R.string.session_field_latitude),
-                value = info.latitude?.toString()
+                value = info.latitude?.toString(),
             )
             DividerRow()
             InfoRow(
                 label = stringResource(R.string.session_field_longitude),
-                value = info.longitude?.toString()
+                value = info.longitude?.toString(),
             )
         }
     }
 }
 
 @Composable
-private fun InfoRow(label: String, value: String?, monoValue: Boolean = false) {
+private fun InfoRow(
+    label: String,
+    value: String?,
+    emptyValue: String = stringResource(R.string.session_value_unknown),
+    monoValue: Boolean = false,
+) {
     val spacing = MaterialTheme.spacing
+    val hasValue = !value.isNullOrBlank()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -209,12 +235,16 @@ private fun InfoRow(label: String, value: String?, monoValue: Boolean = false) {
         )
         Spacer(Modifier.size(spacing.medium))
         Text(
-            text = value?.takeIf { it.isNotBlank() } ?: "—",
+            text = value?.takeIf { it.isNotBlank() } ?: emptyValue,
             style = MaterialTheme.typography.bodyMedium.copy(
                 fontFamily = if (monoValue) FontFamily.Monospace else FontFamily.Default,
                 fontWeight = FontWeight.Medium,
             ),
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (hasValue) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
             textAlign = TextAlign.End,
         )
     }

@@ -11,7 +11,7 @@ interface SessionStore : Store<SessionStore.Intent, SessionStore.State, Nothing>
 
     data class State(
         val info: SessionInfo? = null,
-        val isLoading: Boolean = true,
+        val isLoading: Boolean = false,
         val errorMessage: String? = null,
     )
 }

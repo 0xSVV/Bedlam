@@ -251,7 +251,14 @@
     <string name="session_action_refresh_cd">Refresh</string>
     <string name="session_action_retry">Retry</string>
     <string name="session_error_title">Could not load session</string>
-    <string name="session_ip_explainer">Your IP address is a unique identifier associated with your online activity, similar to a return address on a letter.</string>
+    <string name="session_error_unknown">Session lookup failed. Check the tunnel and try again.</string>
+    <string name="session_ip_explainer">Reported by public lookup services through the active tunnel. IPv6 appears only when this route supports it.</string>
+    <string name="session_section_addresses">Addresses</string>
+    <string name="session_section_network">Network</string>
+    <string name="session_section_location">Location</string>
+    <string name="session_value_unavailable">Unavailable</string>
+    <string name="session_value_unknown">Unknown</string>
+    <string name="session_ipv6_unavailable">No IPv6 response from this route.</string>
 
     <string name="session_field_ipv4">IPv4</string>
     <string name="session_field_ipv6">IPv6</string>
@@ -262,6 +269,7 @@
     <string name="session_field_region">Region</string>
     <string name="session_field_latitude">Latitude</string>
     <string name="session_field_longitude">Longitude</string>
+    <string name="session_field_coordinates">Coordinates</string>
 
     <string name="session_speed_test_title">Speed Test</string>
     <string name="session_speed_test_subtitle">Test your Internet connection.</string>

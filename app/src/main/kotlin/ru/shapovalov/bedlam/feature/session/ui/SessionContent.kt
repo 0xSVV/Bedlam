@@ -107,7 +107,10 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
             val info = state.info
             val cardState: CardState = when {
                 state.isLoading -> CardState.Loading
-                errorMessage != null -> CardState.Error(errorMessage)
+                errorMessage != null -> CardState.Error(
+                    errorMessage.takeIf { it.isNotBlank() }
+                        ?: stringResource(R.string.session_error_unknown)
+                )
                 info != null -> CardState.Success(info)
                 else -> CardState.Loading
             }
