@@ -1,9 +1,7 @@
 package ru.shapovalov.bedlam
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -11,15 +9,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.arkivanov.decompose.defaultComponentContext
-import ru.shapovalov.bedlam.core.vpn.BedlamVpnService
+import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.vpn.VpnServiceLauncher
 import ru.shapovalov.bedlam.di.appComponent
+import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.bedlam.ui.theme.BedlamTheme
 
 class MainActivity : ComponentActivity() {
 
+    private val vpnServiceLauncher: VpnServiceLauncher by injected { vpnServiceLauncher }
     private var pendingStart: (() -> Unit)? = null
 
     private val vpnPermissionLauncher = registerForActivityResult(
@@ -48,8 +48,8 @@ class MainActivity : ComponentActivity() {
         val rootContext = defaultComponentContext()
         val root = appComponent.rootComponentFactory.create(
             rootContext,
-            { _, configJson, profileName ->
-                requestVpnPermissionThen { startVpnService(configJson, profileName) }
+            { profile ->
+                requestVpnPermissionThen { startVpnService(profile) }
             },
             { stopVpnService() },
         )
@@ -57,23 +57,16 @@ class MainActivity : ComponentActivity() {
         setContent { BedlamTheme { RootContent(root) } }
     }
 
-    private fun startVpnService(configJson: String, profileName: String) {
-        val intent = Intent(this, BedlamVpnService::class.java).apply {
-            putExtra(BedlamVpnService.EXTRA_CONFIG_JSON, configJson)
-            putExtra(BedlamVpnService.EXTRA_PROFILE_NAME, profileName)
-        }
-        ContextCompat.startForegroundService(this, intent)
+    private fun startVpnService(profile: Profile) {
+        vpnServiceLauncher.start(profile)
     }
 
     private fun stopVpnService() {
-        val intent = Intent(this, BedlamVpnService::class.java).apply {
-            action = BedlamVpnService.ACTION_STOP
-        }
-        ContextCompat.startForegroundService(this, intent)
+        vpnServiceLauncher.stop()
     }
 
     private fun requestVpnPermissionThen(block: () -> Unit) {
-        val intent = VpnService.prepare(this)
+        val intent = vpnServiceLauncher.prepareIntent()
         if (intent != null) {
             pendingStart = block
             vpnPermissionLauncher.launch(intent)

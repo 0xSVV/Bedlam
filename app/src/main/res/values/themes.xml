@@ -1,4 +1,12 @@
 <resources>
 
     <style name="Theme.Bedlam" parent="Theme.MaterialComponents.DayNight.NoActionBar"></style>
+
+    <style name="Theme.Bedlam.Transparent" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+    </style>
 </resources>

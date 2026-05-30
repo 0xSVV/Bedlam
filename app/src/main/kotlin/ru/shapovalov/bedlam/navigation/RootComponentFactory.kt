@@ -1,7 +1,6 @@
 package ru.shapovalov.bedlam.navigation
 
 import com.arkivanov.decompose.ComponentContext
-import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponentFactory
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponentFactory
@@ -12,7 +11,6 @@ class RootComponentFactory(
     private val dashboardContainerFactory: DashboardContainerComponentFactory,
     private val settingsFactory: SettingsComponentFactory,
     private val logsFactory: LogsComponentFactory,
-    private val json: Json,
 ) {
     fun create(
         componentContext: ComponentContext,
@@ -23,7 +21,6 @@ class RootComponentFactory(
         dashboardContainerFactory,
         settingsFactory,
         logsFactory,
-        json,
         onStartVpn,
         onStopVpn,
     )

@@ -8,6 +8,7 @@ import me.tatarka.inject.annotations.Provides
 import ru.shapovalov.bedlam.core.appfilter.di.AppFilterModule
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.core.profile.di.ProfileModule
+import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
 import ru.shapovalov.bedlam.core.routing.di.RoutingModule
 import ru.shapovalov.bedlam.core.routing.domain.repository.RoutingRepository
 import ru.shapovalov.bedlam.core.routing.domain.usecase.AddPresetUseCase
@@ -15,6 +16,7 @@ import ru.shapovalov.bedlam.core.routing.domain.usecase.AddRouteSourceUseCase
 import ru.shapovalov.bedlam.core.routing.domain.usecase.BuildRoutePlanUseCase
 import ru.shapovalov.bedlam.core.routing.domain.usecase.RefreshRouteSourcesUseCase
 import ru.shapovalov.bedlam.core.routing.engine.RoutePlanApplier
+import ru.shapovalov.bedlam.core.vpn.VpnServiceLauncher
 import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
 import ru.shapovalov.bedlam.feature.session.di.SessionModule
 import ru.shapovalov.bedlam.navigation.RootComponentFactory
@@ -34,6 +36,7 @@ abstract class AppComponent(
 
     abstract val hysteriaClient: HysteriaClient
     abstract val json: Json
+    abstract val profileRepository: ProfileRepository
     abstract val appFilterRepository: AppFilterRepository
     abstract val routingRepository: RoutingRepository
     abstract val buildRoutePlan: BuildRoutePlanUseCase
@@ -41,6 +44,7 @@ abstract class AppComponent(
     abstract val addRouteSource: AddRouteSourceUseCase
     abstract val addPreset: AddPresetUseCase
     abstract val refreshRouteSources: RefreshRouteSourcesUseCase
+    abstract val vpnServiceLauncher: VpnServiceLauncher
     abstract val logBuffer: LogBuffer
 
     abstract val rootComponentFactory: RootComponentFactory

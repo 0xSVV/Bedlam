@@ -19,6 +19,14 @@
     <string name="action_reconnect">Reconnect</string>
     <string name="action_connect">Connect</string>
 
+    <string name="qs_tile_label">Bedlam</string>
+    <string name="qs_tile_connected">Connected</string>
+    <string name="qs_tile_connecting">Connecting</string>
+    <string name="qs_tile_reconnecting">Reconnecting</string>
+    <string name="qs_tile_disconnected">Disconnected</string>
+    <string name="qs_tile_error">Failed</string>
+    <string name="qs_tile_no_profile">No profile</string>
+
     <string name="vpn_session_default">Bedlam</string>
 
     <string name="nav_tab_home">Home</string>
@@ -46,6 +54,12 @@
 
     <string name="settings_routing_title">Routing</string>
     <string name="settings_routing_subtitle">LAN bypass, IPv6, DNS, direct routes by IP/ASN/domain</string>
+
+    <string name="settings_quick_tile_title">Quick settings tile</string>
+    <string name="settings_quick_tile_subtitle_enabled">Added</string>
+    <string name="settings_quick_tile_subtitle_disabled">Tap to add a system shade toggle</string>
+    <string name="settings_quick_tile_subtitle_manual">Open quick settings edit mode to add Bedlam</string>
+    <string name="settings_quick_tile_manual_hint">Open quick settings edit mode and add Bedlam</string>
 
     <string name="settings_battery_title">Battery optimization</string>
     <string name="settings_battery_subtitle_restricted">Enable for more stable connection</string>
