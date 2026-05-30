@@ -1,9 +1,11 @@
 package ru.shapovalov.bedlam.core.vpn.tile
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
+import androidx.annotation.RequiresApi
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import kotlinx.coroutines.CoroutineScope
@@ -143,19 +145,29 @@ class BedlamTileService : TileService() {
         )
     }
 
-    @Suppress("DEPRECATION")
     private fun startActivityAndCollapseCompat(intent: Intent, requestCode: Int) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val pendingIntent = PendingIntent.getActivity(
-                this,
-                requestCode,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            startActivityAndCollapse(pendingIntent)
+            startActivityAndCollapsePendingIntent(intent, requestCode)
         } else {
-            startActivityAndCollapse(intent)
+            startActivityAndCollapseIntent(intent)
         }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun startActivityAndCollapsePendingIntent(intent: Intent, requestCode: Int) {
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        startActivityAndCollapse(pendingIntent)
+    }
+
+    @Suppress("DEPRECATION")
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    private fun startActivityAndCollapseIntent(intent: Intent) {
+        startActivityAndCollapse(intent)
     }
 
     private fun ConnectionState.isTunnelActive(): Boolean =
