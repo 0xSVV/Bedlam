@@ -53,6 +53,16 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.outputs.forEach { output ->
+            output.outputFileName.set(
+                output.versionName.map { versionName -> "bedlam-v$versionName.apk" }
+            )
+        }
+    }
+}
+
 room {
     schemaDirectory("$projectDir/schemas")
 }
