@@ -19,3 +19,8 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Obfuscation diagnostics used by coverage, retrace, and shrink analysis.
+-printmapping build/outputs/proguard/mapping.txt
+-printseeds build/outputs/proguard/seeds.txt
+-printusage build/outputs/proguard/usage.txt
