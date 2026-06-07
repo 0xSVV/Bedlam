@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -143,5 +144,44 @@ func TestValidateConfig_rejectsInvertedHopInterval(t *testing.T) {
 	js := `{"server":"host.example:8000-9000","min_hop_interval":30,"max_hop_interval":10}`
 	if err := ValidateConfig(js); err == nil {
 		t.Error("expected error for min > max")
+	}
+}
+
+func TestValidateConfig_rejectsTooSmallWindow(t *testing.T) {
+	js := `{"server":"host.example:443","max_stream_receive_window":1000}`
+	if err := ValidateConfig(js); err == nil {
+		t.Error("expected error for window below 16384")
+	}
+}
+
+func TestValidateConfig_acceptsZeroWindow(t *testing.T) {
+	js := `{"server":"host.example:443","max_stream_receive_window":0}`
+	if err := ValidateConfig(js); err != nil {
+		t.Errorf("expected zero (= use default) to pass, got %v", err)
+	}
+}
+
+func TestValidateConfig_rejectsIdleTimeoutOutOfRange(t *testing.T) {
+	for _, sec := range []int{3, 121} {
+		js := fmt.Sprintf(`{"server":"host.example:443","max_idle_timeout":%d}`, sec)
+		if err := ValidateConfig(js); err == nil {
+			t.Errorf("expected error for max_idle_timeout=%d", sec)
+		}
+	}
+}
+
+func TestValidateConfig_rejectsKeepAliveOutOfRange(t *testing.T) {
+	for _, sec := range []int{1, 61} {
+		js := fmt.Sprintf(`{"server":"host.example:443","keep_alive_period":%d}`, sec)
+		if err := ValidateConfig(js); err == nil {
+			t.Errorf("expected error for keep_alive_period=%d", sec)
+		}
+	}
+}
+
+func TestValidateConfig_acceptsInRangeQUIC(t *testing.T) {
+	js := `{"server":"host.example:443","max_stream_receive_window":16384,"max_idle_timeout":30,"keep_alive_period":10}`
+	if err := ValidateConfig(js); err != nil {
+		t.Errorf("expected in-range QUIC params to pass, got %v", err)
 	}
 }

@@ -108,6 +108,34 @@ func ValidateConfig(configJSON string) error {
 		return fmt.Errorf("min_hop_interval (%ds) exceeds max_hop_interval (%ds)",
 			cfg.MinHopIntervalSec, cfg.MaxHopIntervalSec)
 	}
+	if err := validateQUICBounds(&cfg); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateQUICBounds(cfg *clientConfig) error {
+	const minWindow = 16384
+	windows := []struct {
+		name  string
+		value uint64
+	}{
+		{"init_stream_receive_window", cfg.InitStreamReceiveWindow},
+		{"max_stream_receive_window", cfg.MaxStreamReceiveWindow},
+		{"init_conn_receive_window", cfg.InitConnReceiveWindow},
+		{"max_conn_receive_window", cfg.MaxConnReceiveWindow},
+	}
+	for _, w := range windows {
+		if w.value != 0 && w.value < minWindow {
+			return fmt.Errorf("%s (%d) must be at least %d", w.name, w.value, minWindow)
+		}
+	}
+	if cfg.MaxIdleTimeoutSec != 0 && (cfg.MaxIdleTimeoutSec < 4 || cfg.MaxIdleTimeoutSec > 120) {
+		return fmt.Errorf("max_idle_timeout (%ds) must be between 4 and 120 seconds", cfg.MaxIdleTimeoutSec)
+	}
+	if cfg.KeepAlivePeriodSec != 0 && (cfg.KeepAlivePeriodSec < 2 || cfg.KeepAlivePeriodSec > 60) {
+		return fmt.Errorf("keep_alive_period (%ds) must be between 2 and 60 seconds", cfg.KeepAlivePeriodSec)
+	}
 	return nil
 }
 
