@@ -1,0 +1,18 @@
+default_platform(:android)
+
+platform :android do
+  desc "Upload the release bundle to the Play internal track as a draft"
+  lane :play_internal do
+    upload_to_play_store(
+      track: "internal",
+      release_status: "draft",
+      aab: Dir["app/build/outputs/bundle/release/*.aab"].first,
+      json_key_data: ENV.fetch("PLAY_JSON_KEY_DATA"),
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+end
