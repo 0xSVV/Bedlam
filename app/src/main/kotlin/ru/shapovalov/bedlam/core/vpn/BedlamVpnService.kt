@@ -108,11 +108,13 @@ class BedlamVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                startAsForeground()
                 stop()
                 return START_NOT_STICKY
             }
 
             ACTION_RECONNECT -> {
+                startAsForeground()
                 scope.launch {
                     runCatching { client.resetConnections() }
                         .onFailure { Log.w(TAG, "resetConnections failed", it) }
