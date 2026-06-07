@@ -10,8 +10,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
 import com.arkivanov.decompose.defaultComponentContext
+import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
 import ru.shapovalov.bedlam.core.vpn.VpnServiceLauncher
 import ru.shapovalov.bedlam.di.appComponent
 import ru.shapovalov.bedlam.di.injected
@@ -20,17 +23,21 @@ import ru.shapovalov.bedlam.ui.theme.BedlamTheme
 class MainActivity : ComponentActivity() {
 
     private val vpnServiceLauncher: VpnServiceLauncher by injected { vpnServiceLauncher }
-    private var pendingStart: (() -> Unit)? = null
+    private val profileRepository: ProfileRepository by injected { profileRepository }
+    private var pendingStartProfileId: String? = null
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            pendingStart?.invoke()
-        } else {
+        val profileId = pendingStartProfileId
+        pendingStartProfileId = null
+        if (result.resultCode != RESULT_OK) {
             Log.w(TAG, "VPN permission denied")
+        } else if (profileId != null) {
+            lifecycleScope.launch {
+                profileRepository.get(profileId)?.let { startVpnService(it) }
+            }
         }
-        pendingStart = null
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -43,18 +50,22 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        pendingStartProfileId = savedInstanceState?.getString(KEY_PENDING_PROFILE_ID)
         ensureNotificationPermission()
 
         val rootContext = defaultComponentContext()
         val root = appComponent.rootComponentFactory.create(
             rootContext,
-            { profile ->
-                requestVpnPermissionThen { startVpnService(profile) }
-            },
+            { profile -> requestVpnPermissionThen(profile) },
             { stopVpnService() },
         )
 
         setContent { BedlamTheme { RootContent(root) } }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pendingStartProfileId?.let { outState.putString(KEY_PENDING_PROFILE_ID, it) }
     }
 
     private fun startVpnService(profile: Profile) {
@@ -65,13 +76,13 @@ class MainActivity : ComponentActivity() {
         vpnServiceLauncher.stop()
     }
 
-    private fun requestVpnPermissionThen(block: () -> Unit) {
+    private fun requestVpnPermissionThen(profile: Profile) {
         val intent = vpnServiceLauncher.prepareIntent()
         if (intent != null) {
-            pendingStart = block
+            pendingStartProfileId = profile.id
             vpnPermissionLauncher.launch(intent)
         } else {
-            block()
+            startVpnService(profile)
         }
     }
 
@@ -85,5 +96,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "Bedlam"
+        const val KEY_PENDING_PROFILE_ID = "pending_start_profile_id"
     }
 }
