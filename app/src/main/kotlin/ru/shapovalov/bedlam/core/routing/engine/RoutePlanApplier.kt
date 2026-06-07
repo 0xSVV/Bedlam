@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.core.routing.engine
 
+import android.content.Context
 import android.content.pm.PackageManager
 import android.net.IpPrefix
 import android.net.VpnService
@@ -14,7 +15,7 @@ import java.net.InetAddress
 
 /** Applies a [RoutePlan] to a `VpnService.Builder`. */
 @Inject
-class RoutePlanApplier {
+class RoutePlanApplier(private val context: Context) {
 
     fun apply(plan: RoutePlan, builder: VpnService.Builder) {
         plan.claimedV4.forEach { addRouteSafely(builder, it) }
@@ -29,13 +30,16 @@ class RoutePlanApplier {
 
         when (plan.appFilter.mode) {
             AppFilterMode.All -> Unit
-            AppFilterMode.Allowlist -> plan.appFilter.packages.forEach { pkg ->
-                runCatching { builder.addAllowedApplication(pkg) }
-                    .onFailure { e ->
-                        if (e is PackageManager.NameNotFoundException) {
-                            Log.w(TAG, "Allowlist package not installed: $pkg")
-                        } else throw e
-                    }
+            AppFilterMode.Allowlist -> {
+                val allowed = plan.appFilter.packages.ifEmpty { setOf(context.packageName) }
+                allowed.forEach { pkg ->
+                    runCatching { builder.addAllowedApplication(pkg) }
+                        .onFailure { e ->
+                            if (e is PackageManager.NameNotFoundException) {
+                                Log.w(TAG, "Allowlist package not installed: $pkg")
+                            } else throw e
+                        }
+                }
             }
 
             AppFilterMode.Blocklist -> plan.appFilter.packages.forEach { pkg ->
