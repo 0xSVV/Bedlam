@@ -29,6 +29,7 @@ import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
 import ru.shapovalov.hysteria.api.TunConfig
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.toJson
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 class HysteriaClientImpl : HysteriaClient {
@@ -231,8 +232,10 @@ private object LogSink {
 
     private val subscriberFloors = mutableMapOf<LogLevel, Int>()
     private val lock = Any()
+    private val attached = AtomicBoolean(false)
 
     fun attach() {
+        if (!attached.compareAndSet(false, true)) return
         Golib.setLogHandler(LogHandler { level, source, message ->
             flow.tryEmit(
                 LogEntry(
