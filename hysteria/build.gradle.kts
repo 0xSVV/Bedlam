@@ -185,7 +185,6 @@ tasks.named("preBuild") {
 
 tasks.named<Delete>("clean") {
     delete("libs/golib.aar", "libs/golib-sources.jar")
-    finalizedBy("updateHysteriaCore")
 }
 
 val goTest by tasks.registering(Exec::class) {
