@@ -8,6 +8,8 @@ plugins {
     alias(libs.plugins.androidx.room)
 }
 
+val buildingBundle = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
+
 android {
     namespace = "ru.shapovalov.bedlam"
     compileSdk = libs.versions.targetSdk.get().toInt()
@@ -22,7 +24,7 @@ android {
 
     signingConfigs {
         create("release") {
-            val storePath = providers.gradleProperty("BEDLAM_STORE_FILE").orNull
+            val storePath = providers.gradleProperty("BEDLAM_STORE_FILE").orNull?.takeIf { it.isNotBlank() }
             if (storePath != null) {
                 storeFile = file(storePath)
                 storePassword = providers.gradleProperty("BEDLAM_STORE_PASSWORD").orNull
@@ -34,7 +36,9 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (providers.gradleProperty("BEDLAM_STORE_FILE").orNull?.isNotBlank() == true) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -45,7 +49,7 @@ android {
     }
     splits {
         abi {
-            isEnable = true
+            isEnable = !buildingBundle
             reset()
             include("armeabi-v7a", "arm64-v8a", "x86_64")
             isUniversalApk = true
