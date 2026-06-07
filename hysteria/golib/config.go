@@ -53,9 +53,9 @@ type clientConfig struct {
 }
 
 type connFactory struct {
-	session    *Session
-	newFunc    func(addr net.Addr) (net.PacketConn, error)
-	obfuscator obfs.Obfuscator
+	session       *Session
+	newFunc       func(addr net.Addr) (net.PacketConn, error)
+	salamanderPSK []byte
 }
 
 type trackedPacketConn struct {
@@ -243,16 +243,12 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 		return nil
 	}
 
-	var ob obfs.Obfuscator
+	var salamanderPSK []byte
 	if hasObfs {
 		if cfg.ObfsPassword == "" {
 			return fmt.Errorf("obfs password is required for salamander")
 		}
-		var err error
-		ob, err = obfs.NewSalamanderObfuscator([]byte(cfg.ObfsPassword))
-		if err != nil {
-			return fmt.Errorf("create salamander obfuscator: %w", err)
-		}
+		salamanderPSK = []byte(cfg.ObfsPassword)
 		log(LogLevelInfo, srcTransport, "Obfuscation: salamander")
 	}
 
@@ -287,9 +283,9 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 	}
 
 	coreConfig.ConnFactory = &connFactory{
-		session:    session,
-		newFunc:    newFunc,
-		obfuscator: ob,
+		session:       session,
+		newFunc:       newFunc,
+		salamanderPSK: salamanderPSK,
 	}
 	return nil
 }
@@ -301,8 +297,8 @@ func (f *connFactory) New(addr net.Addr) (net.PacketConn, error) {
 	}
 	tracked := &trackedPacketConn{PacketConn: conn, session: f.session}
 	f.session.registerActiveConn(conn)
-	if f.obfuscator != nil {
-		return obfs.WrapPacketConn(tracked, f.obfuscator), nil
+	if f.salamanderPSK != nil {
+		return obfs.WrapPacketConnSalamander(tracked, f.salamanderPSK)
 	}
 	return tracked, nil
 }
