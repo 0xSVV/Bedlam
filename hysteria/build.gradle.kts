@@ -170,7 +170,7 @@ val buildGolib by tasks.registering(Exec::class) {
 
     commandLine(
         gomobileExe, "bind",
-        "-target=android/arm64",
+        "-target=android/arm64,android/arm,android/amd64",
         "-androidapi", androidApi,
         "-tags", "with_gvisor",
         "-ldflags=-s -w",
