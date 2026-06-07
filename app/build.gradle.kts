@@ -1,3 +1,5 @@
+import com.android.build.api.variant.FilterConfiguration
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
@@ -41,6 +43,14 @@ android {
             )
         }
     }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            isUniversalApk = true
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -53,11 +63,26 @@ android {
     }
 }
 
+val abiVersionCodes = mapOf(
+    "armeabi-v7a" to 1,
+    "arm64-v8a" to 2,
+    "x86_64" to 4,
+)
+
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
+        val baseVersionCode = libs.versions.versionCode.get().toInt()
         variant.outputs.forEach { output ->
+            val abi = output.filters
+                .find { it.filterType == FilterConfiguration.FilterType.ABI }
+                ?.identifier
+            if (abi != null) {
+                output.versionCode.set(baseVersionCode * 10 + (abiVersionCodes[abi] ?: 0))
+            }
             output.outputFileName.set(
-                output.versionName.map { versionName -> "bedlam-v$versionName.apk" }
+                output.versionName.map { versionName ->
+                    "bedlam-v$versionName-${abi ?: "universal"}.apk"
+                }
             )
         }
     }
