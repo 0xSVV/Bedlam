@@ -11,6 +11,11 @@ import (
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
+const (
+	dnsDialTimeout = 6 * time.Second
+	dnsIOTimeout   = 5 * time.Second
+)
+
 func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error) {
 	type result struct {
 		resp []byte
@@ -18,8 +23,9 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 	}
 	done := make(chan result, 1)
 	var (
-		connMu sync.Mutex
-		conn   net.Conn
+		mu       sync.Mutex
+		conn     net.Conn
+		timedOut bool
 	)
 	go func() {
 		cn, err := c.TCP(dnsServer)
@@ -27,11 +33,17 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 			done <- result{nil, fmt.Errorf("dial DNS server: %w", err)}
 			return
 		}
-		connMu.Lock()
-		conn = cn
-		connMu.Unlock()
 		defer cn.Close()
-		cn.SetDeadline(time.Now().Add(5 * time.Second))
+
+		mu.Lock()
+		if timedOut {
+			mu.Unlock()
+			return
+		}
+		conn = cn
+		mu.Unlock()
+
+		cn.SetDeadline(time.Now().Add(dnsIOTimeout))
 
 		msg := make([]byte, 2+len(query))
 		binary.BigEndian.PutUint16(msg[:2], uint16(len(query)))
@@ -47,7 +59,7 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 			return
 		}
 		n := binary.BigEndian.Uint16(respLen[:])
-		if n == 0 || n > 65535 {
+		if n == 0 {
 			done <- result{nil, fmt.Errorf("invalid response length: %d", n)}
 			return
 		}
@@ -63,12 +75,13 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 	select {
 	case r := <-done:
 		return r.resp, r.err
-	case <-time.After(6 * time.Second):
-		connMu.Lock()
+	case <-time.After(dnsDialTimeout):
+		mu.Lock()
+		timedOut = true
 		if conn != nil {
 			_ = conn.Close()
 		}
-		connMu.Unlock()
+		mu.Unlock()
 		return nil, fmt.Errorf("DNS query to %s timed out", dnsServer)
 	}
 }
