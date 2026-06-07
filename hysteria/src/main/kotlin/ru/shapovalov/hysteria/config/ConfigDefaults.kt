@@ -2,7 +2,7 @@ package ru.shapovalov.hysteria.config
 
 val defaultTlsOptions = TlsOptions(
     tlsSni = "",
-    tlsInsecure = true,
+    tlsInsecure = false,
     tlsPinSHA256 = "",
     tlsCa = "",
     tlsClientCert = "",
