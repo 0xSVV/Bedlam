@@ -177,12 +177,12 @@ func (rc *reconnectClient) watchdog() {
 		case <-rc.stopWatchdog:
 			return
 		case <-ticker.C:
-			rc.probe()
+			rc.tick()
 		}
 	}
 }
 
-func (rc *reconnectClient) probe() {
+func (rc *reconnectClient) tick() {
 	rc.mu.Lock()
 	if rc.closed {
 		rc.mu.Unlock()
@@ -190,10 +190,15 @@ func (rc *reconnectClient) probe() {
 	}
 	c := rc.inner
 	rc.mu.Unlock()
+
 	if c == nil {
+		log(LogLevelDebug, srcWatchdog, "Down and idle; re-dialing")
+		if _, err := rc.currentClient(srcWatchdog); err != nil {
+			log(LogLevelDebug, srcWatchdog, "Idle re-dial failed: %s", err)
+		}
 		return
 	}
-	log(LogLevelDebug, srcWatchdog, "Probing connection liveness")
+
 	udp, err := c.UDP()
 	if isReconnectable(err) {
 		rc.markDead(err, srcWatchdog)
@@ -202,7 +207,6 @@ func (rc *reconnectClient) probe() {
 	if udp != nil {
 		_ = udp.Close()
 	}
-	log(LogLevelDebug, srcWatchdog, "Probe ok")
 }
 
 func isReconnectable(err error) bool {
