@@ -21,7 +21,7 @@ The UI is Jetpack Compose and Material 3 over a unidirectional architecture. It 
 
 Routing is rule based. You decide what bypasses the tunnel and what goes through it using three kinds of source: CIDR ranges, autonomous systems (an ASN expands to its announced prefixes, pulled live from RIPEstat), and domains (resolved to addresses). The engine coalesces and subtracts those into a minimal route set, with LAN bypass and a configurable IPv6 mode.
 
-It does not do GeoIP. There is no bundled `geoip.dat` or `.mmdb`, and no matching by country or category. Those files are large binary blobs that fall out of date the day they ship, so Bedlam resolves routes from sources that stay current instead of shipping a frozen database. The catch is that you cannot route a whole country with one rule the way a GeoIP client can; you describe what you want with CIDRs, ASNs, and domains. If that does not fit how you route, a GeoIP-based client is the better choice.
+GeoIP is deliberately out of scope: no bundled `geoip.dat` or `.mmdb`, and no country- or category-level matching. That kind of routing belongs to a general-purpose routing engine like sing-box, with a dedicated rule-matching layer and bundled geo databases. Bedlam is a focused tunnel rather than a routing engine, and keeps its routing explicit and transparent by design. If you need geographic rule sets, that is what a full routing engine is for.
 
 ## License
 
