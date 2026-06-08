@@ -1,6 +1,0 @@
-Wider device support: armeabi-v7a (32-bit ARM) and x86_64 builds alongside arm64.
-Updated the Hysteria 2 core to v2.9.2.
-TLS certificate verification on by default.
-More resilient reconnection on idle and after network changes.
-Clear errors for out-of-range QUIC settings before connecting.
-Now open source under GPL-3.0.

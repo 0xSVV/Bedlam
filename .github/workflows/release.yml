@@ -1,11 +1,10 @@
-# Builds a signed AAB and per-ABI APKs on a v* tag, publishes a GitHub release,
-# and uploads the AAB to Google Play. Secrets (all optional; missing ones skip
-# their step):
-#   BEDLAM_STORE_BASE64      base64 of the upload keystore (base64 -w0 upload.jks)
-#   BEDLAM_STORE_PASSWORD    keystore password
-#   BEDLAM_KEY_ALIAS         key alias
-#   BEDLAM_KEY_PASSWORD      key password
-#   PLAY_SERVICE_ACCOUNT_JSON  Play Developer API service-account JSON
+# Builds signed per-ABI APKs on a v* tag and publishes a GitHub release.
+# Release notes come from release-notes/<version>.md (version = tag without the v).
+# Secrets (optional; without them the build is unsigned):
+#   BEDLAM_STORE_BASE64    base64 of the keystore (base64 -w0 keystore.jks)
+#   BEDLAM_STORE_PASSWORD  keystore password
+#   BEDLAM_KEY_ALIAS       key alias
+#   BEDLAM_KEY_PASSWORD    key password
 name: Release
 
 on:
@@ -21,7 +20,6 @@ jobs:
     timeout-minutes: 40
     env:
       HAS_KEYSTORE: ${{ secrets.BEDLAM_STORE_BASE64 != '' }}
-      HAS_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
       ORG_GRADLE_PROJECT_BEDLAM_STORE_PASSWORD: ${{ secrets.BEDLAM_STORE_PASSWORD }}
       ORG_GRADLE_PROJECT_BEDLAM_KEY_ALIAS: ${{ secrets.BEDLAM_KEY_ALIAS }}
       ORG_GRADLE_PROJECT_BEDLAM_KEY_PASSWORD: ${{ secrets.BEDLAM_KEY_PASSWORD }}
@@ -32,11 +30,11 @@ jobs:
 
       - uses: ./.github/actions/setup-build
 
-      - name: Read versionCode
+      - name: Resolve version
         id: ver
-        run: echo "code=$(grep -E '^versionCode' gradle/libs.versions.toml | grep -oE '[0-9]+')" >> "$GITHUB_OUTPUT"
+        run: echo "name=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Decode upload keystore
+      - name: Decode keystore
         if: ${{ env.HAS_KEYSTORE == 'true' }}
         env:
           KS: ${{ secrets.BEDLAM_STORE_BASE64 }}
@@ -44,28 +42,14 @@ jobs:
           echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.jks"
           echo "ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
 
-      - name: Build AAB for Play (no ABI splits)
-        run: ./gradlew :app:bundleRelease --stacktrace
-
-      - name: Build per-ABI APKs for GitHub
+      - name: Build per-ABI APKs
         run: ./gradlew :app:assembleRelease --stacktrace
 
-      - name: Publish GitHub release with APKs
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/bedlam-*.apk
-          body_path: fastlane/metadata/android/en-US/changelogs/${{ steps.ver.outputs.code }}.txt
+          files: |
+            app/build/outputs/apk/release/bedlam-*.apk
+            app/build/outputs/apk/release/output-metadata.json
+          body_path: release-notes/${{ steps.ver.outputs.name }}.md
           fail_on_unmatched_files: true
-
-      - name: Set up Ruby for fastlane
-        if: ${{ env.HAS_PLAY == 'true' }}
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-          bundler-cache: true
-
-      - name: Upload AAB to Google Play (internal, draft)
-        if: ${{ env.HAS_PLAY == 'true' }}
-        env:
-          PLAY_JSON_KEY_DATA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-        run: bundle exec fastlane play_internal

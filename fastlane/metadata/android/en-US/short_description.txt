@@ -1,1 +1,0 @@
-Hysteria 2 VPN client with a direct, full-device tunnel.
