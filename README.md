@@ -15,8 +15,9 @@ Releases are signed per-ABI APKs (arm64-v8a, armeabi-v7a, x86_64) published on G
 - Per-app allow and block lists, and rule-based split tunnelling.
 - Reconnects on its own: QUIC keep-alive, a watchdog that probes a stalled tunnel and re-resolves the server address, and an immediate re-dial when the network switches between Wi-Fi and mobile.
 - A Quick Settings tile, always-on VPN support, and a foreground service that holds up under aggressive battery management.
+- In-app updates from GitHub releases: a new version is offered on launch with its release notes, downloads with progress, and installs in place with the APK matched to the device ABI.
 
-The UI is Jetpack Compose and Material 3 over a unidirectional architecture. It makes no analytics or tracking calls, and reaches the network only for the tunnel itself and the route sources you add.
+The UI is Jetpack Compose and Material 3 over a unidirectional architecture. It makes no analytics or tracking calls, and reaches the network only for the tunnel itself, the route sources you add, and the release check against GitHub.
 
 ## Routing
 
