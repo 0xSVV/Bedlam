@@ -328,4 +328,15 @@
     <string name="profile_config_caution_congestion">Unsupported algorithm or BBR profile may be rejected</string>
     <string name="profile_config_caution_bandwidth">Misreporting causes congestion-control issues</string>
     <string name="profile_config_caution_hop">Hop intervals must agree with the server</string>
+
+    <string name="update_title">Update available</string>
+    <string name="update_version_change" translatable="false">%1$s → %2$s</string>
+    <string name="update_whats_new">What\'s new</string>
+    <string name="update_notes_empty">No release notes for this version.</string>
+    <string name="update_action_install">Download and install</string>
+    <string name="update_action_skip">Not now</string>
+    <string name="update_action_retry">Try again</string>
+    <string name="update_downloading">Downloading %1$s of %2$s…</string>
+    <string name="update_installing">Installing…</string>
+    <string name="update_failed">Update failed: %1$s</string>
 </resources>
