@@ -100,20 +100,32 @@ class VpnNotificationController(private val context: Context) {
             }
 
             is ConnectionState.Connected -> {
-                builder.setContentText(
-                    context.getString(
-                        R.string.notification_traffic_total,
-                        context.formatBytes(stats.txBytes),
-                        context.formatBytes(stats.rxBytes),
-                    )
+                val rateLine = context.getString(
+                    R.string.notification_traffic_rate,
+                    context.formatRate(txRate),
+                    context.formatRate(rxRate),
                 )
-                builder.setSubText(
-                    context.getString(
-                        R.string.notification_traffic_rate,
-                        context.formatRate(txRate),
-                        context.formatRate(rxRate),
-                    )
+                val sessionLine = context.getString(
+                    R.string.notification_detail_session,
+                    context.formatBytes(stats.txBytes),
+                    context.formatBytes(stats.rxBytes),
                 )
+                val serverLine = context.getString(
+                    if (state.info.udpEnabled) {
+                        R.string.notification_detail_server_udp
+                    } else {
+                        R.string.notification_detail_server
+                    },
+                    state.info.serverAddress,
+                )
+                builder.setContentText(rateLine)
+                builder.setStyle(
+                    Notification.BigTextStyle()
+                        .bigText(listOf(rateLine, sessionLine, serverLine).joinToString("\n"))
+                )
+                builder.setWhen(state.connectedSinceMillis)
+                builder.setShowWhen(true)
+                builder.setUsesChronometer(true)
                 builder.addAction(reconnectAction())
                 builder.addAction(stopAction())
             }

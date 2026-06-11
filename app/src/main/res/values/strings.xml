@@ -12,8 +12,10 @@
     <string name="notification_state_disconnected">Disconnected</string>
     <string name="notification_reconnect_timeout">Could not reconnect — VPN stopped, traffic is no longer protected</string>
     <string name="notification_state_error">Error: %1$s</string>
-    <string name="notification_traffic_total">↑ %1$s · ↓ %2$s</string>
     <string name="notification_traffic_rate">↑ %1$s · ↓ %2$s</string>
+    <string name="notification_detail_session">Session: ↑ %1$s · ↓ %2$s</string>
+    <string name="notification_detail_server">Server: %1$s</string>
+    <string name="notification_detail_server_udp">Server: %1$s · UDP relay</string>
     <string name="rate_per_second">%1$s/s</string>
 
     <string name="action_disconnect">Disconnect</string>
