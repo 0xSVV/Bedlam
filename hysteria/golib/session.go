@@ -69,6 +69,9 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 			return buildCoreConfig(&cfg, addr, s)
 		},
 		wrappedHandler,
+		func() (int64, int64) {
+			return s.txBytes.Load(), s.rxBytes.Load()
+		},
 	)
 	if err != nil {
 		log(LogLevelError, srcTunnel, "Connection failed: %s", err.Error())

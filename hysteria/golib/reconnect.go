@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -11,11 +12,15 @@ import (
 	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
 
-const watchdogInterval = 60 * time.Second
+const (
+	watchdogInterval = 60 * time.Second
+	probeDNSServer   = "1.1.1.1:53"
+)
 
 type reconnectClient struct {
 	configFunc func() (*client.Config, error)
 	handler    EventHandler
+	statsFunc  func() (tx, rx int64)
 
 	mu      sync.Mutex
 	inner   client.Client
@@ -25,12 +30,20 @@ type reconnectClient struct {
 	dialMu       sync.Mutex
 	stopWatchdog chan struct{}
 	watchdogDone chan struct{}
+
+	lastTx int64
+	lastRx int64
 }
 
-func newReconnectClient(cf func() (*client.Config, error), h EventHandler) (*reconnectClient, error) {
+func newReconnectClient(
+	cf func() (*client.Config, error),
+	h EventHandler,
+	statsFunc func() (tx, rx int64),
+) (*reconnectClient, error) {
 	rc := &reconnectClient{
 		configFunc:   cf,
 		handler:      h,
+		statsFunc:    statsFunc,
 		stopWatchdog: make(chan struct{}),
 		watchdogDone: make(chan struct{}),
 	}
@@ -207,13 +220,35 @@ func (rc *reconnectClient) tick() {
 	if udp != nil {
 		_ = udp.Close()
 	}
+
+	if rc.statsFunc == nil {
+		return
+	}
+	tx, rx := rc.statsFunc()
+	stalled := tx > rc.lastTx && rx == rc.lastRx
+	rc.lastTx, rc.lastRx = tx, rx
+	if stalled {
+		rc.probe(c)
+	}
+}
+
+// Outbound traffic with no return traffic for a full watchdog interval
+// suggests a black-holed path that QUIC hasn't noticed yet. A round trip
+// through the tunnel settles it.
+func (rc *reconnectClient) probe(c client.Client) {
+	log(LogLevelDebug, srcWatchdog, "Traffic stalled; probing tunnel")
+	_, err := dnsOverTCP(c, probeDNSServer, buildDNSQuery())
+	if isReconnectable(err) {
+		rc.markDead(fmt.Errorf("stall probe failed: %w", err), srcWatchdog)
+	}
 }
 
 func isReconnectable(err error) bool {
 	if err == nil {
 		return false
 	}
-	if _, ok := err.(coreErrs.DialError); ok {
+	var dialErr coreErrs.DialError
+	if errors.As(err, &dialErr) {
 		return false
 	}
 	return true
