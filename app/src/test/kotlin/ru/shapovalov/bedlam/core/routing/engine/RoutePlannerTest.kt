@@ -104,9 +104,21 @@ class RoutePlannerTest {
         }
 
         @Test
-        fun `dns System produces empty list`() {
+        fun `dns System uses underlying network resolvers`() {
+            val p = RoutePlanner(
+                supportsExcludeRoute = true,
+                tunPrefixV4 = tunV4,
+                tunPrefixV6 = tunV6,
+                systemDnsServers = { listOf("9.9.9.9") },
+            )
+            val plan = p.plan(RoutingConfig(dnsMode = DnsMode.System), AppFilter())
+            assertEquals(listOf("9.9.9.9"), plan.dnsServers)
+        }
+
+        @Test
+        fun `dns System falls back to Cloudflare when no public resolvers`() {
             val plan = planner().plan(RoutingConfig(dnsMode = DnsMode.System), AppFilter())
-            assertTrue(plan.dnsServers.isEmpty())
+            assertEquals(RoutePlanner.CLOUDFLARE_DNS, plan.dnsServers)
         }
 
         @Test

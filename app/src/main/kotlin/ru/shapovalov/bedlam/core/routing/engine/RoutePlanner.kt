@@ -12,6 +12,7 @@ class RoutePlanner(
     private val tunPrefixV4: Cidr.V4,
     private val tunPrefixV6: Cidr.V6,
     private val maxTotalRoutes: Int = DEFAULT_MAX_TOTAL_ROUTES,
+    private val systemDnsServers: () -> List<String> = { emptyList() },
 ) {
 
     fun plan(config: RoutingConfig, appFilter: AppFilter): RoutePlan {
@@ -110,13 +111,8 @@ class RoutePlanner(
     }
 
     private fun resolveDns(config: RoutingConfig): List<String> = when (config.dnsMode) {
-        DnsMode.System -> emptyList()
-        DnsMode.Cloudflare -> listOf(
-            "1.1.1.1",
-            "1.0.0.1",
-            "2606:4700:4700::1111",
-            "2606:4700:4700::1001",
-        )
+        DnsMode.System -> systemDnsServers().ifEmpty { CLOUDFLARE_DNS }
+        DnsMode.Cloudflare -> CLOUDFLARE_DNS
 
         DnsMode.Google -> listOf(
             "8.8.8.8",
@@ -136,5 +132,12 @@ class RoutePlanner(
 
         val IPV4_DEFAULT: Cidr.V4 = Cidr.parseV4("0.0.0.0/0")
         val IPV6_DEFAULT: Cidr.V6 = Cidr.parseV6("::/0")
+
+        val CLOUDFLARE_DNS: List<String> = listOf(
+            "1.1.1.1",
+            "1.0.0.1",
+            "2606:4700:4700::1111",
+            "2606:4700:4700::1001",
+        )
     }
 }
