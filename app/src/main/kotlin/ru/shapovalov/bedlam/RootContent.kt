@@ -24,6 +24,7 @@ import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import ru.shapovalov.bedlam.feature.dashboard.ui.DashboardContainerContent
 import ru.shapovalov.bedlam.feature.logs.ui.LogsContent
 import ru.shapovalov.bedlam.feature.settings.ui.SettingsContent
+import ru.shapovalov.bedlam.feature.update.ui.UpdateContent
 import ru.shapovalov.bedlam.navigation.RootComponent
 import ru.shapovalov.bedlam.navigation.RootComponent.Child
 import ru.shapovalov.bedlam.navigation.RootComponent.Tab
@@ -68,6 +69,7 @@ fun RootContent(component: RootComponent, modifier: Modifier = Modifier) {
                 is Child.Dashboard -> DashboardContainerContent(child.component)
                 is Child.Settings -> SettingsContent(child.component)
                 is Child.Logs -> LogsContent(child.component)
+                is Child.Update -> UpdateContent(child.component)
             }
         }
     }
@@ -85,6 +87,8 @@ private fun Child.shouldShowBottomNavigation(): Boolean = when (this) {
         val settingsStack by component.childStack.subscribeAsState()
         settingsStack.active.instance == SettingsChild.Root
     }
+
+    is Child.Update -> false
 }
 
 private fun Tab.labelRes(): Int = when (this) {

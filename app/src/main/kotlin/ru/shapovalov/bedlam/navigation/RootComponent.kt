@@ -5,26 +5,37 @@ import com.arkivanov.decompose.router.stack.ChildStack
 import com.arkivanov.decompose.router.stack.StackNavigation
 import com.arkivanov.decompose.router.stack.bringToFront
 import com.arkivanov.decompose.router.stack.childStack
+import com.arkivanov.decompose.router.stack.pop
+import com.arkivanov.decompose.router.stack.pushNew
 import com.arkivanov.decompose.value.Value
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.util.componentScope
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponent
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponentFactory
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponent
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponentFactory
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponentFactory
+import ru.shapovalov.bedlam.feature.update.domain.model.AppUpdate
+import ru.shapovalov.bedlam.feature.update.domain.usecase.CheckForUpdateUseCase
+import ru.shapovalov.bedlam.feature.update.presentation.UpdateComponent
+import ru.shapovalov.bedlam.feature.update.presentation.UpdateComponentFactory
 
 class RootComponent(
     componentContext: ComponentContext,
     private val dashboardContainerFactory: DashboardContainerComponentFactory,
     private val settingsFactory: SettingsComponentFactory,
     private val logsFactory: LogsComponentFactory,
+    private val updateFactory: UpdateComponentFactory,
+    private val checkForUpdate: CheckForUpdateUseCase,
     private val onStartVpn: OnStartVpn,
     private val onStopVpn: OnStopVpn,
 ) : ComponentContext by componentContext {
 
     private val navigation = StackNavigation<Config>()
+    private val scope = componentScope()
 
     val childStack: Value<ChildStack<*, Child>> = childStack(
         source = navigation,
@@ -44,9 +55,23 @@ class RootComponent(
                 Config.Settings -> Child.Settings(settingsFactory.create(ctx))
 
                 Config.Logs -> Child.Logs(logsFactory.create(ctx))
+
+                is Config.Update -> Child.Update(
+                    updateFactory.create(ctx, config.update) { navigation.pop() }
+                )
             }
         },
     )
+
+    init {
+        scope.launch {
+            val update = runCatching { checkForUpdate() }.getOrNull() ?: return@launch
+            val alreadyShown = childStack.value.items.any { it.configuration is Config.Update }
+            if (!alreadyShown) {
+                navigation.pushNew(Config.Update(update))
+            }
+        }
+    }
 
     fun onTabSelected(tab: Tab) {
         val target = when (tab) {
@@ -75,6 +100,10 @@ class RootComponent(
         data class Logs(val component: LogsComponent) : Child {
             override val tab: Tab get() = Tab.Logs
         }
+
+        data class Update(val component: UpdateComponent) : Child {
+            override val tab: Tab get() = Tab.Dashboard
+        }
     }
 
     enum class Tab { Logs, Dashboard, Settings }
@@ -97,5 +126,8 @@ class RootComponent(
 
         @Serializable
         data object Logs : Config
+
+        @Serializable
+        data class Update(val update: AppUpdate) : Config
     }
 }
