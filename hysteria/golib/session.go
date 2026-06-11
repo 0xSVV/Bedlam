@@ -211,19 +211,18 @@ func (s *Session) currentClient() *reconnectClient {
 	return s.client
 }
 
-func (s *Session) protectPacketConn(conn net.PacketConn) {
+func (s *Session) protectPacketConn(conn net.PacketConn) error {
 	p := s.protector
 	if p == nil {
-		return
+		return nil
 	}
 	udpConn, ok := conn.(*net.UDPConn)
 	if !ok {
-		return
+		return nil
 	}
 	rawConn, err := udpConn.SyscallConn()
 	if err != nil {
-		log(LogLevelWarn, srcTransport, "Could not access raw socket for protect(): %s", err)
-		return
+		return fmt.Errorf("access raw socket for protect(): %w", err)
 	}
 	var protected bool
 	var seenFd int32
@@ -232,10 +231,9 @@ func (s *Session) protectPacketConn(conn net.PacketConn) {
 		protected = p.Protect(seenFd)
 	})
 	if !protected {
-		log(LogLevelWarn, srcTransport,
-			"VpnService.protect(fd=%d) returned false — traffic may loop through VPN",
-			seenFd)
+		return fmt.Errorf("VpnService.protect(fd=%d) returned false", seenFd)
 	}
+	return nil
 }
 
 func (s *Session) registerActiveConn(c net.PacketConn) {

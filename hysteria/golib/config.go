@@ -256,7 +256,11 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 		if err != nil {
 			return nil, err
 		}
-		session.protectPacketConn(conn)
+		if err := session.protectPacketConn(conn); err != nil {
+			_ = conn.Close()
+			log(LogLevelError, srcTransport, "Socket protection failed: %s", err)
+			return nil, err
+		}
 		return conn, nil
 	}
 
