@@ -10,6 +10,7 @@
     <string name="notification_state_connecting">Connecting…</string>
     <string name="notification_state_reconnecting">Reconnecting (attempt %1$d)…</string>
     <string name="notification_state_disconnected">Disconnected</string>
+    <string name="notification_reconnect_timeout">Could not reconnect — VPN stopped, traffic is no longer protected</string>
     <string name="notification_state_error">Error: %1$s</string>
     <string name="notification_traffic_total">↑ %1$s · ↓ %2$s</string>
     <string name="notification_traffic_rate">↑ %1$s · ↓ %2$s</string>

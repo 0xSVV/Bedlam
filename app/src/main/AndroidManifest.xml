@@ -46,7 +46,7 @@
 
         <service
             android:name=".core.vpn.BedlamVpnService"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE"
             tools:ignore="ForegroundServicesPolicy,VpnServicePolicy">

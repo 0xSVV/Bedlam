@@ -68,6 +68,7 @@ class BedlamVpnService : VpnService() {
     private var startJob: Job? = null
     private val startMutex = Mutex()
     private var reconnectWatchdogJob: Job? = null
+    @Volatile
     private var reconnectTimeoutJob: Job? = null
     private var settingsWatcherJob: Job? = null
 
@@ -115,6 +116,11 @@ class BedlamVpnService : VpnService() {
 
             ACTION_RECONNECT -> {
                 startAsForeground()
+                if (!client.state.value.isActiveTunnel()) {
+                    Log.i(TAG, "Reconnect requested with no active tunnel; stopping")
+                    stop()
+                    return START_NOT_STICKY
+                }
                 scope.launch {
                     runCatching { client.resetConnections() }
                         .onFailure { Log.w(TAG, "resetConnections failed", it) }
@@ -122,6 +128,8 @@ class BedlamVpnService : VpnService() {
                 return START_NOT_STICKY
             }
         }
+
+        startAsForeground()
 
         if (startJob?.isActive == true) {
             Log.i(TAG, "Ignoring VPN start while startup is already in progress")
@@ -131,7 +139,6 @@ class BedlamVpnService : VpnService() {
         connectionName = intent?.getStringExtra(EXTRA_PROFILE_NAME).orEmpty()
         notifications.connectionName = connectionName
 
-        startAsForeground()
         wakeLock.acquire()
         startNetworkObserver()
         startNotificationLoop()
@@ -343,6 +350,7 @@ class BedlamVpnService : VpnService() {
                                 delay(RECONNECT_TIMEOUT_MS)
                                 if (client.state.value is ConnectionState.Reconnecting) {
                                     Log.w(TAG, "Reconnect timed out, stopping service")
+                                    notifications.postReconnectTimeoutWarning()
                                     stop()
                                 }
                             }
