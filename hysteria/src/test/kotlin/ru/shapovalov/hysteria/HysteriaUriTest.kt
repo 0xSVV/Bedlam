@@ -106,6 +106,16 @@ class HysteriaUriTest {
     }
 
     @Test
+    fun `gecko obfs maps through with default packet sizes`() {
+        val r = parseHysteriaUri("hysteria2://t@h/?obfs=gecko&obfs-password=pw")
+        val o = r.config.obfuscation!!
+        assertEquals("gecko", o.obfuscationType)
+        assertEquals("pw", o.obfuscationPassword)
+        assertEquals(0, o.geckoMinPacketSize)
+        assertEquals(0, o.geckoMaxPacketSize)
+    }
+
+    @Test
     fun `bracketed IPv6 host renders bracketed in server address`() {
         val r = parseHysteriaUri("hysteria2://t@[2001:db8::1]:8443/")
         assertEquals("[2001:db8::1]:8443", r.config.server.address)

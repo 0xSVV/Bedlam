@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.util.isRealmAddress
 import ru.shapovalov.bedlam.core.util.parseHost
 import ru.shapovalov.bedlam.core.util.parsePort
 import java.io.IOException
@@ -23,6 +24,7 @@ class PingProfileUseCase(private val context: Context) {
 
     suspend operator fun invoke(profile: Profile): LatencyResult = withContext(Dispatchers.IO) {
         val address = profile.config.server.address
+        if (isRealmAddress(address)) return@withContext LatencyResult.Idle
         val host = parseHost(address)
         val port = parsePort(address)
         measureTcp(underlyingNetwork(), host, port)

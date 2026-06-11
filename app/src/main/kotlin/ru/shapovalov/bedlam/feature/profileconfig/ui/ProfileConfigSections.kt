@@ -5,6 +5,7 @@ import androidx.compose.ui.res.stringResource
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.ObfuscationOptions
+import ru.shapovalov.hysteria.config.RealmOptions
 import ru.shapovalov.hysteria.config.defaultBandwidthOptions
 import ru.shapovalov.hysteria.config.defaultBehaviorOptions
 import ru.shapovalov.hysteria.config.defaultCongestionOptions
@@ -99,6 +100,7 @@ internal fun ObfuscationSection(
 ) {
     val obfs = draft.obfuscation ?: ObfuscationOptions("", "")
     val caution = stringResource(R.string.profile_config_caution_obfs)
+    val isGecko = obfs.obfuscationType.equals("gecko", ignoreCase = true)
     SectionCard(title = stringResource(R.string.profile_config_section_obfuscation)) {
         TextFieldRow(
             label = "obfuscationType",
@@ -112,8 +114,73 @@ internal fun ObfuscationSection(
             value = obfs.obfuscationPassword,
             editMode = editMode,
             caution = caution,
-            showDivider = false,
+            showDivider = isGecko,
             onChange = { onDraftChanged(draft.copy(obfuscation = obfs.copy(obfuscationPassword = it))) },
+        )
+        if (isGecko) {
+            IntFieldRow(
+                label = "geckoMinPacketSize",
+                value = obfs.geckoMinPacketSize,
+                editMode = editMode,
+                caution = caution,
+                onChange = {
+                    onDraftChanged(draft.copy(obfuscation = obfs.copy(geckoMinPacketSize = it)))
+                },
+            )
+            IntFieldRow(
+                label = "geckoMaxPacketSize",
+                value = obfs.geckoMaxPacketSize,
+                editMode = editMode,
+                caution = caution,
+                showDivider = false,
+                onChange = {
+                    onDraftChanged(draft.copy(obfuscation = obfs.copy(geckoMaxPacketSize = it)))
+                },
+            )
+        }
+    }
+}
+
+@Composable
+internal fun RealmSection(
+    draft: HysteriaConfig,
+    editMode: Boolean,
+    onDraftChanged: (HysteriaConfig) -> Unit,
+) {
+    val realm = draft.realm ?: RealmOptions()
+    val caution = stringResource(R.string.profile_config_caution_realm)
+    SectionCard(title = stringResource(R.string.profile_config_section_realm)) {
+        TextFieldRow(
+            label = "stunServers",
+            value = realm.stunServers.joinToString(", "),
+            editMode = editMode,
+            caution = caution,
+            onChange = { entry ->
+                val servers = entry.split(',', '\n').map(String::trim).filter(String::isNotEmpty)
+                onDraftChanged(draft.copy(realm = realm.copy(stunServers = servers)))
+            },
+        )
+        IntFieldRow(
+            label = "stunTimeoutMs",
+            value = realm.stunTimeoutMs,
+            editMode = editMode,
+            caution = caution,
+            onChange = { onDraftChanged(draft.copy(realm = realm.copy(stunTimeoutMs = it))) },
+        )
+        IntFieldRow(
+            label = "punchTimeoutMs",
+            value = realm.punchTimeoutMs,
+            editMode = editMode,
+            caution = caution,
+            onChange = { onDraftChanged(draft.copy(realm = realm.copy(punchTimeoutMs = it))) },
+        )
+        SwitchRow(
+            label = "insecure",
+            value = realm.insecure,
+            editMode = editMode,
+            caution = caution,
+            showDivider = false,
+            onChange = { onDraftChanged(draft.copy(realm = realm.copy(insecure = it))) },
         )
     }
 }

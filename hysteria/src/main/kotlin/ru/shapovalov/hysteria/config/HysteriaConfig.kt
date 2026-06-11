@@ -12,4 +12,5 @@ data class HysteriaConfig(
     val bandwidth: BandwidthOptions? = null,
     val transport: TransportOptions? = null,
     val behavior: BehaviorOptions? = null,
+    val realm: RealmOptions? = null,
 )

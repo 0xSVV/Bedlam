@@ -78,6 +78,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.R
+import ru.shapovalov.bedlam.core.util.isRealmAddress
 import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigComponent
 import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigStore
 import ru.shapovalov.bedlam.ui.theme.spacing
@@ -352,6 +353,9 @@ private fun ConfigBody(
         Spacer(Modifier.height(spacing.medium))
         Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
             ServerSection(draft, editMode, onDraftChanged)
+            if (isRealmAddress(draft.server.address) || draft.realm != null) {
+                RealmSection(draft, editMode, onDraftChanged)
+            }
             TlsSection(draft, editMode, onDraftChanged)
             ObfuscationSection(draft, editMode, onDraftChanged)
             QuicSection(draft, editMode, onDraftChanged)

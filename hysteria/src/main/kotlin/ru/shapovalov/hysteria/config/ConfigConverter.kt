@@ -33,6 +33,10 @@ internal data class WireConfig(
     @SerialName("min_hop_interval") val minHopInterval: Int,
     @SerialName("max_hop_interval") val maxHopInterval: Int,
     @SerialName("fast_open") val fastOpen: Boolean,
+    @SerialName("realm_stun_servers") val realmStunServers: List<String>,
+    @SerialName("realm_stun_timeout_ms") val realmStunTimeoutMs: Int,
+    @SerialName("realm_punch_timeout_ms") val realmPunchTimeoutMs: Int,
+    @SerialName("realm_insecure") val realmInsecure: Boolean,
 )
 
 fun HysteriaConfig.toJson(): String {
@@ -42,6 +46,7 @@ fun HysteriaConfig.toJson(): String {
     val transport = transport ?: defaultTransportOptions
     val behavior = behavior ?: defaultBehaviorOptions
     val obfs = obfuscation ?: ObfuscationOptions("", "")
+    val realmOpts = realm ?: RealmOptions()
 
     val wire = WireConfig(
         server = server.address,
@@ -71,6 +76,10 @@ fun HysteriaConfig.toJson(): String {
         minHopInterval = transport.minHopIntervalSec,
         maxHopInterval = transport.maxHopIntervalSec,
         fastOpen = behavior.fastOpen,
+        realmStunServers = realmOpts.stunServers,
+        realmStunTimeoutMs = realmOpts.stunTimeoutMs,
+        realmPunchTimeoutMs = realmOpts.punchTimeoutMs,
+        realmInsecure = realmOpts.insecure,
     )
     return Json.encodeToString(wire)
 }
