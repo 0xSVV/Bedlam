@@ -42,8 +42,9 @@ type LogHandler interface {
 type tunLogger struct{}
 
 type tunHandler struct {
-	session *Session
-	client  client.Client
+	session     *Session
+	client      client.Client
+	ipv6Enabled bool
 }
 
 var (

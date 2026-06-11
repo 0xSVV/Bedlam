@@ -9,4 +9,5 @@ data class RoutePlan(
     val excludedV6: List<Cidr.V6>,
     val dnsServers: List<String>,
     val appFilter: AppFilter,
+    val ipv6Enabled: Boolean,
 )

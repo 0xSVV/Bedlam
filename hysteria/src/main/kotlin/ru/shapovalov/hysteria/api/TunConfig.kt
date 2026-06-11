@@ -1,6 +1,14 @@
 package ru.shapovalov.hysteria.api
 
-data class TunConfig(val mtu: Int = DEFAULT_MTU) {
+data class TunConfig(
+    val mtu: Int = DEFAULT_MTU,
+    /**
+     * When false, IPv6 flows entering the TUN are rejected immediately instead
+     * of being relayed. The interface must still claim `::/0` so v6 traffic
+     * sinks here rather than leaking around the VPN; apps fall back to IPv4.
+     */
+    val ipv6Enabled: Boolean = true,
+) {
     init {
         require(mtu in MIN_MTU..MAX_MTU) { "MTU out of range: $mtu" }
     }

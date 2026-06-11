@@ -136,7 +136,13 @@ class HysteriaClientImpl : HysteriaClient {
             throw t
         }
         try {
-            session.startTUN(fd, tunConfig.mtu, TunConfig.IPV4_CIDR, TunConfig.IPV6_CIDR)
+            session.startTUN(
+                fd,
+                tunConfig.mtu,
+                TunConfig.IPV4_CIDR,
+                TunConfig.IPV6_CIDR,
+                tunConfig.ipv6Enabled,
+            )
         } catch (t: Throwable) {
             runCatching { ParcelFileDescriptor.adoptFd(fd).close() }
             throw t

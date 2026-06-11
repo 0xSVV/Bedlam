@@ -15,8 +15,12 @@ class RoutePlanner(
 ) {
 
     fun plan(config: RoutingConfig, appFilter: AppFilter): RoutePlan {
+        val ipv6Enabled = config.ipv6Mode == Ipv6Mode.Enabled
         val baseV4 = listOf(IPV4_DEFAULT)
-        val baseV6 = if (config.ipv6Mode == Ipv6Mode.Enabled) listOf(IPV6_DEFAULT) else emptyList()
+        // Disabled still claims ::/0 so v6 sinks into the TUN (where the native
+        // layer rejects it) instead of leaking around the VPN. Only BypassOnly
+        // deliberately lets v6 take the underlying network.
+        val baseV6 = if (config.ipv6Mode == Ipv6Mode.BypassOnly) emptyList() else listOf(IPV6_DEFAULT)
 
         val systemExclusionsV4 = listOf<Cidr.V4>(tunPrefixV4)
         val systemExclusionsV6 = listOf<Cidr.V6>(tunPrefixV6)
@@ -54,6 +58,7 @@ class RoutePlanner(
         val excludedV6 = CidrMath.coalesce(excludedV6Raw).filterIsInstance<Cidr.V6>()
 
         val dnsServers = resolveDns(config)
+            .filter { ipv6Enabled || ':' !in it }
 
         return if (supportsExcludeRoute) {
             RoutePlan(
@@ -63,6 +68,7 @@ class RoutePlanner(
                 excludedV6 = excludedV6,
                 dnsServers = dnsServers,
                 appFilter = appFilter,
+                ipv6Enabled = ipv6Enabled,
             )
         } else {
             val claimedV4 = CidrMath
@@ -78,6 +84,7 @@ class RoutePlanner(
                 excludedV6 = emptyList(),
                 dnsServers = dnsServers,
                 appFilter = appFilter,
+                ipv6Enabled = ipv6Enabled,
             )
         }
     }

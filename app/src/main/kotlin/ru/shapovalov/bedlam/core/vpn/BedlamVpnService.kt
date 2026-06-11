@@ -196,10 +196,11 @@ class BedlamVpnService : VpnService() {
     private suspend fun launchTunnel(config: HysteriaConfig) {
         currentConfig = config
         try {
-            currentRoutePlan = buildRoutePlan()
+            val plan = buildRoutePlan()
+            currentRoutePlan = plan
             client.start(
                 config = config,
-                tunConfig = TunConfig.Default,
+                tunConfig = TunConfig(ipv6Enabled = plan.ipv6Enabled),
                 protector = { fd -> protect(fd) },
                 tun = { tunConfig -> establishTun(tunConfig) },
             )
@@ -256,7 +257,7 @@ class BedlamVpnService : VpnService() {
             client.stop(DisconnectReason.USER)
             client.start(
                 config = config,
-                tunConfig = TunConfig.Default,
+                tunConfig = TunConfig(ipv6Enabled = plan.ipv6Enabled),
                 protector = { fd -> protect(fd) },
                 tun = { tunConfig -> establishTun(tunConfig) },
             )

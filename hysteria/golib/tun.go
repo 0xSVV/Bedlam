@@ -15,7 +15,7 @@ import (
 	N "github.com/sagernet/sing/common/network"
 )
 
-func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string) error {
+func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string, enableIPv6 bool) error {
 	s.tunMu.Lock()
 	defer s.tunMu.Unlock()
 
@@ -56,7 +56,7 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string)
 		Tun:        tunIface,
 		TunOptions: tunOpts,
 		UDPTimeout: 300,
-		Handler:    &tunHandler{session: s, client: c},
+		Handler:    &tunHandler{session: s, client: c, ipv6Enabled: enableIPv6},
 		Logger:     &tunLogger{},
 	})
 	if err != nil {
@@ -75,8 +75,12 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string)
 	s.tunStack = stack
 	s.tunCancel = cancel
 
-	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor)", fd, mtu)
+	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor, ipv6=%v)", fd, mtu, enableIPv6)
 	return nil
+}
+
+func (h *tunHandler) rejectIPv6(dest M.Socksaddr) bool {
+	return !h.ipv6Enabled && dest.Addr.Is6() && !dest.Addr.Is4In6()
 }
 
 func (s *Session) StopTUN() error {
@@ -119,6 +123,10 @@ func (s *Session) StopTUN() error {
 func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metadata) error {
 	defer conn.Close()
 
+	if h.rejectIPv6(m.Destination) {
+		return fmt.Errorf("IPv6 disabled: %s", m.Destination)
+	}
+
 	target := m.Destination.String()
 	log(LogLevelDebug, srcTun, "TCP: %s → %s", m.Source, target)
 
@@ -160,6 +168,10 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 
 func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn, m M.Metadata) error {
 	defer conn.Close()
+
+	if h.rejectIPv6(m.Destination) {
+		return fmt.Errorf("IPv6 disabled: %s", m.Destination)
+	}
 
 	dest := m.Destination.String()
 	log(LogLevelDebug, srcTun, "UDP session: %s → %s", m.Source, dest)

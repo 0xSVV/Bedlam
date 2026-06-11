@@ -73,9 +73,27 @@ class RoutePlannerTest {
         }
 
         @Test
-        fun `ipv6 disabled means no v6 claimed`() {
+        fun `ipv6 disabled still claims v6 default as a sink`() {
             val plan = planner().plan(RoutingConfig(ipv6Mode = Ipv6Mode.Disabled), AppFilter())
+            assertEquals(listOf(RoutePlanner.IPV6_DEFAULT), plan.claimedV6)
+            assertFalse(plan.ipv6Enabled)
+        }
+
+        @Test
+        fun `ipv6 bypass-only claims no v6 routes`() {
+            val plan = planner().plan(RoutingConfig(ipv6Mode = Ipv6Mode.BypassOnly), AppFilter())
             assertTrue(plan.claimedV6.isEmpty())
+            assertFalse(plan.ipv6Enabled)
+        }
+
+        @Test
+        fun `ipv6 disabled drops v6 DNS servers`() {
+            val plan = planner().plan(
+                RoutingConfig(ipv6Mode = Ipv6Mode.Disabled, dnsMode = DnsMode.Cloudflare),
+                AppFilter(),
+            )
+            assertTrue(plan.dnsServers.contains("1.1.1.1"))
+            assertFalse(plan.dnsServers.any { ':' in it })
         }
 
         @Test
