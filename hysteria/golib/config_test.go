@@ -142,6 +142,52 @@ func TestValidateConfig_obfsRequiresPassword(t *testing.T) {
 	}
 }
 
+func TestValidateConfig_acceptsRealmAddr(t *testing.T) {
+	js := `{"server":"realm://token@rv.example/my-realm","auth":"pw"}`
+	if err := ValidateConfig(js); err != nil {
+		t.Errorf("expected realm address to pass, got %v", err)
+	}
+}
+
+func TestValidateConfig_acceptsRealmHTTPAddr(t *testing.T) {
+	js := `{"server":"realm+http://token@rv.example:8080/my-realm","auth":"pw"}`
+	if err := ValidateConfig(js); err != nil {
+		t.Errorf("expected realm+http address to pass, got %v", err)
+	}
+}
+
+func TestValidateConfig_rejectsRealmWithoutToken(t *testing.T) {
+	js := `{"server":"realm://rv.example/my-realm"}`
+	if err := ValidateConfig(js); err == nil {
+		t.Error("expected error for realm address without token")
+	}
+}
+
+func TestValidateConfig_rejectsRealmWithoutRealmID(t *testing.T) {
+	js := `{"server":"realm://token@rv.example/"}`
+	if err := ValidateConfig(js); err == nil {
+		t.Error("expected error for realm address without realm id")
+	}
+}
+
+func TestIsRealmAddr(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"realm://t@h/r", true},
+		{"realm+http://t@h/r", true},
+		{"host.example:443", false},
+		{"realmx://t@h/r", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := isRealmAddr(c.in); got != c.want {
+			t.Errorf("isRealmAddr(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
 func TestValidateConfig_acceptsPlainObfs(t *testing.T) {
 	js := `{"server":"host.example:443","obfs_type":"plain"}`
 	if err := ValidateConfig(js); err != nil {

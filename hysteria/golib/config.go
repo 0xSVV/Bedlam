@@ -52,6 +52,11 @@ type clientConfig struct {
 	MaxHopIntervalSec int `json:"max_hop_interval"`
 
 	FastOpen bool `json:"fast_open"`
+
+	RealmStunServers    []string `json:"realm_stun_servers"`
+	RealmStunTimeoutMs  int      `json:"realm_stun_timeout_ms"`
+	RealmPunchTimeoutMs int      `json:"realm_punch_timeout_ms"`
+	RealmInsecure       bool     `json:"realm_insecure"`
 }
 
 type connFactory struct {
@@ -76,9 +81,23 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 		Auth:       cfg.Auth,
 		FastOpen:   cfg.FastOpen,
 	}
+	if err := applyClientOptions(coreConfig, cfg, ""); err != nil {
+		return nil, err
+	}
+	if err := setupConnFactory(coreConfig, cfg, serverAddr, session); err != nil {
+		return nil, err
+	}
+	return coreConfig, nil
+}
 
+// applyClientOptions fills everything except ServerAddr and ConnFactory, so
+// both the direct path and the realm path can share it. defaultSNI is used
+// when no explicit tls_sni is set (realm uses the rendezvous host).
+func applyClientOptions(coreConfig *client.Config, cfg *clientConfig, defaultSNI string) error {
 	if cfg.TLSSni != "" {
 		coreConfig.TLSConfig.ServerName = cfg.TLSSni
+	} else if defaultSNI != "" {
+		coreConfig.TLSConfig.ServerName = defaultSNI
 	}
 	coreConfig.TLSConfig.InsecureSkipVerify = cfg.TLSInsecure
 
@@ -102,19 +121,19 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 	if customCA {
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM([]byte(cfg.TLSCA)) {
-			return nil, fmt.Errorf("failed to parse CA PEM")
+			return fmt.Errorf("failed to parse CA PEM")
 		}
 		coreConfig.TLSConfig.RootCAs = pool
 	}
 
 	if (cfg.TLSClientCert != "") != (cfg.TLSClientKey != "") {
-		return nil, fmt.Errorf("client cert and key must be set together")
+		return fmt.Errorf("client cert and key must be set together")
 	}
 	mTLS := cfg.TLSClientCert != "" && cfg.TLSClientKey != ""
 	if mTLS {
 		cert, err := tls.X509KeyPair([]byte(cfg.TLSClientCert), []byte(cfg.TLSClientKey))
 		if err != nil {
-			return nil, fmt.Errorf("parse client certificate: %w", err)
+			return fmt.Errorf("parse client certificate: %w", err)
 		}
 		coreConfig.TLSConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			return &cert, nil
@@ -166,11 +185,7 @@ func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (
 			cfg.MaxTxMbps, cfg.MaxRxMbps)
 	}
 
-	if err := setupConnFactory(coreConfig, cfg, serverAddr, session); err != nil {
-		return nil, err
-	}
-
-	return coreConfig, nil
+	return nil
 }
 
 func anyQUICTuned(cfg *clientConfig) bool {

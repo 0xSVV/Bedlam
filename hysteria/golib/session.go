@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
+	"github.com/apernet/hysteria/extras/v2/realm"
 	singtun "github.com/sagernet/sing-tun"
 )
 
@@ -52,9 +53,14 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 	}
 
 	wrappedHandler := &loggingHandler{inner: handler}
-	var lastResolved net.Addr
-	rc, err := newReconnectClient(
-		func() (*client.Config, error) {
+	var configFunc func() (*client.Config, error)
+	if isRealmAddr(cfg.Server) {
+		configFunc = func() (*client.Config, error) {
+			return dialRealm(&cfg, s)
+		}
+	} else {
+		var lastResolved net.Addr
+		configFunc = func() (*client.Config, error) {
 			addr, rerr := resolveHost(cfg.Server)
 			if rerr != nil {
 				if lastResolved == nil {
@@ -67,7 +73,10 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 				lastResolved = addr
 			}
 			return buildCoreConfig(&cfg, addr, s)
-		},
+		}
+	}
+	rc, err := newReconnectClient(
+		configFunc,
 		wrappedHandler,
 		func() (int64, int64) {
 			return s.txBytes.Load(), s.rxBytes.Load()
@@ -89,7 +98,11 @@ func ValidateConfig(configJSON string) error {
 	if cfg.Server == "" {
 		return fmt.Errorf("server address required")
 	}
-	if _, _, err := net.SplitHostPort(cfg.Server); err != nil {
+	if isRealmAddr(cfg.Server) {
+		if _, err := realm.ParseAddr(cfg.Server); err != nil {
+			return fmt.Errorf("invalid realm address %q: %w", cfg.Server, err)
+		}
+	} else if _, _, err := net.SplitHostPort(cfg.Server); err != nil {
 		return fmt.Errorf("invalid server address %q: %w", cfg.Server, err)
 	}
 	if cfg.TLSCA != "" {
@@ -300,4 +313,3 @@ func (s *Session) closeAllActiveConns() {
 		_ = c.Close()
 	}
 }
-
