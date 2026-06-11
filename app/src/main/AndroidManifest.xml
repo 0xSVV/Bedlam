@@ -13,6 +13,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -43,6 +44,10 @@
             android:exported="false"
             android:finishOnTaskLaunch="true"
             android:theme="@style/Theme.Bedlam.Transparent" />
+
+        <receiver
+            android:name=".feature.update.data.UpdateInstallReceiver"
+            android:exported="false" />
 
         <service
             android:name=".core.vpn.BedlamVpnService"

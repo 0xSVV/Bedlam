@@ -23,6 +23,8 @@ import ru.shapovalov.bedlam.core.vpn.tile.di.QuickSettingsTileModule
 import ru.shapovalov.bedlam.core.vpn.tile.domain.repository.QuickSettingsTileRepository
 import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
 import ru.shapovalov.bedlam.feature.session.di.SessionModule
+import ru.shapovalov.bedlam.feature.update.data.ApkInstallerImpl
+import ru.shapovalov.bedlam.feature.update.di.UpdateModule
 import ru.shapovalov.bedlam.navigation.RootComponentFactory
 import ru.shapovalov.hysteria.HysteriaClientImpl
 import ru.shapovalov.hysteria.api.HysteriaClient
@@ -38,7 +40,8 @@ abstract class AppComponent(
     SessionModule,
     RoutingModule,
     PowerModule,
-    QuickSettingsTileModule {
+    QuickSettingsTileModule,
+    UpdateModule {
 
     abstract val hysteriaClient: HysteriaClient
     abstract val json: Json
@@ -54,6 +57,7 @@ abstract class AppComponent(
     abstract val powerReliabilityRepository: PowerReliabilityRepository
     abstract val quickSettingsTileRepository: QuickSettingsTileRepository
     abstract val logBuffer: LogBuffer
+    abstract val apkInstaller: ApkInstallerImpl
 
     abstract val rootComponentFactory: RootComponentFactory
 
