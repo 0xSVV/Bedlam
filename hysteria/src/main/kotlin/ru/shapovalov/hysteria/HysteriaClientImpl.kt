@@ -159,12 +159,13 @@ class HysteriaClientImpl : HysteriaClient {
     override suspend fun stop(reason: DisconnectReason) {
         sessionLock.withLock {
             withContext(Dispatchers.IO) { closeSessionLocked() }
+            tunReady = false
+            sessionStartMillis = 0L
+            pendingConnect.set(null)
+            lastConnectInfo.set(null)
+            _state.value = ConnectionState.Disconnected(reason)
+            LogSink.clearReplay()
         }
-        tunReady = false
-        sessionStartMillis = 0L
-        pendingConnect.set(null)
-        lastConnectInfo.set(null)
-        _state.value = ConnectionState.Disconnected(reason)
     }
 
     override suspend fun resetConnections() {
@@ -243,6 +244,10 @@ private object LogSink {
             )
         })
         Golib.setMinLogLevel(LogLevel.INFO.name)
+    }
+
+    fun clearReplay() {
+        flow.resetReplayCache()
     }
 
     fun register(level: LogLevel) {

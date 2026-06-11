@@ -112,7 +112,8 @@ private fun parsePortAfterHost(host: String, rest: String): HostPort {
     if (',' in portStr || '-' in portStr) {
         return HostPort(host, 0, isHopping = true)
     }
-    val port = portStr.toIntOrNull()?.takeIf { it in 1..65535 } ?: DEFAULT_PORT
+    val port = portStr.toIntOrNull()
+    require(port != null && port in 1..65535) { "invalid port in URI: $portStr" }
     return HostPort(host, port, isHopping = false)
 }
 

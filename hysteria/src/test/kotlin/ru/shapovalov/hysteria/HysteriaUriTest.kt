@@ -123,10 +123,12 @@ class HysteriaUriTest {
         assertEquals("host.example:8000,8100,8200", r.config.server.address)
     }
 
-    @Test
-    fun `non-numeric port falls back to 443`() {
-        val r = parseHysteriaUri("hysteria2://t@host.example:abc/")
-        assertEquals("host.example:443", r.config.server.address)
+    @ParameterizedTest
+    @ValueSource(strings = ["abc", "0", "65536", ""])
+    fun `rejects invalid port`(port: String) {
+        assertThrows(IllegalArgumentException::class.java) {
+            parseHysteriaUri("hysteria2://t@host.example:$port/")
+        }
     }
 
     @Test
