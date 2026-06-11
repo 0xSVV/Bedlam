@@ -11,27 +11,27 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingToolbarDefaults
@@ -58,8 +58,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -74,6 +72,10 @@ import ru.shapovalov.hysteria.config.HysteriaConfig
 
 private val SaveProgressSize = 18.dp
 private val BottomToolbarPadding = 96.dp
+private val SnackbarToolbarClearance = 80.dp
+
+private val ProfileConfigStore.State.toolbarVisible: Boolean
+    get() = draft != null && !editMode && !isLoading && !notFound && !isDeleting
 
 private val ClipboardJson = Json {
     prettyPrint = true
@@ -132,7 +134,15 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 actions = { TopActions(state, component) },
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(snackbarData = it) } },
+        snackbarHost = {
+            val toolbarVisible = state.toolbarVisible
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(
+                    bottom = if (toolbarVisible) SnackbarToolbarClearance else 0.dp,
+                ),
+            ) { Snackbar(snackbarData = it) }
+        },
     ) { padding ->
         Box(modifier = Modifier
             .fillMaxSize()
@@ -148,11 +158,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 )
             }
             ProfileActionsToolbar(
-                visible = draft != null &&
-                        !state.editMode &&
-                        !state.isLoading &&
-                        !state.notFound &&
-                        !state.isDeleting,
+                visible = state.toolbarVisible,
                 onDelete = component::onRequestDelete,
                 onCopy = {
                     val current = state.draft ?: return@ProfileActionsToolbar
@@ -297,58 +303,57 @@ private fun ConfigBody(
     onDraftChanged: (HysteriaConfig) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = spacing.large),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = spacing.large,
+            end = spacing.large,
+            top = spacing.medium,
+            bottom = BottomToolbarPadding,
+        ),
+        verticalArrangement = Arrangement.spacedBy(spacing.medium),
     ) {
-        Spacer(Modifier.height(spacing.medium))
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.medium)) {
-            ServerSection(draft, editMode, onDraftChanged)
-            if (isRealmAddress(draft.server.address) || draft.realm != null) {
-                RealmSection(draft, editMode, onDraftChanged)
-            }
-            TlsSection(draft, editMode, onDraftChanged)
-            ObfuscationSection(draft, editMode, onDraftChanged)
-            QuicSection(draft, editMode, onDraftChanged)
-            CongestionSection(draft, editMode, onDraftChanged)
-            BandwidthSection(draft, editMode, onDraftChanged)
-            TransportSection(draft, editMode, onDraftChanged)
-            BehaviorSection(draft, editMode, onDraftChanged)
+        item(key = "server") { ServerSection(draft, editMode, onDraftChanged) }
+        if (isRealmAddress(draft.server.address) || draft.realm != null) {
+            item(key = "realm") { RealmSection(draft, editMode, onDraftChanged) }
         }
-        Spacer(Modifier.height(spacing.medium))
-        DocsFooter()
-        Spacer(Modifier.height(BottomToolbarPadding))
+        item(key = "tls") { TlsSection(draft, editMode, onDraftChanged) }
+        item(key = "obfuscation") { ObfuscationSection(draft, editMode, onDraftChanged) }
+        item(key = "quic") { QuicSection(draft, editMode, onDraftChanged) }
+        item(key = "congestion") { CongestionSection(draft, editMode, onDraftChanged) }
+        item(key = "bandwidth") { BandwidthSection(draft, editMode, onDraftChanged) }
+        item(key = "transport") { TransportSection(draft, editMode, onDraftChanged) }
+        item(key = "behavior") { BehaviorSection(draft, editMode, onDraftChanged) }
+        item(key = "docs") { DocsFooter() }
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun DocsFooter() {
     val spacing = MaterialTheme.spacing
     val uriHandler = LocalUriHandler.current
     val url = stringResource(R.string.profile_config_docs_url)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.small, vertical = spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(spacing.xSmall),
+    ElevatedButton(
+        onClick = { uriHandler.openUri(url) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = ButtonDefaults.elevatedButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            contentColor = MaterialTheme.colorScheme.primary,
+        ),
+        contentPadding = PaddingValues(spacing.large),
     ) {
         Text(
-            text = stringResource(R.string.profile_config_docs_label),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
             text = stringResource(R.string.profile_config_docs_link),
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontWeight = FontWeight.SemiBold,
-                textDecoration = TextDecoration.Underline,
-            ),
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 2,
+            style = MaterialTheme.typography.titleSmallEmphasized,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.clickable { uriHandler.openUri(url) },
+        )
+        Spacer(Modifier.weight(1f))
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
         )
     }
 }
