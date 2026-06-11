@@ -1,16 +1,20 @@
 package ru.shapovalov.bedlam.feature.profileconfig.ui
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
@@ -43,9 +47,7 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 internal fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     val spacing = MaterialTheme.spacing
     ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize(animationSpec = tween(durationMillis = 220)),
+        modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -75,10 +77,11 @@ internal fun TextFieldRow(
 ) {
     FieldRowFrame(
         label = label,
-        hint = caution.takeIf { editMode },
+        caution = caution,
+        editMode = editMode,
         showDivider = showDivider,
     ) {
-        AnimatedFieldContent(editMode = editMode, label = label) { isEditing ->
+        AnimatedFieldContent(editMode = editMode) { isEditing ->
             if (isEditing) {
                 ConfigTextField(
                     value = value,
@@ -144,10 +147,11 @@ private fun <T> NumericFieldRow(
 ) {
     FieldRowFrame(
         label = label,
-        hint = caution.takeIf { editMode },
+        caution = caution,
+        editMode = editMode,
         showDivider = showDivider,
     ) {
-        AnimatedFieldContent(editMode = editMode, label = label) { isEditing ->
+        AnimatedFieldContent(editMode = editMode) { isEditing ->
             if (isEditing) {
                 var local by remember(text) { mutableStateOf(text) }
                 ConfigTextField(
@@ -166,6 +170,7 @@ private fun <T> NumericFieldRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun SwitchRow(
     label: String,
@@ -175,23 +180,38 @@ internal fun SwitchRow(
     caution: String? = null,
     showDivider: Boolean = true,
 ) {
+    val motion = MaterialTheme.motionScheme
+    val spacing = MaterialTheme.spacing
     FieldRowFrame(
         label = label,
-        hint = caution.takeIf { editMode },
+        caution = caution,
+        editMode = editMode,
         showDivider = showDivider,
-    ) {
-        AnimatedFieldContent(editMode = editMode, label = label) { isEditing ->
-            if (isEditing) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Switch(
-                        checked = value,
-                        onCheckedChange = onChange,
-                        modifier = Modifier.align(Alignment.CenterStart),
-                    )
-                }
-            } else {
-                ReadOnlyValue(value = value.toString())
+        labelTrailing = {
+            AnimatedVisibility(
+                visible = editMode,
+                enter = fadeIn(motion.defaultEffectsSpec()) +
+                        expandVertically(motion.fastSpatialSpec()) +
+                        scaleIn(motion.fastSpatialSpec()),
+                exit = fadeOut(motion.defaultEffectsSpec()) +
+                        shrinkVertically(motion.fastSpatialSpec()) +
+                        scaleOut(motion.fastSpatialSpec()),
+            ) {
+                Switch(checked = value, onCheckedChange = onChange)
             }
+        },
+    ) {
+        AnimatedVisibility(
+            visible = !editMode,
+            enter = fadeIn(motion.defaultEffectsSpec()) +
+                    expandVertically(motion.fastSpatialSpec()),
+            exit = fadeOut(motion.defaultEffectsSpec()) +
+                    shrinkVertically(motion.fastSpatialSpec()),
+        ) {
+            ReadOnlyValue(
+                value = value.toString(),
+                modifier = Modifier.padding(top = spacing.small),
+            )
         }
     }
 }
@@ -238,8 +258,10 @@ private fun ConfigTextField(
 @Composable
 private fun FieldRowFrame(
     label: String,
-    hint: String?,
+    caution: String?,
+    editMode: Boolean,
     showDivider: Boolean,
+    labelTrailing: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
@@ -247,36 +269,55 @@ private fun FieldRowFrame(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.large, vertical = spacing.small),
-        verticalArrangement = Arrangement.spacedBy(spacing.small),
     ) {
-        FieldLabel(label)
-        content()
-        HintLabel(hint)
-        if (showDivider) {
-            FieldDivider()
+        if (labelTrailing != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FieldLabel(label, modifier = Modifier.weight(1f))
+                labelTrailing()
+            }
+        } else {
+            FieldLabel(label)
         }
+        content()
+        AnimatedHint(hint = caution, visible = editMode && !caution.isNullOrBlank())
+        AnimatedDivider(visible = showDivider && !editMode)
     }
 }
 
 @Composable
-private fun FieldLabel(label: String) {
+private fun FieldLabel(label: String, modifier: Modifier = Modifier) {
     Text(
         text = label,
         style = MaterialTheme.typography.labelMedium,
         fontFamily = FontFamily.Monospace,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier,
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun HintLabel(hint: String?) {
-    if (hint.isNullOrBlank()) return
+private fun AnimatedHint(hint: String?, visible: Boolean) {
+    val motion = MaterialTheme.motionScheme
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(motion.defaultEffectsSpec()) + expandVertically(motion.fastSpatialSpec()),
+        exit = fadeOut(motion.defaultEffectsSpec()) + shrinkVertically(motion.fastSpatialSpec()),
+    ) {
+        HintLabel(hint.orEmpty())
+    }
+}
 
+@Composable
+private fun HintLabel(hint: String) {
     val spacing = MaterialTheme.spacing
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = spacing.xSmall),
+            .padding(top = spacing.small),
         horizontalArrangement = Arrangement.spacedBy(spacing.xSmall),
         verticalAlignment = Alignment.Top,
     ) {
@@ -295,7 +336,7 @@ private fun HintLabel(hint: String?) {
 }
 
 @Composable
-private fun ReadOnlyValue(value: String) {
+private fun ReadOnlyValue(value: String, modifier: Modifier = Modifier) {
     val displayValue = value.takeIf { it.isNotBlank() }
         ?: stringResource(R.string.profile_config_field_empty)
     val isEmpty = value.isBlank()
@@ -311,31 +352,41 @@ private fun ReadOnlyValue(value: String) {
         },
         maxLines = 6,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun FieldDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(top = MaterialTheme.spacing.small),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f),
-    )
+private fun AnimatedDivider(visible: Boolean) {
+    val motion = MaterialTheme.motionScheme
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(motion.defaultEffectsSpec()) + expandVertically(motion.fastSpatialSpec()),
+        exit = fadeOut(motion.defaultEffectsSpec()) + shrinkVertically(motion.fastSpatialSpec()),
+    ) {
+        HorizontalDivider(
+            modifier = Modifier.padding(top = MaterialTheme.spacing.small),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f),
+        )
+    }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AnimatedFieldContent(
     editMode: Boolean,
-    label: String,
     content: @Composable (Boolean) -> Unit,
 ) {
+    val motion = MaterialTheme.motionScheme
     AnimatedContent(
         targetState = editMode,
         transitionSpec = {
-            fadeIn(tween(durationMillis = 180, delayMillis = 50)) togetherWith
-                    fadeOut(tween(durationMillis = 90))
+            (fadeIn(motion.defaultEffectsSpec()) togetherWith fadeOut(motion.defaultEffectsSpec()))
+                .using(SizeTransform(clip = false) { _, _ -> motion.fastSpatialSpec() })
         },
-        label = "profile-field-$label",
+        modifier = Modifier.padding(top = MaterialTheme.spacing.small),
+        label = "profile-field-content",
     ) { isEditing ->
         content(isEditing)
     }

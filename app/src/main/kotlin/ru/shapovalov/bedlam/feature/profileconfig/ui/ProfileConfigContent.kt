@@ -4,12 +4,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,24 +20,22 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingActionButtonMenu
-import androidx.compose.material3.FloatingActionButtonMenuItem
+import androidx.compose.material3.FloatingToolbarDefaults
+import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,30 +45,19 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ToggleFloatingActionButton
-import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,7 +73,7 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.config.HysteriaConfig
 
 private val SaveProgressSize = 18.dp
-private val BottomFabPadding = 96.dp
+private val BottomToolbarPadding = 96.dp
 
 private val ClipboardJson = Json {
     prettyPrint = true
@@ -144,26 +132,6 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 actions = { TopActions(state, component) },
             )
         },
-        floatingActionButton = {
-            val draft = state.draft
-            if (draft != null &&
-                !state.editMode &&
-                !state.isLoading &&
-                !state.notFound &&
-                !state.isDeleting
-            ) {
-                ProfileActionsMenu(
-                    onDelete = component::onRequestDelete,
-                    onCopy = {
-                        clipboardManager.setPrimaryClip(
-                            ClipData.newPlainText(clipboardLabel, draft.toClipboardText())
-                        )
-                        scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
-                    },
-                    onEdit = component::onEnterEditMode,
-                )
-            }
-        },
         snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(snackbarData = it) } },
     ) { padding ->
         Box(modifier = Modifier
@@ -179,6 +147,25 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                     onDraftChanged = component::onDraftChanged,
                 )
             }
+            ProfileActionsToolbar(
+                visible = draft != null &&
+                        !state.editMode &&
+                        !state.isLoading &&
+                        !state.notFound &&
+                        !state.isDeleting,
+                onDelete = component::onRequestDelete,
+                onCopy = {
+                    val current = state.draft ?: return@ProfileActionsToolbar
+                    clipboardManager.setPrimaryClip(
+                        ClipData.newPlainText(clipboardLabel, current.toClipboardText())
+                    )
+                    scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
+                },
+                onEdit = component::onEnterEditMode,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = -FloatingToolbarDefaults.ScreenOffset),
+            )
         }
     }
 
@@ -233,82 +220,48 @@ private fun TopActions(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ProfileActionsMenu(
+private fun ProfileActionsToolbar(
+    visible: Boolean,
     onDelete: () -> Unit,
     onCopy: () -> Unit,
     onEdit: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    val openLabel = stringResource(R.string.profile_config_action_menu_open_cd)
-    val closeLabel = stringResource(R.string.profile_config_action_menu_close_cd)
-
-    BackHandler(expanded) { expanded = false }
-
-    FloatingActionButtonMenu(
-        expanded = expanded,
-        button = {
-            ToggleFloatingActionButton(
-                checked = expanded,
-                onCheckedChange = { expanded = !expanded },
-                modifier = Modifier.semantics {
-                    traversalIndex = -1f
-                    stateDescription = if (expanded) closeLabel else openLabel
-                },
-            ) {
-                val icon by remember {
-                    derivedStateOf {
-                        if (checkedProgress > 0.5f) Icons.Default.Close else Icons.Default.MoreVert
-                    }
-                }
-                Icon(
-                    painter = rememberVectorPainter(icon),
-                    contentDescription = if (expanded) closeLabel else openLabel,
-                    modifier = Modifier.animateIcon({ checkedProgress }),
-                )
-            }
-        },
+    val motion = MaterialTheme.motionScheme
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(motion.defaultSpatialSpec()) { it * 2 } +
+                fadeIn(motion.defaultEffectsSpec()),
+        exit = slideOutVertically(motion.defaultSpatialSpec()) { it * 2 } +
+                fadeOut(motion.defaultEffectsSpec()),
+        modifier = modifier,
     ) {
-        FloatingActionButtonMenuItem(
-            onClick = {
-                expanded = false
-                onDelete()
+        HorizontalFloatingToolbar(
+            expanded = true,
+            colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+            floatingActionButton = {
+                FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onEdit) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = stringResource(R.string.profile_config_action_edit),
+                    )
+                }
             },
-            icon = {
+        ) {
+            IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Default.Delete,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.profile_config_action_delete),
                     tint = MaterialTheme.colorScheme.error,
                 )
-            },
-            text = {
-                Text(
-                    text = stringResource(R.string.profile_config_action_delete),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            },
-        )
-        FloatingActionButtonMenuItem(
-            onClick = {
-                expanded = false
-                onCopy()
-            },
-            icon = {
+            }
+            IconButton(onClick = onCopy) {
                 Icon(
                     painter = painterResource(R.drawable.ic_content_copy),
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.profile_config_action_copy),
                 )
-
-            },
-            text = { Text(stringResource(R.string.profile_config_action_copy)) },
-        )
-        FloatingActionButtonMenuItem(
-            onClick = {
-                expanded = false
-                onEdit()
-            },
-            icon = { Icon(Icons.Default.Edit, contentDescription = null) },
-            text = { Text(stringResource(R.string.profile_config_action_edit)) },
-        )
+            }
+        }
     }
 }
 
@@ -366,7 +319,7 @@ private fun ConfigBody(
         }
         Spacer(Modifier.height(spacing.medium))
         DocsFooter()
-        Spacer(Modifier.height(BottomFabPadding))
+        Spacer(Modifier.height(BottomToolbarPadding))
     }
 }
 

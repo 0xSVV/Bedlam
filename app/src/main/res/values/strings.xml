@@ -292,8 +292,6 @@
     <string name="profile_config_action_edit">Edit</string>
     <string name="profile_config_action_copy">Copy config</string>
     <string name="profile_config_action_delete">Delete profile</string>
-    <string name="profile_config_action_menu_open_cd">Open profile actions</string>
-    <string name="profile_config_action_menu_close_cd">Close profile actions</string>
     <string name="profile_config_clip_label">Bedlam profile configuration</string>
     <string name="profile_config_copy_success">Configuration JSON copied</string>
     <string name="profile_config_not_found">Profile not found</string>

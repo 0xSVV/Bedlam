@@ -1,5 +1,7 @@
 package ru.shapovalov.bedlam.feature.profileconfig.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import ru.shapovalov.bedlam.R
@@ -117,26 +119,28 @@ internal fun ObfuscationSection(
             showDivider = isGecko,
             onChange = { onDraftChanged(draft.copy(obfuscation = obfs.copy(obfuscationPassword = it))) },
         )
-        if (isGecko) {
-            IntFieldRow(
-                label = "geckoMinPacketSize",
-                value = obfs.geckoMinPacketSize,
-                editMode = editMode,
-                caution = caution,
-                onChange = {
-                    onDraftChanged(draft.copy(obfuscation = obfs.copy(geckoMinPacketSize = it)))
-                },
-            )
-            IntFieldRow(
-                label = "geckoMaxPacketSize",
-                value = obfs.geckoMaxPacketSize,
-                editMode = editMode,
-                caution = caution,
-                showDivider = false,
-                onChange = {
-                    onDraftChanged(draft.copy(obfuscation = obfs.copy(geckoMaxPacketSize = it)))
-                },
-            )
+        AnimatedVisibility(visible = isGecko) {
+            Column {
+                IntFieldRow(
+                    label = "geckoMinPacketSize",
+                    value = obfs.geckoMinPacketSize,
+                    editMode = editMode,
+                    caution = caution,
+                    onChange = {
+                        onDraftChanged(draft.copy(obfuscation = obfs.copy(geckoMinPacketSize = it)))
+                    },
+                )
+                IntFieldRow(
+                    label = "geckoMaxPacketSize",
+                    value = obfs.geckoMaxPacketSize,
+                    editMode = editMode,
+                    caution = caution,
+                    showDivider = false,
+                    onChange = {
+                        onDraftChanged(draft.copy(obfuscation = obfs.copy(geckoMaxPacketSize = it)))
+                    },
+                )
+            }
         }
     }
 }
