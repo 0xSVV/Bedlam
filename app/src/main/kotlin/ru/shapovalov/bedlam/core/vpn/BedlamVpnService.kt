@@ -1,25 +1,37 @@
 package ru.shapovalov.bedlam.core.vpn
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -366,27 +378,57 @@ class BedlamVpnService : VpnService() {
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun startNotificationLoop() {
         notificationJob?.cancel()
-        val ticker = flow {
-            while (true) {
-                emit(Unit)
-                delay(NOTIFICATION_REFRESH_MS)
+        val ticker = screenOnFlow()
+            .distinctUntilChanged()
+            .flatMapLatest { interactive ->
+                if (interactive) {
+                    flow {
+                        while (true) {
+                            emit(Unit)
+                            delay(NOTIFICATION_REFRESH_MS)
+                        }
+                    }
+                } else {
+                    flowOf(Unit)
+                }
             }
-        }
         notificationJob = scope.launch(Dispatchers.Default) {
             var prevTx = 0L
             var prevRx = 0L
+            var prevAtMillis = SystemClock.elapsedRealtime()
             combine(client.state, ticker) { state, _ -> state }.collect { state ->
                 val s = client.stats() ?: HysteriaClient.TrafficStats(0, 0)
                 updateAlwaysOnVpnState()
-                val txRate = (s.txBytes - prevTx).coerceAtLeast(0)
-                val rxRate = (s.rxBytes - prevRx).coerceAtLeast(0)
+                val now = SystemClock.elapsedRealtime()
+                val elapsedMs = (now - prevAtMillis).coerceAtLeast(1L)
+                val txRate = ((s.txBytes - prevTx) * 1000 / elapsedMs).coerceAtLeast(0)
+                val rxRate = ((s.rxBytes - prevRx) * 1000 / elapsedMs).coerceAtLeast(0)
                 prevTx = s.txBytes
                 prevRx = s.rxBytes
+                prevAtMillis = now
                 notifications.post(state, s, txRate, rxRate)
             }
         }
+    }
+
+    private fun screenOnFlow(): Flow<Boolean> = callbackFlow {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                trySend(intent?.action == Intent.ACTION_SCREEN_ON)
+            }
+        }
+        registerReceiver(
+            receiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+        )
+        trySend(getSystemService(PowerManager::class.java)?.isInteractive ?: true)
+        awaitClose { unregisterReceiver(receiver) }
     }
 
     companion object {
