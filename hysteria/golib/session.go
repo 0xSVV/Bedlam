@@ -45,12 +45,6 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 	log(LogLevelInfo, srcTunnel, "Starting client for %s (auth=%s)",
 		cfg.Server, authSummary(cfg.Auth))
 
-	resolved, err := resolveHost(cfg.Server)
-	if err != nil {
-		return nil, fmt.Errorf("resolve server: %w", err)
-	}
-	log(LogLevelInfo, srcTunnel, "Resolved server address: %s", resolved.String())
-
 	s := &Session{
 		protector:   protector,
 		activeConns: map[net.PacketConn]struct{}{},
@@ -58,9 +52,21 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 	}
 
 	wrappedHandler := &loggingHandler{inner: handler}
+	var lastResolved net.Addr
 	rc, err := newReconnectClient(
 		func() (*client.Config, error) {
-			return buildCoreConfig(&cfg, resolved, s)
+			addr, rerr := resolveHost(cfg.Server)
+			if rerr != nil {
+				if lastResolved == nil {
+					return nil, fmt.Errorf("resolve server: %w", rerr)
+				}
+				log(LogLevelWarn, srcDNS, "Re-resolve failed, using last known address %s: %s",
+					lastResolved.String(), rerr)
+				addr = lastResolved
+			} else {
+				lastResolved = addr
+			}
+			return buildCoreConfig(&cfg, addr, s)
 		},
 		wrappedHandler,
 	)
