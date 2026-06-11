@@ -16,7 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.ElevatedAssistChip
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -224,7 +224,7 @@ private fun SourcesHeaderCard(
                 modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.xSmall),
                 horizontalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
-                ElevatedAssistChip(
+                AssistChip(
                     onClick = onPresets,
                     label = { Text(stringResource(R.string.routing_presets_chip)) },
                 )
