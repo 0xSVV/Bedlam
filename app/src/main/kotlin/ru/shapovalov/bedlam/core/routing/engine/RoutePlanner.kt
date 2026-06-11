@@ -60,10 +60,17 @@ class RoutePlanner(
         val dnsServers = resolveDns(config)
             .filter { ipv6Enabled || ':' !in it }
 
+        // Tunnel DNS servers are claimed as host routes so a direct-route
+        // source covering them (e.g. a resolver's ASN) can't pull plaintext
+        // DNS out of the tunnel. Longest prefix wins over any exclusion.
+        val dnsRoutes = dnsHostRoutes(dnsServers)
+        val dnsRoutesV4 = dnsRoutes.filterIsInstance<Cidr.V4>()
+        val dnsRoutesV6 = if (baseV6.isEmpty()) emptyList() else dnsRoutes.filterIsInstance<Cidr.V6>()
+
         return if (supportsExcludeRoute) {
             RoutePlan(
-                claimedV4 = baseV4,
-                claimedV6 = baseV6,
+                claimedV4 = baseV4 + dnsRoutesV4,
+                claimedV6 = baseV6 + dnsRoutesV6,
                 excludedV4 = excludedV4,
                 excludedV6 = excludedV6,
                 dnsServers = dnsServers,
@@ -72,10 +79,10 @@ class RoutePlanner(
             )
         } else {
             val claimedV4 = CidrMath
-                .subtract(baseV4, excludedV4)
+                .coalesce(CidrMath.subtract(baseV4, excludedV4) + dnsRoutesV4)
                 .filterIsInstance<Cidr.V4>()
             val claimedV6 = CidrMath
-                .subtract(baseV6, excludedV6)
+                .coalesce(CidrMath.subtract(baseV6, excludedV6) + dnsRoutesV6)
                 .filterIsInstance<Cidr.V6>()
             RoutePlan(
                 claimedV4 = claimedV4,
@@ -87,6 +94,19 @@ class RoutePlanner(
                 ipv6Enabled = ipv6Enabled,
             )
         }
+    }
+
+    private fun dnsHostRoutes(dnsServers: List<String>): List<Cidr> =
+        dnsServers
+            .mapNotNull { addr ->
+                val prefix = if (':' in addr) 128 else 32
+                Cidr.parseOrNull("$addr/$prefix")
+            }
+            .filterNot { isLanAddress(it) }
+
+    private fun isLanAddress(c: Cidr): Boolean = when (c) {
+        is Cidr.V4 -> LanRanges.IPV4.any { CidrMath.contains(it, c) }
+        is Cidr.V6 -> LanRanges.IPV6.any { CidrMath.contains(it, c) }
     }
 
     private fun resolveDns(config: RoutingConfig): List<String> = when (config.dnsMode) {

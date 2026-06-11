@@ -51,8 +51,8 @@ class RoutePlannerTest {
         @Test
         fun `bypass-LAN on excludes RFC1918 ranges`() {
             val plan = planner().plan(RoutingConfig(bypassLan = true), AppFilter())
-            assertEquals(listOf(RoutePlanner.IPV4_DEFAULT), plan.claimedV4)
-            assertEquals(listOf(RoutePlanner.IPV6_DEFAULT), plan.claimedV6)
+            assertTrue(plan.claimedV4.contains(RoutePlanner.IPV4_DEFAULT))
+            assertTrue(plan.claimedV6.contains(RoutePlanner.IPV6_DEFAULT))
             assertTrue(plan.excludedV4.any { it == Cidr.parse("10.0.0.0/8") })
             assertTrue(plan.excludedV4.any { it == Cidr.parse("192.168.0.0/16") })
             assertTrue(plan.excludedV4.any { it == Cidr.parse("172.16.0.0/12") })
@@ -119,6 +119,28 @@ class RoutePlannerTest {
                 AppFilter(),
             )
             assertEquals(listOf("9.9.9.9", "149.112.112.112"), plan.dnsServers)
+        }
+
+        @Test
+        fun `tunnel DNS servers are claimed as host routes`() {
+            val plan = planner().plan(
+                RoutingConfig(
+                    dnsMode = DnsMode.Cloudflare,
+                    sources = listOf(cidrSource("1.1.1.0/24")),
+                ),
+                AppFilter(),
+            )
+            assertTrue(plan.excludedV4.any { it == Cidr.parse("1.1.1.0/24") })
+            assertTrue(plan.claimedV4.any { it == Cidr.parse("1.1.1.1/32") })
+        }
+
+        @Test
+        fun `private custom DNS is not claimed`() {
+            val plan = planner().plan(
+                RoutingConfig(dnsMode = DnsMode.Custom, customDns = listOf("192.168.1.1")),
+                AppFilter(),
+            )
+            assertFalse(plan.claimedV4.any { it == Cidr.parse("192.168.1.1/32") })
         }
 
         @Test
