@@ -121,10 +121,6 @@ class HysteriaClientImpl : HysteriaClient {
         override fun onReconnecting(attempt: Int, reason: String) {
             _state.value = ConnectionState.Reconnecting(attempt, reason)
         }
-
-        override fun onError(message: String) {
-            _state.value = ConnectionState.Error(message)
-        }
     }
 
     private fun attachTun(

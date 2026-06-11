@@ -4,8 +4,6 @@ type EventHandler interface {
 	OnConnected(udpEnabled bool, attempt int32)
 
 	OnReconnecting(attempt int32, reason string)
-
-	OnError(message string)
 }
 
 type loggingHandler struct {
@@ -27,12 +25,5 @@ func (h *loggingHandler) OnReconnecting(attempt int32, reason string) {
 	log(LogLevelWarn, srcTunnel, "Reconnecting (attempt %d): %s", attempt, reason)
 	if h.inner != nil {
 		h.inner.OnReconnecting(attempt, reason)
-	}
-}
-
-func (h *loggingHandler) OnError(message string) {
-	log(LogLevelError, srcTunnel, "Tunnel error: %s", message)
-	if h.inner != nil {
-		h.inner.OnError(message)
 	}
 }
