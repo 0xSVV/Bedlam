@@ -123,10 +123,21 @@ class HysteriaClientImpl : HysteriaClient {
         }
     }
 
+    override suspend fun updateTun(
+        tunConfig: TunConfig,
+        tun: HysteriaClient.TunFactory,
+    ): Unit = sessionLock.withLock {
+        val s = session ?: throw IllegalStateException("no active session")
+        withContext(Dispatchers.IO) {
+            attachTun(s, tunConfig, tun, replaceExisting = true)
+        }
+    }
+
     private fun attachTun(
         session: Session,
         tunConfig: TunConfig,
         factory: HysteriaClient.TunFactory,
+        replaceExisting: Boolean = false,
     ) {
         val pfd = factory.create(tunConfig)
         val fd = try {
@@ -136,6 +147,11 @@ class HysteriaClientImpl : HysteriaClient {
             throw t
         }
         try {
+            if (replaceExisting) {
+                runCatching { session.stopTUN() }.onFailure {
+                    Log.w(TAG, "Stopping previous TUN failed", it)
+                }
+            }
             session.startTUN(
                 fd,
                 tunConfig.mtu,

@@ -248,25 +248,11 @@ class BedlamVpnService : VpnService() {
     }
 
     private suspend fun reapplyTunnel(plan: RoutePlan) {
-        val config = currentConfig ?: return
         try {
             Log.i(TAG, "Reapplying tunnel after settings change")
-            reconnectTimeoutJob?.cancel()
-            reconnectTimeoutJob = null
             currentRoutePlan = plan
-            client.stop(DisconnectReason.USER)
-            client.start(
-                config = config,
-                tunConfig = TunConfig(ipv6Enabled = plan.ipv6Enabled),
-                protector = { fd -> protect(fd) },
-                tun = { tunConfig -> establishTun(tunConfig) },
-            )
-            withTimeoutOrNull(REAPPLY_SETTLE_TIMEOUT_MS) {
-                client.state.first {
-                    it is ConnectionState.Connected ||
-                        it is ConnectionState.Error ||
-                        it is ConnectionState.Disconnected
-                }
+            client.updateTun(TunConfig(ipv6Enabled = plan.ipv6Enabled)) { tunConfig ->
+                establishTun(tunConfig)
             }
         } catch (e: CancellationException) {
             throw e
@@ -401,7 +387,6 @@ class BedlamVpnService : VpnService() {
         private const val RECONNECT_TIMEOUT_MS = 3 * 60 * 1000L
         private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
-        private const val REAPPLY_SETTLE_TIMEOUT_MS = 15_000L
         private const val ALWAYS_ON_STATE_REFRESH_MS = 30_000L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"

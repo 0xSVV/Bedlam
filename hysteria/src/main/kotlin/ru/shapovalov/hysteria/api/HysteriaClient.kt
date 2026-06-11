@@ -56,6 +56,20 @@ interface HysteriaClient {
     )
 
     /**
+     * Replaces the TUN device of a running session without tearing down the
+     * QUIC connection. [tun] establishes the new interface first — Android
+     * atomically swaps it in on `establish()`, so no window exists where
+     * traffic flows outside the VPN. In-flight tunneled connections are reset;
+     * the connection state stays [ConnectionState.Connected] throughout.
+     *
+     * @throws IllegalStateException if no session is active.
+     */
+    suspend fun updateTun(
+        tunConfig: TunConfig = TunConfig.Default,
+        tun: TunFactory,
+    )
+
+    /**
      * Tears the tunnel down. Idempotent and safe to call from any dispatcher.
      * Returns when teardown is complete or a 3-second cleanup timeout elapses.
      *
