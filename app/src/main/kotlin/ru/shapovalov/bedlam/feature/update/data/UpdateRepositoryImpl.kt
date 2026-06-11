@@ -71,10 +71,15 @@ class UpdateRepositoryImpl(
 
     override fun downloadApk(update: AppUpdate): Flow<DownloadEvent> = flow {
         val dir = File(context.cacheDir, DOWNLOAD_DIR)
+        val target = File(dir, update.assetName)
+        if (update.sizeBytes > 0 && target.length() == update.sizeBytes) {
+            emit(DownloadEvent.Progress(update.sizeBytes, update.sizeBytes))
+            emit(DownloadEvent.Completed(target))
+            return@flow
+        }
         dir.deleteRecursively()
         dir.mkdirs()
         if (!dir.isDirectory) throw IOException("Cannot create $dir")
-        val target = File(dir, update.assetName)
 
         val conn = (URL(update.downloadUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = DOWNLOAD_TIMEOUT_MS
