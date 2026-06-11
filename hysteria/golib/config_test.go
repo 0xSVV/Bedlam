@@ -142,6 +142,56 @@ func TestValidateConfig_obfsRequiresPassword(t *testing.T) {
 	}
 }
 
+func TestValidateConfig_acceptsPlainObfs(t *testing.T) {
+	js := `{"server":"host.example:443","obfs_type":"plain"}`
+	if err := ValidateConfig(js); err != nil {
+		t.Errorf("expected plain to pass, got %v", err)
+	}
+}
+
+func TestValidateConfig_geckoRequiresPassword(t *testing.T) {
+	js := `{"server":"host.example:443","obfs_type":"gecko"}`
+	if err := ValidateConfig(js); err == nil {
+		t.Error("expected error for missing gecko password")
+	}
+}
+
+func TestValidateConfig_geckoDefaultsPass(t *testing.T) {
+	js := `{"server":"host.example:443","obfs_type":"Gecko","obfs_password":"x"}`
+	if err := ValidateConfig(js); err != nil {
+		t.Errorf("expected gecko with default sizes to pass, got %v", err)
+	}
+}
+
+func TestValidateConfig_geckoSizes(t *testing.T) {
+	cases := []struct {
+		min, max int
+		ok       bool
+	}{
+		{0, 0, true},
+		{512, 1200, true},
+		{1, 2048, true},
+		{600, 0, true},   // max defaults to 1200
+		{1300, 0, false}, // max defaults to 1200 < min
+		{0, 100, false},  // min defaults to 512 > max
+		{-1, 1200, false},
+		{512, 4096, false},
+		{1200, 512, false},
+	}
+	for _, c := range cases {
+		js := fmt.Sprintf(
+			`{"server":"host.example:443","obfs_type":"gecko","obfs_password":"x","obfs_gecko_min_packet":%d,"obfs_gecko_max_packet":%d}`,
+			c.min, c.max)
+		err := ValidateConfig(js)
+		if c.ok && err != nil {
+			t.Errorf("sizes [%d,%d]: expected pass, got %v", c.min, c.max, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("sizes [%d,%d]: expected error", c.min, c.max)
+		}
+	}
+}
+
 func TestValidateConfig_rejectsInvertedHopInterval(t *testing.T) {
 	js := `{"server":"host.example:8000-9000","min_hop_interval":30,"max_hop_interval":10}`
 	if err := ValidateConfig(js); err == nil {

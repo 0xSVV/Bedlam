@@ -105,12 +105,8 @@ func ValidateConfig(configJSON string) error {
 			return err
 		}
 	}
-	obfs := strings.ToLower(cfg.ObfsType)
-	if obfs != "" && obfs != "salamander" {
-		return fmt.Errorf("unsupported obfs type %q", cfg.ObfsType)
-	}
-	if obfs == "salamander" && cfg.ObfsPassword == "" {
-		return fmt.Errorf("obfs password required for salamander")
+	if err := validateObfs(&cfg); err != nil {
+		return err
 	}
 	if cfg.MinHopIntervalSec > 0 && cfg.MaxHopIntervalSec > 0 &&
 		cfg.MinHopIntervalSec > cfg.MaxHopIntervalSec {
@@ -119,6 +115,47 @@ func ValidateConfig(configJSON string) error {
 	}
 	if err := validateQUICBounds(&cfg); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateObfs(cfg *clientConfig) error {
+	obfsType := strings.ToLower(cfg.ObfsType)
+	switch obfsType {
+	case "", "plain":
+		return nil
+	case "salamander":
+		if cfg.ObfsPassword == "" {
+			return fmt.Errorf("obfs password required for salamander")
+		}
+		return nil
+	case "gecko":
+		if cfg.ObfsPassword == "" {
+			return fmt.Errorf("obfs password required for gecko")
+		}
+		return validateGeckoSizes(cfg.ObfsGeckoMinPacketSize, cfg.ObfsGeckoMaxPacketSize)
+	default:
+		return fmt.Errorf("unsupported obfs type %q", cfg.ObfsType)
+	}
+}
+
+// Mirrors the bounds enforced by obfs.WrapPacketConnGecko: zero means the
+// upstream default (512/1200), the hard ceiling is its 2048-byte buffer.
+func validateGeckoSizes(minPkt, maxPkt int) error {
+	const (
+		defaultMin = 512
+		defaultMax = 1200
+		ceiling    = 2048
+	)
+	if minPkt == 0 {
+		minPkt = defaultMin
+	}
+	if maxPkt == 0 {
+		maxPkt = defaultMax
+	}
+	if minPkt <= 0 || minPkt > maxPkt || maxPkt > ceiling {
+		return fmt.Errorf("gecko packet size must satisfy 0 < min (%d) <= max (%d) <= %d",
+			minPkt, maxPkt, ceiling)
 	}
 	return nil
 }

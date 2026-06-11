@@ -28,8 +28,10 @@ type clientConfig struct {
 	TLSClientCert string `json:"tls_client_cert"`
 	TLSClientKey  string `json:"tls_client_key"`
 
-	ObfsType     string `json:"obfs_type"`
-	ObfsPassword string `json:"obfs_password"`
+	ObfsType               string `json:"obfs_type"`
+	ObfsPassword           string `json:"obfs_password"`
+	ObfsGeckoMinPacketSize int    `json:"obfs_gecko_min_packet"`
+	ObfsGeckoMaxPacketSize int    `json:"obfs_gecko_max_packet"`
 
 	InitStreamReceiveWindow uint64 `json:"init_stream_receive_window"`
 	MaxStreamReceiveWindow  uint64 `json:"max_stream_receive_window"`
@@ -53,9 +55,9 @@ type clientConfig struct {
 }
 
 type connFactory struct {
-	session       *Session
-	newFunc       func(addr net.Addr) (net.PacketConn, error)
-	salamanderPSK []byte
+	session *Session
+	newFunc func(addr net.Addr) (net.PacketConn, error)
+	wrap    func(net.PacketConn) (net.PacketConn, error)
 }
 
 type trackedPacketConn struct {
@@ -236,20 +238,14 @@ func resolveHost(server string) (net.Addr, error) {
 
 func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr net.Addr, session *Session) error {
 	isHop := serverAddr.Network() == "udphop"
-	hasObfs := strings.ToLower(cfg.ObfsType) == "salamander"
+	wrap, err := buildObfsWrapper(cfg)
+	if err != nil {
+		return err
+	}
 	hasProtect := session.protector != nil
 
-	if !isHop && !hasObfs && !hasProtect {
+	if !isHop && wrap == nil && !hasProtect {
 		return nil
-	}
-
-	var salamanderPSK []byte
-	if hasObfs {
-		if cfg.ObfsPassword == "" {
-			return fmt.Errorf("obfs password is required for salamander")
-		}
-		salamanderPSK = []byte(cfg.ObfsPassword)
-		log(LogLevelInfo, srcTransport, "Obfuscation: salamander")
 	}
 
 	listenUDP := func() (net.PacketConn, error) {
@@ -287,11 +283,44 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 	}
 
 	coreConfig.ConnFactory = &connFactory{
-		session:       session,
-		newFunc:       newFunc,
-		salamanderPSK: salamanderPSK,
+		session: session,
+		newFunc: newFunc,
+		wrap:    wrap,
 	}
 	return nil
+}
+
+func buildObfsWrapper(cfg *clientConfig) (func(net.PacketConn) (net.PacketConn, error), error) {
+	obfsType := strings.ToLower(cfg.ObfsType)
+	switch obfsType {
+	case "", "plain":
+		return nil, nil
+	case "salamander":
+		if cfg.ObfsPassword == "" {
+			return nil, fmt.Errorf("obfs password is required for salamander")
+		}
+		psk := []byte(cfg.ObfsPassword)
+		log(LogLevelInfo, srcTransport, "Obfuscation: salamander")
+		return func(conn net.PacketConn) (net.PacketConn, error) {
+			return obfs.WrapPacketConnSalamander(conn, psk)
+		}, nil
+	case "gecko":
+		if cfg.ObfsPassword == "" {
+			return nil, fmt.Errorf("obfs password is required for gecko")
+		}
+		opts := obfs.GeckoOptions{
+			Password:      []byte(cfg.ObfsPassword),
+			MinPacketSize: cfg.ObfsGeckoMinPacketSize,
+			MaxPacketSize: cfg.ObfsGeckoMaxPacketSize,
+		}
+		log(LogLevelInfo, srcTransport, "Obfuscation: gecko (packet=[%d,%d])",
+			opts.MinPacketSize, opts.MaxPacketSize)
+		return func(conn net.PacketConn) (net.PacketConn, error) {
+			return obfs.WrapPacketConnGecko(conn, opts)
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported obfs type %q", cfg.ObfsType)
+	}
 }
 
 func (f *connFactory) New(addr net.Addr) (net.PacketConn, error) {
@@ -301,8 +330,8 @@ func (f *connFactory) New(addr net.Addr) (net.PacketConn, error) {
 	}
 	tracked := &trackedPacketConn{PacketConn: conn, session: f.session}
 	f.session.registerActiveConn(conn)
-	if f.salamanderPSK != nil {
-		return obfs.WrapPacketConnSalamander(tracked, f.salamanderPSK)
+	if f.wrap != nil {
+		return f.wrap(tracked)
 	}
 	return tracked, nil
 }
