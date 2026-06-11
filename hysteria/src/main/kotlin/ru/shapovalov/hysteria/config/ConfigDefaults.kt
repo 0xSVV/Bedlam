@@ -36,6 +36,5 @@ val defaultTransportOptions = TransportOptions(
 )
 
 val defaultBehaviorOptions = BehaviorOptions(
-    fastOpen = true,
-    lazy = true
+    fastOpen = true
 )

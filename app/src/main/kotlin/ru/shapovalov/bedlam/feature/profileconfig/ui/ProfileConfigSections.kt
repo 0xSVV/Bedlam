@@ -280,14 +280,8 @@ internal fun BehaviorSection(
             label = "fastOpen",
             value = behavior.fastOpen,
             editMode = editMode,
-            onChange = { onDraftChanged(draft.copy(behavior = behavior.copy(fastOpen = it))) },
-        )
-        SwitchRow(
-            label = "lazy",
-            value = behavior.lazy,
-            editMode = editMode,
             showDivider = false,
-            onChange = { onDraftChanged(draft.copy(behavior = behavior.copy(lazy = it))) },
+            onChange = { onDraftChanged(draft.copy(behavior = behavior.copy(fastOpen = it))) },
         )
     }
 }

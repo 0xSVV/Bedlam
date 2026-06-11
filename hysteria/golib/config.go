@@ -49,7 +49,6 @@ type clientConfig struct {
 	MaxHopIntervalSec int `json:"max_hop_interval"`
 
 	FastOpen bool `json:"fast_open"`
-	Lazy     bool `json:"lazy"`
 }
 
 type connFactory struct {

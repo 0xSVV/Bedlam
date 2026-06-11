@@ -31,7 +31,6 @@ internal data class WireConfig(
     @SerialName("min_hop_interval") val minHopInterval: Int,
     @SerialName("max_hop_interval") val maxHopInterval: Int,
     @SerialName("fast_open") val fastOpen: Boolean,
-    @SerialName("lazy") val lazy: Boolean,
 )
 
 fun HysteriaConfig.toJson(): String {
@@ -68,7 +67,6 @@ fun HysteriaConfig.toJson(): String {
         minHopInterval = transport.minHopIntervalSec,
         maxHopInterval = transport.maxHopIntervalSec,
         fastOpen = behavior.fastOpen,
-        lazy = behavior.lazy,
     )
     return Json.encodeToString(wire)
 }
