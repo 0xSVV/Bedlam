@@ -8,7 +8,8 @@ Releases are signed per-ABI APKs (arm64-v8a, armeabi-v7a, x86_64) published on G
 
 ## What it does
 
-- The full Hysteria 2 configuration: authentication, TLS (custom SNI, custom CA, certificate pinning, mutual TLS), Salamander obfuscation, QUIC window and timeout tuning, BBR and Brutal congestion control, bandwidth limits, and port hopping with configurable intervals.
+- The full Hysteria 2 configuration: authentication, TLS (custom SNI, custom CA, certificate pinning, mutual TLS), Salamander and Gecko obfuscation, QUIC window and timeout tuning, BBR and Brutal congestion control, bandwidth limits, and port hopping with configurable intervals.
+- Realm rendezvous mode: connect to a peer behind NAT through STUN and UDP hole punching by giving a `realm://` address, no public IP or port forwarding required.
 - A real TUN device backed by a gVisor userspace stack, carrying both TCP and UDP. DNS resolves through the tunnel and is cached, so other apps need no proxy settings.
 - Import straight from `hysteria2://` and `hy2://` links.
 - Per-app allow and block lists, and rule-based split tunnelling.
