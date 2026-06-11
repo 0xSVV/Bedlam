@@ -10,6 +10,7 @@ import (
 	"net"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/apernet/hysteria/core/v2/client"
 	"github.com/apernet/hysteria/extras/v2/obfs"
@@ -328,5 +329,10 @@ func isPortHopping(port string) bool {
 }
 
 func normalizeCertHash(hash string) string {
-	return strings.ToLower(strings.ReplaceAll(hash, ":", ""))
+	return strings.ToLower(strings.Map(func(r rune) rune {
+		if r == ':' || unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, hash))
 }

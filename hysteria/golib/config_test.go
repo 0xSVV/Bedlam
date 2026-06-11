@@ -31,7 +31,9 @@ func TestNormalizeCertHash(t *testing.T) {
 	}{
 		{"AB:CD:EF", "abcdef"},
 		{"abcdef", "abcdef"},
-		{"AB-CD", "ab-cd"}, // dash stays, only ':' stripped
+		{"AB-CD", "ab-cd"},
+		{" AB:CD \n", "abcd"},
+		{"ab cd\tef", "abcdef"},
 		{"", ""},
 	}
 	for _, c := range cases {

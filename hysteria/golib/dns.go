@@ -69,6 +69,11 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 			done <- result{nil, fmt.Errorf("read response: %w", err)}
 			return
 		}
+		if len(query) >= 2 && len(resp) >= 2 &&
+			binary.BigEndian.Uint16(resp[:2]) != binary.BigEndian.Uint16(query[:2]) {
+			done <- result{nil, fmt.Errorf("response transaction ID mismatch")}
+			return
+		}
 		done <- result{resp, nil}
 	}()
 
