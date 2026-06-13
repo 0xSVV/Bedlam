@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -16,6 +17,8 @@ import (
 	"github.com/apernet/hysteria/extras/v2/obfs"
 	"github.com/apernet/hysteria/extras/v2/transport/udphop"
 )
+
+const serverResolveTimeout = 3 * time.Second
 
 type clientConfig struct {
 	Server string `json:"server"`
@@ -225,7 +228,10 @@ func resolveHost(server string) (net.Addr, error) {
 		return udphop.ResolveUDPHopAddr(server)
 	}
 
-	ips, err := net.LookupHost(host)
+	ctx, cancel := context.WithTimeout(context.Background(), serverResolveTimeout)
+	defer cancel()
+
+	ips, err := net.DefaultResolver.LookupHost(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("DNS lookup failed for %q: %w", host, err)
 	}
