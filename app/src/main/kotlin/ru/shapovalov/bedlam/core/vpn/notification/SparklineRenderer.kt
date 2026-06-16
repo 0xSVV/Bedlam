@@ -19,10 +19,12 @@ class SparklineRenderer(
     private val heightPx: Int = HEIGHT_PX,
 ) {
 
+    private val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+    private val canvas = Canvas(bitmap)
+
     fun render(samples: RateHistory.Samples, night: Boolean): Bitmap {
         val palette = if (night) NightPalette else DayPalette
-        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
+        bitmap.eraseColor(0)
 
         canvas.drawRoundRect(
             0f, 0f, widthPx.toFloat(), heightPx.toFloat(), CORNER, CORNER,
