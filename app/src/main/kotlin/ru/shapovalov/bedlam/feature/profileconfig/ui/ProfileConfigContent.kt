@@ -61,7 +61,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.isRealmAddress
@@ -144,9 +143,11 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
             ) { Snackbar(snackbarData = it) }
         },
     ) { padding ->
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
             val draft = state.draft
             when {
                 state.isLoading -> CenteredSpinner()

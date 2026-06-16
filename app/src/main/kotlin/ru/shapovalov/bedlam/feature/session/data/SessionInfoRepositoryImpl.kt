@@ -1,9 +1,9 @@
 package ru.shapovalov.bedlam.feature.session.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -52,7 +52,12 @@ class SessionInfoRepositoryImpl(
             }
         )
     } catch (e: TimeoutCancellationException) {
-        Result.failure(IOException("Session lookup timed out after ${LOOKUP_TIMEOUT_MS / 1_000}s", e))
+        Result.failure(
+            IOException(
+                "Session lookup timed out after ${LOOKUP_TIMEOUT_MS / 1_000}s",
+                e
+            )
+        )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

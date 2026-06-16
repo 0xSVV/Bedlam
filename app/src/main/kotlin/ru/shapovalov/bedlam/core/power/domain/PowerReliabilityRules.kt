@@ -18,8 +18,9 @@ object PowerReliabilityRules {
         backgroundRestricted || standbyBucket == StandbyBucket.Restricted -> PowerRiskLevel.High
         vendor.defaultRisk == PowerRiskLevel.High -> PowerRiskLevel.High
         vendor.defaultRisk == PowerRiskLevel.Medium ||
-            !batteryUnrestricted ||
-            !notificationsAllowed -> PowerRiskLevel.Medium
+                !batteryUnrestricted ||
+                !notificationsAllowed -> PowerRiskLevel.Medium
+
         else -> PowerRiskLevel.Low
     }
 
@@ -28,12 +29,12 @@ object PowerReliabilityRules {
         confirmedFingerprint: String?,
     ): Boolean {
         val vendorNeedsReview = snapshot.vendor.needsManualBackgroundAccess &&
-            confirmedFingerprint != snapshot.buildFingerprint
+                confirmedFingerprint != snapshot.buildFingerprint
         return vendorNeedsReview ||
-            !snapshot.batteryUnrestricted ||
-            snapshot.backgroundRestricted ||
-            snapshot.standbyBucket == StandbyBucket.Restricted ||
-            !snapshot.notificationsAllowed
+                !snapshot.batteryUnrestricted ||
+                snapshot.backgroundRestricted ||
+                snapshot.standbyBucket == StandbyBucket.Restricted ||
+                !snapshot.notificationsAllowed
     }
 
     fun effectiveAlwaysOnState(
@@ -41,7 +42,8 @@ object PowerReliabilityRules {
         recentObservedState: AlwaysOnVpnState?,
     ): AlwaysOnVpnState = when {
         recentObservedState == AlwaysOnVpnState.Enabled ||
-            recentObservedState == AlwaysOnVpnState.EnabledWithLockdown -> recentObservedState
+                recentObservedState == AlwaysOnVpnState.EnabledWithLockdown -> recentObservedState
+
         secureState != null -> secureState
         recentObservedState != null -> recentObservedState
         else -> AlwaysOnVpnState.Unknown

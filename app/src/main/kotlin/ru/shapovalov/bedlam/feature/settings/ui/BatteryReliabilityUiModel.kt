@@ -44,28 +44,33 @@ internal fun PowerVendor.guide(): VendorGuide = when (this) {
         bodyRes = R.string.settings_reliability_vendor_body_oneplus,
         stepsArrayRes = R.array.settings_reliability_steps_oneplus,
     )
+
     PowerVendor.Oppo,
     PowerVendor.Realme -> VendorGuide(
         titleRes = R.string.settings_reliability_vendor_title,
         bodyRes = R.string.settings_reliability_vendor_body_coloros,
         stepsArrayRes = R.array.settings_reliability_steps_coloros,
     )
+
     PowerVendor.Xiaomi -> VendorGuide(
         titleRes = R.string.settings_reliability_vendor_title,
         bodyRes = R.string.settings_reliability_vendor_body_xiaomi,
         stepsArrayRes = R.array.settings_reliability_steps_xiaomi,
     )
+
     PowerVendor.Huawei,
     PowerVendor.Honor -> VendorGuide(
         titleRes = R.string.settings_reliability_vendor_title,
         bodyRes = R.string.settings_reliability_vendor_body_huawei,
         stepsArrayRes = R.array.settings_reliability_steps_huawei,
     )
+
     PowerVendor.Vivo -> VendorGuide(
         titleRes = R.string.settings_reliability_vendor_title,
         bodyRes = R.string.settings_reliability_vendor_body_vivo,
         stepsArrayRes = R.array.settings_reliability_steps_vivo,
     )
+
     PowerVendor.Transsion,
     PowerVendor.Asus,
     PowerVendor.Meizu,
@@ -74,11 +79,13 @@ internal fun PowerVendor.guide(): VendorGuide = when (this) {
         bodyRes = R.string.settings_reliability_vendor_body_generic_aggressive,
         stepsArrayRes = R.array.settings_reliability_steps_generic_aggressive,
     )
+
     PowerVendor.Samsung -> VendorGuide(
         titleRes = R.string.settings_reliability_vendor_title,
         bodyRes = R.string.settings_reliability_vendor_body_samsung,
         stepsArrayRes = R.array.settings_reliability_steps_samsung,
     )
+
     PowerVendor.Generic -> VendorGuide(
         titleRes = R.string.settings_reliability_vendor_title,
         bodyRes = R.string.settings_reliability_vendor_body_normal,

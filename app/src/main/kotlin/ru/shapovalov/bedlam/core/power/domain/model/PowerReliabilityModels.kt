@@ -55,15 +55,18 @@ enum class PowerVendor(
                 normalized.contains("realme") -> Realme
                 normalized.contains("oppo") -> Oppo
                 normalized.contains("xiaomi") ||
-                    normalized.contains("redmi") ||
-                    normalized.contains("poco") -> Xiaomi
+                        normalized.contains("redmi") ||
+                        normalized.contains("poco") -> Xiaomi
+
                 normalized.contains("honor") -> Honor
                 normalized.contains("huawei") -> Huawei
                 normalized.contains("vivo") ||
-                    normalized.contains("iqoo") -> Vivo
+                        normalized.contains("iqoo") -> Vivo
+
                 normalized.contains("tecno") ||
-                    normalized.contains("infinix") ||
-                    normalized.contains("itel") -> Transsion
+                        normalized.contains("infinix") ||
+                        normalized.contains("itel") -> Transsion
+
                 normalized.contains("asus") -> Asus
                 normalized.contains("meizu") -> Meizu
                 normalized.contains("lenovo") -> Lenovo

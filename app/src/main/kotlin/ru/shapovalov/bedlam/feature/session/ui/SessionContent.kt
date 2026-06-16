@@ -89,9 +89,11 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
         },
     ) { padding ->
         if (showSpeedTest) {
-            SpeedTestWebView(modifier = Modifier
-                .fillMaxSize()
-                .padding(padding))
+            SpeedTestWebView(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            )
             return@Scaffold
         }
 
@@ -111,6 +113,7 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                     errorMessage.takeIf { it.isNotBlank() }
                         ?: stringResource(R.string.session_error_unknown)
                 )
+
                 info != null -> CardState.Success(info)
                 else -> CardState.Loading
             }

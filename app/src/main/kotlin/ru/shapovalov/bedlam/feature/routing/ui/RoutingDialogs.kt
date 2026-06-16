@@ -255,8 +255,8 @@ private fun SourceKind.label(): String = stringResource(
 
 private fun SourceKind.placeholder(): String = when (this) {
     SourceKind.CIDR -> "10.0.0.0/8"
-    SourceKind.ASN -> "AS13238"
-    SourceKind.DOMAIN -> "yandex.ru"
+    SourceKind.ASN -> "AS13335"
+    SourceKind.DOMAIN -> "example.com"
 }
 
 private val PresetDotSize = 8.dp

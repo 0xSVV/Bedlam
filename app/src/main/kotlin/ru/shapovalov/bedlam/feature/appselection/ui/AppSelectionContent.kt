@@ -114,9 +114,11 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
             )
         },
     ) { padding ->
-        Column(modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
             ModeChips(
                 selected = state.mode,
                 onSelect = component::onModeSelected,

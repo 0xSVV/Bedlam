@@ -67,9 +67,11 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
         snackbarHostState.showSnackbar(msg)
     }
 
-    Box(modifier = modifier
-        .fillMaxSize()
-        .statusBarsPadding()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()

@@ -152,19 +152,25 @@ private fun ReliabilityHero(
     val titleRes = when {
         confirmed && snapshot.vendor.needsManualBackgroundAccess ->
             R.string.settings_reliability_hero_confirmed_title
+
         snapshot.riskLevel == PowerRiskLevel.High ->
             R.string.settings_reliability_hero_high_title
+
         snapshot.riskLevel == PowerRiskLevel.Medium ->
             R.string.settings_reliability_hero_medium_title
+
         else -> R.string.settings_reliability_hero_low_title
     }
     val bodyRes = when {
         confirmed && snapshot.vendor.needsManualBackgroundAccess ->
             R.string.settings_reliability_hero_confirmed_body
+
         snapshot.riskLevel == PowerRiskLevel.High ->
             R.string.settings_reliability_hero_high_body
+
         snapshot.riskLevel == PowerRiskLevel.Medium ->
             R.string.settings_reliability_hero_medium_body
+
         else -> R.string.settings_reliability_hero_low_body
     }
 
@@ -250,6 +256,7 @@ private fun ChecklistCard(
                     when {
                         !snapshot.vendor.needsManualBackgroundAccess ->
                             R.string.settings_reliability_status_not_needed
+
                         confirmed -> R.string.settings_reliability_status_marked_done
                         else -> R.string.settings_reliability_status_review
                     },
@@ -311,6 +318,7 @@ private fun ChecklistCard(
                 tone = when (snapshot.alwaysOnVpnState) {
                     AlwaysOnVpnState.Enabled,
                     AlwaysOnVpnState.EnabledWithLockdown -> CheckTone.Good
+
                     AlwaysOnVpnState.OtherVpn -> CheckTone.Warning
                     AlwaysOnVpnState.Disabled,
                     AlwaysOnVpnState.Unknown -> CheckTone.Info
@@ -484,10 +492,12 @@ private fun StatusPill(text: String, tone: CheckTone) {
             container = colors.primaryContainer
             content = colors.onPrimaryContainer
         }
+
         CheckTone.Info -> {
             container = colors.secondaryContainer
             content = colors.onSecondaryContainer
         }
+
         CheckTone.Warning -> {
             container = colors.errorContainer
             content = colors.onErrorContainer

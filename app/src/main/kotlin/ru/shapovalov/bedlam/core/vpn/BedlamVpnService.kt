@@ -13,8 +13,8 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -80,18 +80,23 @@ class BedlamVpnService : VpnService() {
     private var startJob: Job? = null
     private val startMutex = Mutex()
     private var reconnectWatchdogJob: Job? = null
+
     @Volatile
     private var reconnectTimeoutJob: Job? = null
     private var settingsWatcherJob: Job? = null
 
     @Volatile
     private var currentRoutePlan: RoutePlan? = null
+
     @Volatile
     private var currentConfig: HysteriaConfig? = null
+
     @Volatile
     private var connectionName: String = ""
+
     @Volatile
     private var lastAlwaysOnVpnState: AlwaysOnVpnState? = null
+
     @Volatile
     private var lastAlwaysOnVpnStateWriteMillis: Long = 0L
 
@@ -171,7 +176,10 @@ class BedlamVpnService : VpnService() {
                         updateConnectionName(request.profileName)
                         Log.i(TAG, "Ignoring duplicate VPN start while tunnel is active")
                     } else {
-                        Log.w(TAG, "Ignoring VPN start for a different config while tunnel is active")
+                        Log.w(
+                            TAG,
+                            "Ignoring VPN start for a different config while tunnel is active"
+                        )
                     }
                     return@withLock
                 }
@@ -244,7 +252,7 @@ class BedlamVpnService : VpnService() {
             combine(
                 routingRepository.observe(),
                 appFilterRepository.observe(),
-            ) { _, _ -> Unit }
+            ) { _, _ -> }
                 .debounce(SETTINGS_REAPPLY_DEBOUNCE_MS)
                 .collect {
                     val newPlan = runCatching { buildRoutePlan() }.getOrNull() ?: return@collect
@@ -253,8 +261,8 @@ class BedlamVpnService : VpnService() {
                     val settledState = withTimeoutOrNull(CONNECT_SETTLE_TIMEOUT_MS) {
                         client.state.first {
                             it is ConnectionState.Connected ||
-                                it is ConnectionState.Disconnected ||
-                                it is ConnectionState.Error
+                                    it is ConnectionState.Disconnected ||
+                                    it is ConnectionState.Error
                         }
                     } ?: return@collect
 
@@ -368,10 +376,12 @@ class BedlamVpnService : VpnService() {
                             }
                         }
                     }
+
                     is ConnectionState.Connected -> {
                         reconnectTimeoutJob?.cancel()
                         reconnectTimeoutJob = null
                     }
+
                     else -> Unit
                 }
             }
@@ -506,5 +516,5 @@ class BedlamVpnService : VpnService() {
 
 private fun ConnectionState.isActiveTunnel(): Boolean =
     this is ConnectionState.Connecting ||
-        this is ConnectionState.Connected ||
-        this is ConnectionState.Reconnecting
+            this is ConnectionState.Connected ||
+            this is ConnectionState.Reconnecting

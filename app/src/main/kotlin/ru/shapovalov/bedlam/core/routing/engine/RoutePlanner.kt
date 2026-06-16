@@ -21,7 +21,8 @@ class RoutePlanner(
         // Disabled still claims ::/0 so v6 sinks into the TUN (where the native
         // layer rejects it) instead of leaking around the VPN. Only BypassOnly
         // deliberately lets v6 take the underlying network.
-        val baseV6 = if (config.ipv6Mode == Ipv6Mode.BypassOnly) emptyList() else listOf(IPV6_DEFAULT)
+        val baseV6 =
+            if (config.ipv6Mode == Ipv6Mode.BypassOnly) emptyList() else listOf(IPV6_DEFAULT)
 
         val systemExclusionsV4 = listOf<Cidr.V4>(tunPrefixV4)
         val systemExclusionsV6 = listOf<Cidr.V6>(tunPrefixV6)
@@ -66,7 +67,8 @@ class RoutePlanner(
         // DNS out of the tunnel. Longest prefix wins over any exclusion.
         val dnsRoutes = dnsHostRoutes(dnsServers)
         val dnsRoutesV4 = dnsRoutes.filterIsInstance<Cidr.V4>()
-        val dnsRoutesV6 = if (baseV6.isEmpty()) emptyList() else dnsRoutes.filterIsInstance<Cidr.V6>()
+        val dnsRoutesV6 =
+            if (baseV6.isEmpty()) emptyList() else dnsRoutes.filterIsInstance<Cidr.V6>()
 
         return if (supportsExcludeRoute) {
             RoutePlan(

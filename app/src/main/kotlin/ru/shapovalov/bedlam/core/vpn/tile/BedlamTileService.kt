@@ -5,9 +5,9 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
-import androidx.annotation.RequiresApi
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -133,8 +133,8 @@ class BedlamTileService : TileService() {
         startActivityAndCollapseCompat(
             Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
             },
             REQ_OPEN_APP,
         )
@@ -176,8 +176,8 @@ class BedlamTileService : TileService() {
 
     private fun ConnectionState.isTunnelActive(): Boolean =
         this is ConnectionState.Connected ||
-            this is ConnectionState.Connecting ||
-            this is ConnectionState.Reconnecting
+                this is ConnectionState.Connecting ||
+                this is ConnectionState.Reconnecting
 
     private companion object {
         const val REQ_OPEN_APP = 40

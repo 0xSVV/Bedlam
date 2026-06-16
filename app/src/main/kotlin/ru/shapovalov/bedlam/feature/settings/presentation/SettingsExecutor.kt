@@ -14,8 +14,10 @@ internal class SettingsExecutor(
         when (action) {
             is Action.QuickSettingsTileAddedChanged ->
                 dispatch(Msg.QuickSettingsTileAddedChanged(action.added))
+
             is Action.ReliabilitySnapshotChanged ->
                 dispatch(Msg.ReliabilitySnapshotChanged(action.snapshot))
+
             is Action.ConfirmedReliabilityFingerprintChanged ->
                 dispatch(Msg.ConfirmedReliabilityFingerprintChanged(action.fingerprint))
         }
@@ -26,6 +28,7 @@ internal class SettingsExecutor(
             is SettingsStore.Intent.SetQuickSettingsTileAdded -> scope.launch {
                 quickSettingsTileRepository.setAdded(intent.added)
             }
+
             is SettingsStore.Intent.MarkReliabilityConfirmed -> scope.launch {
                 powerReliabilityRepository.markConfirmed(intent.fingerprint)
             }

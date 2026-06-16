@@ -88,9 +88,11 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
                     .padding(horizontal = spacing.large, vertical = spacing.small),
             )
 
-            Box(modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
                 val visible = state.visibleEntries
                 if (visible.isEmpty()) {
                     EmptyState(isPaused = state.isPaused)

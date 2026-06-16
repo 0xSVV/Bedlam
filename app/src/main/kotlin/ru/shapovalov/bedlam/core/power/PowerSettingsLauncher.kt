@@ -5,8 +5,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
-import ru.shapovalov.bedlam.core.power.domain.model.PowerVendor
 import androidx.core.net.toUri
+import ru.shapovalov.bedlam.core.power.domain.model.PowerVendor
 
 object PowerSettingsLauncher {
 
@@ -78,6 +78,7 @@ object PowerSettingsLauncher {
                 ComponentName("com.miui.securitycenter", "com.miui.powercenter.PowerSettings"),
             ),
         )
+
         PowerVendor.Huawei,
         PowerVendor.Honor -> listOf(
             Intent().setComponent(
@@ -93,6 +94,7 @@ object PowerSettingsLauncher {
                 ),
             ),
         )
+
         PowerVendor.Vivo -> listOf(
             Intent().setComponent(
                 ComponentName(
@@ -107,6 +109,7 @@ object PowerSettingsLauncher {
                 ),
             ),
         )
+
         PowerVendor.OnePlus,
         PowerVendor.Oppo,
         PowerVendor.Realme -> listOf(
@@ -129,6 +132,7 @@ object PowerSettingsLauncher {
                 ),
             ),
         )
+
         PowerVendor.Transsion,
         PowerVendor.Asus,
         PowerVendor.Meizu,

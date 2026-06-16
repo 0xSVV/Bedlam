@@ -37,7 +37,7 @@ class SystemDnsProvider(private val context: Context) {
     private fun ConnectivityManager.isUsableNonVpn(network: Network): Boolean {
         val caps = getNetworkCapabilities(network) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     private fun InetAddress.toPublicAddressString(): String? {

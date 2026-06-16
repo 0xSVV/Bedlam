@@ -162,7 +162,7 @@ private fun requestQuickSettingsTile(context: Context, onAddedChanged: (Boolean)
             context.mainExecutor,
         ) { result ->
             val added = result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
-                result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED
+                    result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED
             if (added) {
                 onAddedChanged(true)
             }
