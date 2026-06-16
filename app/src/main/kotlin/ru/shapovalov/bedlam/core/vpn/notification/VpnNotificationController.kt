@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
@@ -19,6 +20,9 @@ class VpnNotificationController(private val context: Context) {
 
     @Volatile
     var connectionName: String = ""
+
+    private val rateHistory = RateHistory()
+    private val sparklineRenderer = SparklineRenderer()
 
     private val notificationManager: NotificationManager =
         requireNotNull(context.getSystemService(NotificationManager::class.java)) {
@@ -50,6 +54,7 @@ class VpnNotificationController(private val context: Context) {
     }
 
     fun cancel() {
+        rateHistory.clear()
         notificationManager.cancel(NOTIFICATION_ID)
     }
 
@@ -95,11 +100,18 @@ class VpnNotificationController(private val context: Context) {
     ) {
         when (state) {
             is ConnectionState.Connecting -> {
+                rateHistory.clear()
                 builder.setContentText(context.getString(R.string.notification_state_connecting))
                 builder.addAction(stopAction())
             }
 
             is ConnectionState.Connected -> {
+                rateHistory.record(txRate, rxRate)
+                builder.setLargeIcon(
+                    Icon.createWithBitmap(
+                        sparklineRenderer.render(rateHistory.snapshot(), context.isNightMode())
+                    )
+                )
                 val rateLine = context.getString(
                     R.string.notification_traffic_rate,
                     context.formatRate(txRate),
@@ -140,6 +152,7 @@ class VpnNotificationController(private val context: Context) {
             }
 
             is ConnectionState.Error -> {
+                rateHistory.clear()
                 builder.setContentText(
                     context.getString(R.string.notification_state_error, state.message)
                 )
@@ -148,11 +161,16 @@ class VpnNotificationController(private val context: Context) {
             }
 
             is ConnectionState.Disconnected -> {
+                rateHistory.clear()
                 builder.setContentText(context.getString(R.string.notification_state_disconnected))
                 builder.addAction(stopAction())
             }
         }
     }
+
+    private fun Context.isNightMode(): Boolean =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
 
     private fun title(): String =
         if (connectionName.isNotEmpty()) {
