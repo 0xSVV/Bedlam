@@ -25,6 +25,7 @@ type reconnectClient struct {
 	mu      sync.Mutex
 	inner   client.Client
 	closed  bool
+	fatal   atomic.Bool
 	attempt atomic.Int32
 
 	dialMu       sync.Mutex
@@ -60,7 +61,7 @@ func (rc *reconnectClient) dial() error {
 	defer rc.dialMu.Unlock()
 
 	rc.mu.Lock()
-	if rc.closed {
+	if rc.closed || rc.fatal.Load() {
 		rc.mu.Unlock()
 		return coreErrs.ClosedError{}
 	}
@@ -109,9 +110,21 @@ func (rc *reconnectClient) markDead(err error, source string) {
 	}
 }
 
+// failTerminal latches a non-recoverable failure exactly once and reports it.
+// Subsequent dials short-circuit via the fatal flag, so the reconnect loop
+// stops instead of retrying a failure (e.g. bad auth) that cannot succeed.
+func (rc *reconnectClient) failTerminal(err error, source string) {
+	if !rc.fatal.CompareAndSwap(false, true) {
+		return
+	}
+	if rc.handler != nil {
+		rc.handler.OnDisconnected(fmt.Sprintf("[%s] %s", source, err.Error()))
+	}
+}
+
 func (rc *reconnectClient) currentClient(callerSource string) (client.Client, error) {
 	rc.mu.Lock()
-	if rc.closed {
+	if rc.closed || rc.fatal.Load() {
 		rc.mu.Unlock()
 		return nil, coreErrs.ClosedError{}
 	}
@@ -122,6 +135,10 @@ func (rc *reconnectClient) currentClient(callerSource string) (client.Client, er
 	}
 	rc.mu.Unlock()
 	if err := rc.dial(); err != nil {
+		if isTerminal(err) {
+			rc.failTerminal(err, callerSource)
+			return nil, err
+		}
 		attempt := rc.attempt.Add(1)
 		if rc.handler != nil {
 			rc.handler.OnReconnecting(attempt, fmt.Sprintf("[%s] dial: %s", callerSource, err.Error()))
@@ -197,7 +214,7 @@ func (rc *reconnectClient) watchdog() {
 
 func (rc *reconnectClient) tick() {
 	rc.mu.Lock()
-	if rc.closed {
+	if rc.closed || rc.fatal.Load() {
 		rc.mu.Unlock()
 		return
 	}
@@ -252,4 +269,22 @@ func isReconnectable(err error) bool {
 		return false
 	}
 	return true
+}
+
+// isTerminal reports whether a connection-establishment error is permanent, so
+// retrying is pointless. Auth rejection and bad config never recover on their
+// own; transport/network failures (ConnectError) do, so they keep reconnecting.
+func isTerminal(err error) bool {
+	if err == nil {
+		return false
+	}
+	var authErr coreErrs.AuthError
+	if errors.As(err, &authErr) {
+		return true
+	}
+	var cfgErr coreErrs.ConfigError
+	if errors.As(err, &cfgErr) {
+		return true
+	}
+	return false
 }

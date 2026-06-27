@@ -4,6 +4,11 @@ type EventHandler interface {
 	OnConnected(udpEnabled bool, attempt int32)
 
 	OnReconnecting(attempt int32, reason string)
+
+	// OnDisconnected reports a terminal failure that reconnecting cannot fix
+	// (e.g. authentication rejected). The reconnect loop stops; the session is
+	// dead and should be torn down by the caller.
+	OnDisconnected(reason string)
 }
 
 type loggingHandler struct {
@@ -25,5 +30,12 @@ func (h *loggingHandler) OnReconnecting(attempt int32, reason string) {
 	log(LogLevelWarn, srcTunnel, "Reconnecting (attempt %d): %s", attempt, reason)
 	if h.inner != nil {
 		h.inner.OnReconnecting(attempt, reason)
+	}
+}
+
+func (h *loggingHandler) OnDisconnected(reason string) {
+	log(LogLevelError, srcTunnel, "Disconnected: %s", reason)
+	if h.inner != nil {
+		h.inner.OnDisconnected(reason)
 	}
 }
