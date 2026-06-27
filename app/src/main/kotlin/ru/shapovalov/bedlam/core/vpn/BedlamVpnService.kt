@@ -365,6 +365,7 @@ class BedlamVpnService : VpnService() {
     private fun startReconnectWatchdog() {
         if (reconnectWatchdogJob != null) return
         reconnectWatchdogJob = scope.launch {
+            var sawConnected = false
             client.state.collect { state ->
                 when (state) {
                     is ConnectionState.Reconnecting -> {
@@ -381,8 +382,19 @@ class BedlamVpnService : VpnService() {
                     }
 
                     is ConnectionState.Connected -> {
+                        sawConnected = true
                         reconnectTimeoutJob?.cancel()
                         reconnectTimeoutJob = null
+                    }
+
+                    is ConnectionState.Error -> {
+                        // A terminal failure surfaced mid-session (the native
+                        // reconnect loop gave up). Tear down now instead of
+                        // lingering. Start-time errors are handled by launchTunnel.
+                        if (sawConnected) {
+                            Log.w(TAG, "Tunnel failed irrecoverably: ${state.message}")
+                            stop()
+                        }
                     }
 
                     else -> Unit

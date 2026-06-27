@@ -121,6 +121,13 @@ class HysteriaClientImpl : HysteriaClient {
         override fun onReconnecting(attempt: Int, reason: String) {
             _state.value = ConnectionState.Reconnecting(attempt, reason)
         }
+
+        override fun onDisconnected(reason: String) {
+            // Terminal failure (e.g. bad auth): the native reconnect loop has
+            // given up. Surface it so the owning service tears the tunnel down
+            // instead of waiting for the reconnect watchdog to time out.
+            _state.value = ConnectionState.Error(reason)
+        }
     }
 
     override suspend fun updateTun(
