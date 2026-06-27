@@ -50,10 +50,12 @@ import ru.shapovalov.bedlam.core.routing.engine.RoutePlanApplier
 import ru.shapovalov.bedlam.core.vpn.notification.VpnNotificationController
 import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
+import ru.shapovalov.hysteria.isActiveTunnel
 import ru.shapovalov.hysteria.api.DisconnectReason
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.api.TunConfig
 import ru.shapovalov.hysteria.config.HysteriaConfig
+import kotlin.time.Duration.Companion.milliseconds
 
 @SuppressLint("VpnServicePolicy")
 class BedlamVpnService : VpnService() {
@@ -119,6 +121,7 @@ class BedlamVpnService : VpnService() {
         networkObserver?.stop()
         wakeLock.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        if (client.state.value.isActiveTunnel) client.shutdown()
         scope.cancel()
         super.onDestroy()
     }
@@ -133,7 +136,7 @@ class BedlamVpnService : VpnService() {
 
             ACTION_RECONNECT -> {
                 startAsForeground()
-                if (!client.state.value.isActiveTunnel()) {
+                if (!client.state.value.isActiveTunnel) {
                     Log.i(TAG, "Reconnect requested with no active tunnel; stopping")
                     stop()
                     return START_NOT_STICKY
@@ -171,7 +174,7 @@ class BedlamVpnService : VpnService() {
                     return@withLock
                 }
 
-                if (client.state.value.isActiveTunnel()) {
+                if (client.state.value.isActiveTunnel) {
                     if (currentConfig == request.config) {
                         updateConnectionName(request.profileName)
                         Log.i(TAG, "Ignoring duplicate VPN start while tunnel is active")
@@ -253,12 +256,12 @@ class BedlamVpnService : VpnService() {
                 routingRepository.observe(),
                 appFilterRepository.observe(),
             ) { _, _ -> }
-                .debounce(SETTINGS_REAPPLY_DEBOUNCE_MS)
+                .debounce(SETTINGS_REAPPLY_DEBOUNCE_MS.milliseconds)
                 .collect {
                     val newPlan = runCatching { buildRoutePlan() }.getOrNull() ?: return@collect
                     if (newPlan == lastPlan) return@collect
 
-                    val settledState = withTimeoutOrNull(CONNECT_SETTLE_TIMEOUT_MS) {
+                    val settledState = withTimeoutOrNull(CONNECT_SETTLE_TIMEOUT_MS.milliseconds) {
                         client.state.first {
                             it is ConnectionState.Connected ||
                                     it is ConnectionState.Disconnected ||
@@ -367,7 +370,7 @@ class BedlamVpnService : VpnService() {
                     is ConnectionState.Reconnecting -> {
                         if (reconnectTimeoutJob == null) {
                             reconnectTimeoutJob = scope.launch {
-                                delay(RECONNECT_TIMEOUT_MS)
+                                delay(RECONNECT_TIMEOUT_MS.milliseconds)
                                 if (client.state.value is ConnectionState.Reconnecting) {
                                     Log.w(TAG, "Reconnect timed out, stopping service")
                                     notifications.postReconnectTimeoutWarning()
@@ -513,8 +516,3 @@ class BedlamVpnService : VpnService() {
         val profileName: String,
     )
 }
-
-private fun ConnectionState.isActiveTunnel(): Boolean =
-    this is ConnectionState.Connecting ||
-            this is ConnectionState.Connected ||
-            this is ConnectionState.Reconnecting
