@@ -110,12 +110,12 @@ func (rc *reconnectClient) markDead(err error, source string) {
 	}
 }
 
-func (rc *reconnectClient) failTerminal(err error, source string) {
+func (rc *reconnectClient) failTerminal(err error) {
 	if !rc.fatal.CompareAndSwap(false, true) {
 		return
 	}
 	if rc.handler != nil {
-		rc.handler.OnDisconnected(fmt.Sprintf("[%s] %s", source, err.Error()))
+		rc.handler.OnDisconnected(err.Error())
 	}
 }
 
@@ -133,7 +133,7 @@ func (rc *reconnectClient) currentClient(callerSource string) (client.Client, er
 	rc.mu.Unlock()
 	if err := rc.dial(); err != nil {
 		if isTerminal(err) {
-			rc.failTerminal(err, callerSource)
+			rc.failTerminal(err)
 			return nil, err
 		}
 		attempt := rc.attempt.Add(1)
