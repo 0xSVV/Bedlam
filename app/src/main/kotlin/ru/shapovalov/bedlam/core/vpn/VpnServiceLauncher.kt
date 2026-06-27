@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.core.vpn
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
@@ -18,6 +19,13 @@ class VpnServiceLauncher(
     private val appContext = context.applicationContext
 
     fun prepareIntent(): Intent? = VpnService.prepare(appContext)
+
+    @Suppress("DEPRECATION")
+    fun isServiceRunning(): Boolean {
+        val am = appContext.getSystemService(ActivityManager::class.java) ?: return false
+        val name = BedlamVpnService::class.java.name
+        return am.getRunningServices(Int.MAX_VALUE).any { it.service.className == name }
+    }
 
     fun start(profile: Profile) {
         start(json.encodeToString(profile.config), profile.name)
