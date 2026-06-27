@@ -4,7 +4,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.profile.data.local.AppSettingsDao
-import ru.shapovalov.bedlam.core.profile.data.local.AppSettingsEntity
 import ru.shapovalov.bedlam.core.profile.data.local.ProfileDao
 import ru.shapovalov.bedlam.core.profile.data.mapper.toDomain
 import ru.shapovalov.bedlam.core.profile.data.mapper.toEntity
@@ -38,6 +37,6 @@ class ProfileRepositoryImpl(
     override suspend fun getActiveId(): String? = settingsDao.getActiveProfileId()
 
     override suspend fun setActiveId(id: String?) {
-        settingsDao.upsert(AppSettingsEntity(activeProfileId = id))
+        settingsDao.setActiveProfileId(id)
     }
 }

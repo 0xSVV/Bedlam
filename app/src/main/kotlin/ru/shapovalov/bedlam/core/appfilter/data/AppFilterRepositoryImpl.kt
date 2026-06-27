@@ -27,27 +27,16 @@ class AppFilterRepositoryImpl(
     override suspend fun get(): AppFilter =
         dao.get()?.toAppFilter() ?: AppFilter()
 
-    override suspend fun setMode(mode: AppFilterMode) = mutex.withLock {
-        val current = dao.get()
-        dao.upsert(
-            (current ?: AppSettingsEntity(activeProfileId = null))
-                .copy(appFilterMode = mode.toStorage())
-        )
-    }
+    override suspend fun setMode(mode: AppFilterMode) =
+        dao.setAppFilterMode(mode.toStorage())
 
-    override suspend fun setPackages(packages: Set<String>) = mutex.withLock {
-        val current = dao.get()
-        dao.upsert(
-            (current ?: AppSettingsEntity(activeProfileId = null))
-                .copy(appFilterPackages = packages.joinToString(SEPARATOR))
-        )
-    }
+    override suspend fun setPackages(packages: Set<String>) =
+        dao.setAppFilterPackages(packages.joinToString(SEPARATOR))
 
     override suspend fun togglePackage(pkg: String) = mutex.withLock {
-        val current = dao.get() ?: AppSettingsEntity(activeProfileId = null)
-        val packages = current.appFilterPackages.toPackageSet()
+        val packages = (dao.get()?.appFilterPackages ?: "").toPackageSet()
         val updated = if (pkg in packages) packages - pkg else packages + pkg
-        dao.upsert(current.copy(appFilterPackages = updated.joinToString(SEPARATOR)))
+        dao.setAppFilterPackages(updated.joinToString(SEPARATOR))
     }
 
     private fun AppSettingsEntity.toAppFilter(): AppFilter = AppFilter(
