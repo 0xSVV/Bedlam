@@ -4,7 +4,7 @@ import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
 import ru.shapovalov.hysteria.api.HysteriaClient
-import ru.shapovalov.hysteria.parseHysteriaUri
+import ru.shapovalov.hysteria.parseHysteriaConfig
 
 @Inject
 class ImportProfileFromUriUseCase(
@@ -12,7 +12,7 @@ class ImportProfileFromUriUseCase(
     private val hysteriaClient: HysteriaClient,
 ) {
     suspend operator fun invoke(uri: String, name: String? = null): Result<Profile> = runCatching {
-        val parsed = parseHysteriaUri(uri)
+        val parsed = parseHysteriaConfig(uri)
         hysteriaClient.validateConfig(parsed.config).getOrThrow()
         val profileName = name?.takeIf { it.isNotBlank() }
             ?: parsed.name.takeIf { it.isNotBlank() }

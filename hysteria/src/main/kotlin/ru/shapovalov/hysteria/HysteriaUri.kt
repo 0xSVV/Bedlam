@@ -1,5 +1,6 @@
 package ru.shapovalov.hysteria
 
+import kotlinx.serialization.json.Json
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.ObfuscationOptions
 import ru.shapovalov.hysteria.config.ServerCredentials
@@ -15,6 +16,17 @@ data class ParsedHysteriaUri(
     val config: HysteriaConfig,
     val name: String,
 )
+
+private val importJson = Json { ignoreUnknownKeys = true }
+
+fun parseHysteriaConfig(input: String): ParsedHysteriaUri {
+    val trimmed = input.trim()
+    if (trimmed.startsWith("{")) {
+        val config = importJson.decodeFromString(HysteriaConfig.serializer(), trimmed)
+        return ParsedHysteriaUri(config = config, name = "")
+    }
+    return parseHysteriaUri(trimmed)
+}
 
 /**
  * Parses a Hysteria 2 URI into a [ParsedHysteriaUri].
