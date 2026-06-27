@@ -194,6 +194,14 @@ class HysteriaClientImpl : HysteriaClient {
         }
     }
 
+    override suspend fun closeSession() = sessionLock.withLock {
+        withContext(Dispatchers.IO) { closeSessionLocked() }
+        tunReady = false
+        sessionStartMillis = 0L
+        pendingConnect.set(null)
+        lastConnectInfo.set(null)
+    }
+
     override fun shutdown(reason: DisconnectReason) {
         val s = session
         session = null

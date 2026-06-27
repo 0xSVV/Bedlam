@@ -81,6 +81,8 @@ interface HysteriaClient {
 
     fun shutdown(reason: DisconnectReason = DisconnectReason.USER)
 
+    suspend fun closeSession()
+
     /**
      * Forces live upstream sockets to close so the core re-dials on the
      * current default network. No-op if the tunnel isn't running.
