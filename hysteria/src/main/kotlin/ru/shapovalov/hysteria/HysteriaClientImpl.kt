@@ -190,6 +190,20 @@ class HysteriaClientImpl : HysteriaClient {
         }
     }
 
+    override fun shutdown(reason: DisconnectReason) {
+        val s = session
+        session = null
+        tunReady = false
+        sessionStartMillis = 0L
+        pendingConnect.set(null)
+        lastConnectInfo.set(null)
+        _state.value = ConnectionState.Disconnected(reason)
+        if (s != null) {
+            runCatching { s.close() }.onFailure { Log.w(TAG, "Session close on shutdown failed", it) }
+        }
+        LogSink.clearReplay()
+    }
+
     override suspend fun resetConnections() {
         val s = session ?: return
         withContext(Dispatchers.IO) { runCatching { s.resetConnections() } }

@@ -80,6 +80,20 @@ interface HysteriaClient {
     suspend fun stop(reason: DisconnectReason = DisconnectReason.USER)
 
     /**
+     * Emergency, non-suspending teardown for when the component that owns the
+     * tunnel is being destroyed (e.g. [`VpnService.onDestroy`](https://developer.android.com/reference/android/net/VpnService))
+     * or when the app detects the owning service is no longer running.
+     *
+     * Unlike [stop], this does not suspend and acquires no locks: it resets
+     * [state] to [ConnectionState.Disconnected] immediately and closes the
+     * native session best-effort. Safe to call from `onDestroy`, where the
+     * service's coroutine scope is already being cancelled. Idempotent.
+     *
+     * @param reason recorded in the resulting [ConnectionState.Disconnected].
+     */
+    fun shutdown(reason: DisconnectReason = DisconnectReason.USER)
+
+    /**
      * Forces live upstream sockets to close so the core re-dials on the
      * current default network. No-op if the tunnel isn't running.
      *
