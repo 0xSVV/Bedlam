@@ -110,9 +110,6 @@ func (rc *reconnectClient) markDead(err error, source string) {
 	}
 }
 
-// failTerminal latches a non-recoverable failure exactly once and reports it.
-// Subsequent dials short-circuit via the fatal flag, so the reconnect loop
-// stops instead of retrying a failure (e.g. bad auth) that cannot succeed.
 func (rc *reconnectClient) failTerminal(err error, source string) {
 	if !rc.fatal.CompareAndSwap(false, true) {
 		return
@@ -271,9 +268,6 @@ func isReconnectable(err error) bool {
 	return true
 }
 
-// isTerminal reports whether a connection-establishment error is permanent, so
-// retrying is pointless. Auth rejection and bad config never recover on their
-// own; transport/network failures (ConnectError) do, so they keep reconnecting.
 func isTerminal(err error) bool {
 	if err == nil {
 		return false

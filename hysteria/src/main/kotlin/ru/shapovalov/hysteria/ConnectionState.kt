@@ -28,12 +28,6 @@ sealed interface ConnectionState {
     data class Error(val message: String) : ConnectionState
 }
 
-/**
- * Whether this state represents a tunnel that is up or actively coming up —
- * i.e. one owned by a running [HysteriaClient.start] session. `false` for
- * [ConnectionState.Disconnected] and [ConnectionState.Error], which carry no
- * live session.
- */
 val ConnectionState.isActiveTunnel: Boolean
     get() = this is ConnectionState.Connecting ||
             this is ConnectionState.Connected ||

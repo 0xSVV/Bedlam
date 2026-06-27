@@ -388,9 +388,6 @@ class BedlamVpnService : VpnService() {
                     }
 
                     is ConnectionState.Error -> {
-                        // A terminal failure surfaced mid-session (the native
-                        // reconnect loop gave up). Tear down now instead of
-                        // lingering. Start-time errors are handled by launchTunnel.
                         if (sawConnected) {
                             Log.w(TAG, "Tunnel failed irrecoverably: ${state.message}")
                             stop()

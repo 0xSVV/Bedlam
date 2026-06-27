@@ -5,9 +5,6 @@ type EventHandler interface {
 
 	OnReconnecting(attempt int32, reason string)
 
-	// OnDisconnected reports a terminal failure that reconnecting cannot fix
-	// (e.g. authentication rejected). The reconnect loop stops; the session is
-	// dead and should be torn down by the caller.
 	OnDisconnected(reason string)
 }
 

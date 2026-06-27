@@ -32,8 +32,6 @@ internal class DashboardBootstrapper(
             }.collect(::dispatch)
         }
         scope.launch {
-            // Drop any stale "connected" state left over from a service that is
-            // no longer running before we start mirroring it to the UI.
             reconcileConnectionState()
             var wasConnected = false
             client.state.collect { state ->
