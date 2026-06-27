@@ -316,11 +316,22 @@ private fun SourceDetails(resolved: ResolvedSource) {
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.xSmall)) {
-                resolved.cidrs.forEach { cidr ->
+                resolved.cidrs.take(MaxVisibleCidrs).forEach { cidr ->
                     Text(
                         text = cidr.asString(),
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                         color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                val overflow = resolved.cidrs.size - MaxVisibleCidrs
+                if (overflow > 0) {
+                    Text(
+                        text = stringResource(
+                            R.string.routing_source_details_more_networks,
+                            overflow,
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -402,6 +413,8 @@ private fun formatRelative(millis: Long): String {
         else -> "${minutes / 60 / 24} d ago"
     }
 }
+
+private const val MaxVisibleCidrs = 200
 
 private val SourceCardShape = RoundedCornerShape(20.dp)
 private val DetailLabelWidth = 96.dp

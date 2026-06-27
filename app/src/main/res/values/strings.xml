@@ -237,6 +237,7 @@
     <string name="routing_source_details_networks_header">Resolved networks</string>
     <string name="routing_source_details_networks_breakdown">%1$d IPv4 · %2$d IPv6</string>
     <string name="routing_source_details_no_networks">No networks resolved yet.</string>
+    <string name="routing_source_details_more_networks">+%1$d more networks</string>
 
     <string name="app_selection_title">Apps to proxy</string>
     <string name="app_selection_search_hint">Search apps</string>
