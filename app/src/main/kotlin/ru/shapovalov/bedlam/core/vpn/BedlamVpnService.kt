@@ -318,6 +318,18 @@ class BedlamVpnService : VpnService() {
         }
     }
 
+    private fun stopAfterTerminalFailure() {
+        currentConfig = null
+        startJob?.cancel()
+        startJob = null
+        scope.launch(Dispatchers.Main.immediate) {
+            releaseForegroundResources()
+            runCatching { client.closeSession() }
+                .onFailure { Log.w(TAG, "client.closeSession failed", it) }
+            stopSelf()
+        }
+    }
+
     private fun releaseForegroundResources() {
         settingsWatcherJob?.cancel()
         settingsWatcherJob = null
@@ -390,7 +402,7 @@ class BedlamVpnService : VpnService() {
                     is ConnectionState.Error -> {
                         if (sawConnected) {
                             Log.w(TAG, "Tunnel failed irrecoverably: ${state.message}")
-                            stop()
+                            stopAfterTerminalFailure()
                         }
                     }
 
