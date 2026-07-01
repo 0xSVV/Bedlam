@@ -5,6 +5,7 @@ import android.app.ApplicationExitInfo
 import android.app.ActivityManager
 import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
 import ru.shapovalov.bedlam.core.routing.work.RouteRefreshWorker
 import ru.shapovalov.bedlam.di.AppComponent
 import ru.shapovalov.bedlam.di.create
@@ -36,6 +37,7 @@ class BedlamApplication : Application() {
         )
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun ApplicationExitInfo.reasonLabel(): String = when (reason) {
         ApplicationExitInfo.REASON_ANR -> "ANR"
         ApplicationExitInfo.REASON_CRASH -> "CRASH"
