@@ -119,8 +119,8 @@
     <string name="settings_reliability_action_mark_done">I changed these settings</string>
     <string name="settings_reliability_action_marked_done">Marked as done</string>
     <string name="settings_reliability_vendor_title">%1$s steps</string>
-    <string name="settings_reliability_vendor_body_oneplus">On OxygenOS, the important screen is usually App info -> Battery usage. Pick the option that says background activity is allowed</string>
-    <string name="settings_reliability_vendor_body_coloros">ColorOS and realme UI often split this into background activity plus autostart. Enable both when they are visible</string>
+    <string name="settings_reliability_vendor_body_oneplus">On OxygenOS, start with App info -> Battery usage, then also check Sleep standby optimization, Deep optimization, and Recents lock if the tunnel still stops</string>
+    <string name="settings_reliability_vendor_body_coloros">ColorOS and realme UI often split this into background activity, foreground activity, autostart, and Recents lock. Enable every one that is visible</string>
     <string name="settings_reliability_vendor_body_xiaomi">MIUI and HyperOS often require both No restrictions and Autostart. Some builds also stop apps that are not locked in Recents</string>
     <string name="settings_reliability_vendor_body_huawei">EMUI and MagicOS usually require manual app launch management. Enable every launch/background toggle for Bedlam</string>
     <string name="settings_reliability_vendor_body_vivo">vivo and iQOO firmware commonly separates autostart from background power use. Bedlam needs both allowed</string>
@@ -133,14 +133,16 @@
     <string-array name="settings_reliability_steps_oneplus">
         <item>Open Bedlam app info</item>
         <item>Tap Battery usage or Battery</item>
-        <item>Select Allow background activity</item>
-        <item>If visible, also allow foreground activity and auto launch</item>
+        <item>Select Unrestricted or Allow background activity</item>
+        <item>Disable Sleep standby optimization or Deep optimization if Bedlam still stops</item>
+        <item>If visible, lock Bedlam in Recents so OxygenOS does not clear it</item>
     </string-array>
     <string-array name="settings_reliability_steps_coloros">
         <item>Open Bedlam app info</item>
         <item>Open Battery usage or App battery management</item>
-        <item>Allow background activity</item>
+        <item>Allow background activity and foreground activity</item>
         <item>Enable Auto launch if the phone shows that switch</item>
+        <item>Lock Bedlam in Recents if ColorOS keeps clearing the tunnel</item>
     </string-array>
     <string-array name="settings_reliability_steps_xiaomi">
         <item>Open Bedlam app info</item>

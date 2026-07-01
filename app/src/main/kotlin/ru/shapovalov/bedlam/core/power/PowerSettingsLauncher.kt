@@ -115,8 +115,26 @@ object PowerSettingsLauncher {
         PowerVendor.Realme -> listOf(
             Intent().setComponent(
                 ComponentName(
+                    "com.oneplus.security",
+                    "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",
+                ),
+            ),
+            Intent().setComponent(
+                ComponentName(
+                    "com.oplus.battery",
+                    "com.oplus.powermanager.fuelgaue.PowerConsumptionActivity",
+                ),
+            ),
+            Intent().setComponent(
+                ComponentName(
                     "com.oplus.battery",
                     "com.oplus.powermanager.fuelgaue.PowerUsageModelActivity",
+                ),
+            ),
+            Intent().setComponent(
+                ComponentName(
+                    "com.coloros.oppoguardelf",
+                    "com.coloros.powermanager.fuelgaue.PowerConsumptionActivity",
                 ),
             ),
             Intent().setComponent(
