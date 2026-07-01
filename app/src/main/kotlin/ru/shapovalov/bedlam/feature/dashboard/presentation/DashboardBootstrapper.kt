@@ -7,6 +7,8 @@ import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.usecase.GetProfilesUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ObserveActiveProfileIdUseCase
 import ru.shapovalov.bedlam.core.vpn.ReconcileConnectionStateUseCase
+import ru.shapovalov.bedlam.core.vpn.VpnRuntimeStateRepository
+import ru.shapovalov.bedlam.core.vpn.effectiveWith
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.api.HysteriaClient
 
@@ -22,6 +24,7 @@ internal class DashboardBootstrapper(
     private val getProfiles: GetProfilesUseCase,
     private val observeActiveId: ObserveActiveProfileIdUseCase,
     private val client: HysteriaClient,
+    private val runtimeStateRepository: VpnRuntimeStateRepository,
     private val reconcileConnectionState: ReconcileConnectionStateUseCase,
 ) : CoroutineBootstrapper<Action>() {
 
@@ -34,7 +37,9 @@ internal class DashboardBootstrapper(
         scope.launch {
             reconcileConnectionState()
             var wasConnected = false
-            client.state.collect { state ->
+            combine(client.state, runtimeStateRepository.state) { state, runtimeState ->
+                state.effectiveWith(runtimeState)
+            }.collect { state ->
                 val isConnected = state is ConnectionState.Connected
                 dispatch(
                     Action.ConnectionStateChanged(

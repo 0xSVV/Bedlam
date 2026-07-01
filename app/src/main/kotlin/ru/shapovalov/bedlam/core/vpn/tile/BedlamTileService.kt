@@ -18,7 +18,9 @@ import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
+import ru.shapovalov.bedlam.core.vpn.VpnRuntimeStateRepository
 import ru.shapovalov.bedlam.core.vpn.VpnServiceLauncher
+import ru.shapovalov.bedlam.core.vpn.effectiveWith
 import ru.shapovalov.bedlam.core.vpn.tile.domain.repository.QuickSettingsTileRepository
 import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
@@ -28,6 +30,9 @@ class BedlamTileService : TileService() {
 
     private val client: HysteriaClient by injected { hysteriaClient }
     private val profileRepository: ProfileRepository by injected { profileRepository }
+    private val runtimeStateRepository: VpnRuntimeStateRepository by injected {
+        vpnRuntimeStateRepository
+    }
     private val vpnServiceLauncher: VpnServiceLauncher by injected { vpnServiceLauncher }
     private val quickSettingsTileRepository: QuickSettingsTileRepository by injected {
         quickSettingsTileRepository
@@ -51,8 +56,12 @@ class BedlamTileService : TileService() {
         scope.launch { quickSettingsTileRepository.setAdded(true) }
         stateJob?.cancel()
         stateJob = scope.launch {
-            combine(client.state, profileRepository.observeActiveId()) { state, activeId ->
-                state to activeId
+            combine(
+                client.state,
+                runtimeStateRepository.state,
+                profileRepository.observeActiveId(),
+            ) { state, runtimeState, activeId ->
+                state.effectiveWith(runtimeState) to activeId
             }.collect { (state, activeId) ->
                 updateTile(state, activeId)
             }
@@ -84,7 +93,7 @@ class BedlamTileService : TileService() {
     private fun handleClick() {
         clickJob?.cancel()
         clickJob = scope.launch {
-            val state = client.state.value
+            val state = client.state.value.effectiveWith(runtimeStateRepository.snapshot())
             if (state.isTunnelActive()) {
                 vpnServiceLauncher.stop()
                 updateTile(ConnectionState.Disconnected(), profileRepository.getActiveId())

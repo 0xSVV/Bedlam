@@ -32,7 +32,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -69,6 +71,9 @@ class BedlamVpnService : VpnService() {
     private val routingRepository: RoutingRepository by injected { routingRepository }
     private val appFilterRepository: AppFilterRepository by injected { appFilterRepository }
     private val profileRepository: ProfileRepository by injected { profileRepository }
+    private val runtimeStateRepository: VpnRuntimeStateRepository by injected {
+        vpnRuntimeStateRepository
+    }
     private val powerReliabilityRepository: PowerReliabilityRepository by injected {
         powerReliabilityRepository
     }
@@ -77,6 +82,7 @@ class BedlamVpnService : VpnService() {
     private lateinit var wakeLock: WakeLockHolder
     private var networkObserver: UnderlyingNetworkObserver? = null
     private var notificationJob: Job? = null
+    private var runtimeHeartbeatJob: Job? = null
 
     @Volatile
     private var startJob: Job? = null
@@ -102,6 +108,11 @@ class BedlamVpnService : VpnService() {
     @Volatile
     private var lastAlwaysOnVpnStateWriteMillis: Long = 0L
 
+    @Volatile
+    private var stopWasRequested: Boolean = false
+
+    private val serviceEpoch: Long = System.currentTimeMillis()
+
     override fun onCreate() {
         super.onCreate()
         notifications = VpnNotificationController(this)
@@ -113,8 +124,10 @@ class BedlamVpnService : VpnService() {
     override fun onRevoke() = stop(DisconnectReason.REVOKED)
 
     override fun onDestroy() {
+        persistUnexpectedDestroyIfNeeded()
         startJob?.cancel()
         notificationJob?.cancel()
+        runtimeHeartbeatJob?.cancel()
         reconnectWatchdogJob?.cancel()
         reconnectTimeoutJob?.cancel()
         settingsWatcherJob?.cancel()
@@ -124,6 +137,15 @@ class BedlamVpnService : VpnService() {
         if (client.state.value.isActiveTunnel) client.shutdown()
         scope.cancel()
         super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (!stopWasRequested && client.state.value.isActiveTunnel) {
+            scope.launch {
+                runtimeStateRepository.markInterrupted(serviceEpoch, "Task removed")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -162,6 +184,7 @@ class BedlamVpnService : VpnService() {
         wakeLock.acquire()
         startNetworkObserver()
         startNotificationLoop()
+        startRuntimeHeartbeat()
         startReconnectWatchdog()
 
         scheduleAlwaysOnVpnStateUpdate()
@@ -170,6 +193,8 @@ class BedlamVpnService : VpnService() {
                 val request = resolveStartRequest(intent)
                 if (request == null) {
                     Log.e(TAG, "No VPN config provided and no active profile is saved")
+                    stopWasRequested = true
+                    runtimeStateRepository.markFailed("No active profile")
                     releaseAndStopSelf(startId)
                     return@withLock
                 }
@@ -188,6 +213,11 @@ class BedlamVpnService : VpnService() {
                 }
 
                 updateConnectionName(request.profileName)
+                runtimeStateRepository.markStarting(
+                    serviceEpoch = serviceEpoch,
+                    profileId = request.profileId,
+                    profileName = request.profileName,
+                )
                 launchTunnel(request.config)
             }
         }
@@ -205,13 +235,18 @@ class BedlamVpnService : VpnService() {
             val config = decodeConfig(configJson) ?: return null
             return StartRequest(
                 config = config,
+                profileId = intent.getStringExtra(EXTRA_PROFILE_ID),
                 profileName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty(),
             )
         }
 
         val activeId = profileRepository.getActiveId() ?: return null
         val profile = profileRepository.get(activeId) ?: return null
-        return StartRequest(config = profile.config, profileName = profile.name)
+        return StartRequest(
+            config = profile.config,
+            profileId = profile.id,
+            profileName = profile.name,
+        )
     }
 
     private fun decodeConfig(configJson: String): HysteriaConfig? {
@@ -240,6 +275,7 @@ class BedlamVpnService : VpnService() {
         } catch (e: Exception) {
             Log.e(TAG, "VPN startup failed", e)
             if (client.state.value is ConnectionState.Error) {
+                runtimeStateRepository.markFailed(e.message ?: "VPN startup failed")
                 releaseAndStopSelf()
             } else {
                 stopAfterStartFailure()
@@ -307,18 +343,22 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun stop(reason: DisconnectReason = DisconnectReason.USER) {
+        stopWasRequested = true
         currentConfig = null
         startJob?.cancel()
         startJob = null
         scope.launch(Dispatchers.Main.immediate) {
+            runtimeStateRepository.markStopping(serviceEpoch, reason.name)
             releaseForegroundResources()
             runCatching { client.stop(reason) }
                 .onFailure { Log.w(TAG, "client.stop failed", it) }
+            runtimeStateRepository.markStopped(reason.name)
             stopSelf()
         }
     }
 
     private fun stopAfterTerminalFailure() {
+        stopWasRequested = true
         currentConfig = null
         startJob?.cancel()
         startJob = null
@@ -326,6 +366,7 @@ class BedlamVpnService : VpnService() {
             releaseForegroundResources()
             runCatching { client.closeSession() }
                 .onFailure { Log.w(TAG, "client.closeSession failed", it) }
+            runtimeStateRepository.markFailed("Terminal tunnel failure")
             stopSelf()
         }
     }
@@ -337,6 +378,8 @@ class BedlamVpnService : VpnService() {
         reconnectTimeoutJob = null
         notificationJob?.cancel()
         notificationJob = null
+        runtimeHeartbeatJob?.cancel()
+        runtimeHeartbeatJob = null
         reconnectWatchdogJob?.cancel()
         reconnectWatchdogJob = null
         networkObserver?.stop()
@@ -448,6 +491,20 @@ class BedlamVpnService : VpnService() {
         }
     }
 
+    private fun startRuntimeHeartbeat() {
+        if (runtimeHeartbeatJob != null) return
+        runtimeHeartbeatJob = scope.launch {
+            while (isActive) {
+                runCatching {
+                    runtimeStateRepository.heartbeat(serviceEpoch, client.state.value)
+                }.onFailure {
+                    Log.w(TAG, "Failed to persist VPN runtime heartbeat", it)
+                }
+                delay(RUNTIME_HEARTBEAT_MS)
+            }
+        }
+    }
+
     private fun screenOnFlow(): Flow<Boolean> = callbackFlow {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -469,12 +526,14 @@ class BedlamVpnService : VpnService() {
         private const val TAG = "BedlamVpn"
         private const val NOTIFICATION_REFRESH_MS = 1000L
         private const val RECONNECT_TIMEOUT_MS = 3 * 60 * 1000L
+        private const val RUNTIME_HEARTBEAT_MS = 15_000L
         private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
         private const val ALWAYS_ON_STATE_REFRESH_MS = 30_000L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"
+        const val EXTRA_PROFILE_ID = "profile_id"
         const val EXTRA_PROFILE_NAME = "profile_name"
     }
 
@@ -487,18 +546,21 @@ class BedlamVpnService : VpnService() {
 
     private suspend fun releaseAndStopSelf(startId: Int? = null) {
         withContext(Dispatchers.Main.immediate) {
+            stopWasRequested = true
             releaseForegroundResources()
             if (startId != null) stopSelf(startId) else stopSelf()
         }
     }
 
     private suspend fun stopAfterStartFailure() {
+        stopWasRequested = true
         currentConfig = null
         withContext(Dispatchers.Main.immediate) {
             releaseForegroundResources()
         }
         runCatching { client.stop() }
             .onFailure { Log.w(TAG, "client.stop failed", it) }
+        runtimeStateRepository.markFailed("VPN startup failed")
         withContext(Dispatchers.Main.immediate) {
             stopSelf()
         }
@@ -534,6 +596,18 @@ class BedlamVpnService : VpnService() {
 
     private data class StartRequest(
         val config: HysteriaConfig,
+        val profileId: String?,
         val profileName: String,
     )
+
+    private fun persistUnexpectedDestroyIfNeeded() {
+        if (stopWasRequested || !client.state.value.isActiveTunnel) return
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                runtimeStateRepository.markInterrupted(serviceEpoch, "Service destroyed")
+            }
+        }.onFailure {
+            Log.w(TAG, "Failed to persist unexpected service destroy", it)
+        }
+    }
 }
