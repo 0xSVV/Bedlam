@@ -50,7 +50,7 @@ class HysteriaConfigParseTest {
     fun `parses config json persisted before the ech field existed`() {
         val legacy = """
             {
-              "server": {"address": "host.example:443", "auth": "token"},
+              "server": {"server": "host.example:443", "auth": "token"},
               "tls": {
                 "tlsSni": "",
                 "tlsInsecure": false,
