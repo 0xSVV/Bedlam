@@ -35,7 +35,7 @@ internal class DashboardBootstrapper(
             }.collect(::dispatch)
         }
         scope.launch {
-            reconcileConnectionState()
+            runCatching { reconcileConnectionState() }
             var wasConnected = false
             combine(client.state, runtimeStateRepository.state) { state, runtimeState ->
                 state.effectiveWith(runtimeState)

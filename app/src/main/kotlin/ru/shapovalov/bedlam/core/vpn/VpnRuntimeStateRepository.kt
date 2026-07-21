@@ -182,7 +182,12 @@ data class VpnRuntimeState(
     val expectsActiveTunnel: Boolean
         get() = desiredRunning && status in RECOVERABLE_STATUSES
 
+    fun isHeartbeatFresh(nowMillis: Long): Boolean =
+        heartbeatAtMillis > 0L && nowMillis - heartbeatAtMillis <= HEARTBEAT_STALE_AFTER_MS
+
     companion object {
+        const val HEARTBEAT_STALE_AFTER_MS = 60_000L
+
         private val RECOVERABLE_STATUSES = setOf(
             VpnRuntimeStatus.Starting,
             VpnRuntimeStatus.Running,
@@ -200,8 +205,16 @@ enum class VpnRuntimeStatus {
     Failed,
 }
 
-fun ConnectionState.effectiveWith(runtimeState: VpnRuntimeState): ConnectionState =
-    if (isRuntimeRecoveryPending(runtimeState)) ConnectionState.Connecting else this
+fun ConnectionState.effectiveWith(
+    runtimeState: VpnRuntimeState,
+    nowMillis: Long = System.currentTimeMillis(),
+): ConnectionState =
+    if (isRuntimeRecoveryPending(runtimeState, nowMillis)) ConnectionState.Connecting else this
 
-private fun ConnectionState.isRuntimeRecoveryPending(runtimeState: VpnRuntimeState): Boolean =
-    this is ConnectionState.Disconnected && runtimeState.expectsActiveTunnel
+private fun ConnectionState.isRuntimeRecoveryPending(
+    runtimeState: VpnRuntimeState,
+    nowMillis: Long,
+): Boolean =
+    this is ConnectionState.Disconnected &&
+        runtimeState.expectsActiveTunnel &&
+        runtimeState.isHeartbeatFresh(nowMillis)
