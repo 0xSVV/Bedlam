@@ -452,11 +452,10 @@ class BedlamVpnService : VpnService() {
                     is ConnectionState.Reconnecting -> {
                         if (reconnectTimeoutJob == null) {
                             reconnectTimeoutJob = scope.launch {
-                                delay(RECONNECT_TIMEOUT_MS.milliseconds)
+                                delay(RECONNECT_WARNING_MS.milliseconds)
                                 if (client.state.value is ConnectionState.Reconnecting) {
-                                    Log.w(TAG, "Reconnect timed out, stopping service")
+                                    Log.w(TAG, "Still reconnecting; keeping service alive to retry")
                                     notifications.postReconnectTimeoutWarning()
-                                    stop()
                                 }
                             }
                         }
@@ -551,7 +550,7 @@ class BedlamVpnService : VpnService() {
     companion object {
         private const val TAG = "BedlamVpn"
         private const val NOTIFICATION_REFRESH_MS = 1000L
-        private const val RECONNECT_TIMEOUT_MS = 3 * 60 * 1000L
+        private const val RECONNECT_WARNING_MS = 3 * 60 * 1000L
         private const val RUNTIME_HEARTBEAT_MS = 15_000L
         private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
