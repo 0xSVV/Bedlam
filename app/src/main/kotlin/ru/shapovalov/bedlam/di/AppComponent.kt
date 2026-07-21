@@ -18,6 +18,7 @@ import ru.shapovalov.bedlam.core.routing.domain.usecase.AddRouteSourceUseCase
 import ru.shapovalov.bedlam.core.routing.domain.usecase.BuildRoutePlanUseCase
 import ru.shapovalov.bedlam.core.routing.domain.usecase.RefreshRouteSourcesUseCase
 import ru.shapovalov.bedlam.core.routing.engine.RoutePlanApplier
+import ru.shapovalov.bedlam.core.vpn.ReconcileConnectionStateUseCase
 import ru.shapovalov.bedlam.core.vpn.VpnRuntimeStateRepository
 import ru.shapovalov.bedlam.core.vpn.VpnServiceLauncher
 import ru.shapovalov.bedlam.core.vpn.tile.di.QuickSettingsTileModule
@@ -56,6 +57,7 @@ abstract class AppComponent(
     abstract val addPreset: AddPresetUseCase
     abstract val refreshRouteSources: RefreshRouteSourcesUseCase
     abstract val vpnServiceLauncher: VpnServiceLauncher
+    abstract val reconcileConnectionState: ReconcileConnectionStateUseCase
     abstract val powerReliabilityRepository: PowerReliabilityRepository
     abstract val quickSettingsTileRepository: QuickSettingsTileRepository
     abstract val logBuffer: LogBuffer
