@@ -79,8 +79,15 @@ func newReconnectClient(
 		watchdogDone:  make(chan struct{}),
 	}
 	if err := rc.dial(); err != nil {
-		close(rc.watchdogDone)
-		return nil, err
+		if rc.isTerminal(err) {
+			close(rc.watchdogDone)
+			return nil, err
+		}
+		gen := rc.nextGen()
+		attempt := rc.attempt.Add(1)
+		rc.emit(gen, func() {
+			rc.handler.OnReconnecting(attempt, fmt.Sprintf("[init] %s", err.Error()))
+		})
 	}
 	go rc.watchdog()
 	return rc, nil

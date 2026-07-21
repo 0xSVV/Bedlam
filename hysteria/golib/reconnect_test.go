@@ -72,6 +72,34 @@ func TestMarkDead_skippedWhenFatal(t *testing.T) {
 	}
 }
 
+func TestNewReconnectClient_initialNonTerminalFailureRetries(t *testing.T) {
+	rec := &recordingHandler{}
+	cf := func() (*client.Config, error) { return nil, errors.New("network down") }
+	rc, err := newReconnectClient(cf, rec, func() (int64, int64) { return 0, 0 }, false)
+	if err != nil {
+		t.Fatalf("non-terminal initial failure should not fail the session, got %v", err)
+	}
+	if rc == nil {
+		t.Fatal("expected a retrying client")
+	}
+	defer rc.Close()
+	if got := rec.snapshot(); !reflect.DeepEqual(got, []string{"reconnecting"}) {
+		t.Errorf("expected an initial reconnecting emit, got %v", got)
+	}
+}
+
+func TestNewReconnectClient_initialTerminalFailureReturnsError(t *testing.T) {
+	rec := &recordingHandler{}
+	cf := func() (*client.Config, error) { return nil, coreErrs.AuthError{StatusCode: 401} }
+	rc, err := newReconnectClient(cf, rec, func() (int64, int64) { return 0, 0 }, false)
+	if err == nil {
+		t.Fatal("terminal initial failure should fail the session")
+	}
+	if rc != nil {
+		t.Error("expected nil client on terminal failure")
+	}
+}
+
 func TestMarkDead_emitsWhenLive(t *testing.T) {
 	rec := &recordingHandler{}
 	rc := &reconnectClient{handler: rec, inner: noopClient{}}
