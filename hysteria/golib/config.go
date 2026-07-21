@@ -30,6 +30,7 @@ type clientConfig struct {
 	TLSCA         string `json:"tls_ca"`
 	TLSClientCert string `json:"tls_client_cert"`
 	TLSClientKey  string `json:"tls_client_key"`
+	TLSECH        string `json:"tls_ech"`
 
 	ObfsType               string `json:"obfs_type"`
 	ObfsPassword           string `json:"obfs_password"`
@@ -143,8 +144,17 @@ func applyClientOptions(coreConfig *client.Config, cfg *clientConfig, defaultSNI
 		}
 	}
 
-	log(LogLevelInfo, srcTLS, "sni=%q insecure=%v pinned=%v custom-ca=%v mtls=%v",
-		coreConfig.TLSConfig.ServerName, cfg.TLSInsecure, pinned, customCA, mTLS)
+	ech := cfg.TLSECH != ""
+	if ech {
+		list, err := parseECHConfigList(cfg.TLSECH)
+		if err != nil {
+			return fmt.Errorf("invalid ECH config list: %w", err)
+		}
+		coreConfig.TLSConfig.ECHConfigList = list
+	}
+
+	log(LogLevelInfo, srcTLS, "sni=%q insecure=%v pinned=%v custom-ca=%v mtls=%v ech=%v",
+		coreConfig.TLSConfig.ServerName, cfg.TLSInsecure, pinned, customCA, mTLS, ech)
 	log(LogLevelInfo, srcConfig, "auth=%s fast-open=%v",
 		authSummary(cfg.Auth), cfg.FastOpen)
 

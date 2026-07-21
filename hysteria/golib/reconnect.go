@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -278,6 +279,10 @@ func isTerminal(err error) bool {
 	}
 	var cfgErr coreErrs.ConfigError
 	if errors.As(err, &cfgErr) {
+		return true
+	}
+	var echErr *tls.ECHRejectionError
+	if errors.As(err, &echErr) {
 		return true
 	}
 	return false

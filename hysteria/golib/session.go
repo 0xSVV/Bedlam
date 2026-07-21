@@ -118,6 +118,11 @@ func ValidateConfig(configJSON string) error {
 			return err
 		}
 	}
+	if cfg.TLSECH != "" {
+		if _, err := parseECHConfigList(cfg.TLSECH); err != nil {
+			return fmt.Errorf("invalid ECH config list: %w", err)
+		}
+	}
 	if err := validateObfs(&cfg); err != nil {
 		return err
 	}
