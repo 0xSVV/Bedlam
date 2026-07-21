@@ -27,7 +27,8 @@ val defaultCongestionOptions = CongestionOptions(
 
 val defaultBandwidthOptions = BandwidthOptions(
     maxTxMbps = 0,
-    maxRxMbps = 0
+    maxRxMbps = 0,
+    disableLossCompensation = false
 )
 
 val defaultTransportOptions = TransportOptions(

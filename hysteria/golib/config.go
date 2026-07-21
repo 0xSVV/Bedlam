@@ -48,8 +48,9 @@ type clientConfig struct {
 	CongestionType string `json:"congestion_type"`
 	BBRProfile     string `json:"bbr_profile"`
 
-	MaxTxMbps int `json:"max_tx_mbps"`
-	MaxRxMbps int `json:"max_rx_mbps"`
+	MaxTxMbps               int  `json:"max_tx_mbps"`
+	MaxRxMbps               int  `json:"max_rx_mbps"`
+	DisableLossCompensation bool `json:"disable_loss_compensation"`
 
 	HopIntervalSec    int `json:"hop_interval"`
 	MinHopIntervalSec int `json:"min_hop_interval"`
@@ -193,9 +194,10 @@ func applyClientOptions(coreConfig *client.Config, cfg *clientConfig, defaultSNI
 	if cfg.MaxRxMbps > 0 {
 		coreConfig.BandwidthConfig.MaxRx = uint64(cfg.MaxRxMbps) * 125000
 	}
+	coreConfig.BandwidthConfig.DisableLossCompensation = cfg.DisableLossCompensation
 	if cfg.MaxTxMbps > 0 || cfg.MaxRxMbps > 0 {
-		log(LogLevelInfo, srcTransport, "Bandwidth caps: tx=%dMbps rx=%dMbps",
-			cfg.MaxTxMbps, cfg.MaxRxMbps)
+		log(LogLevelInfo, srcTransport, "Bandwidth caps: tx=%dMbps rx=%dMbps loss-compensation-disabled=%v",
+			cfg.MaxTxMbps, cfg.MaxRxMbps, cfg.DisableLossCompensation)
 	}
 
 	return nil

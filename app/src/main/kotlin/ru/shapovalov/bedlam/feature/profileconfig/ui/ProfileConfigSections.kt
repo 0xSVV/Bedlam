@@ -307,8 +307,16 @@ internal fun BandwidthSection(
             value = bandwidth.maxRxMbps,
             editMode = editMode,
             caution = caution,
-            showDivider = false,
             onChange = { onDraftChanged(draft.copy(bandwidth = bandwidth.copy(maxRxMbps = it))) },
+        )
+        SwitchRow(
+            label = "disableLossCompensation",
+            value = bandwidth.disableLossCompensation,
+            editMode = editMode,
+            showDivider = false,
+            onChange = {
+                onDraftChanged(draft.copy(bandwidth = bandwidth.copy(disableLossCompensation = it)))
+            },
         )
     }
 }

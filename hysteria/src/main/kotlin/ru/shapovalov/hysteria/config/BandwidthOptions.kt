@@ -6,4 +6,5 @@ import kotlinx.serialization.Serializable
 data class BandwidthOptions(
     val maxTxMbps: Int,
     val maxRxMbps: Int,
+    val disableLossCompensation: Boolean = false,
 )
