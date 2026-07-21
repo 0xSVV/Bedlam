@@ -27,9 +27,26 @@ class DefaultNetworkListener(
         .build()
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) = onChanged(network)
+        private var lastValidated: Boolean? = null
 
-        override fun onLost(network: Network) = onChanged(null)
+        override fun onAvailable(network: Network) {
+            lastValidated = null
+            onChanged(network)
+        }
+
+        override fun onLost(network: Network) {
+            lastValidated = null
+            onChanged(null)
+        }
+
+        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+            val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            val previous = lastValidated
+            lastValidated = validated
+            if (previous != null && previous != validated) {
+                onChanged(network)
+            }
+        }
     }
 
     fun start() {
