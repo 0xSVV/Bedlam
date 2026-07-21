@@ -117,13 +117,13 @@ func TestDial_backoffThrottlesRepeatedFailures(t *testing.T) {
 	}
 	rc := newTestReconnectClient(cf, &recordingHandler{})
 
-	if err := rc.dial(); err == nil {
+	if err := rc.dial(false); err == nil {
 		t.Fatal("expected first dial to fail")
 	}
 	if calls != 1 {
 		t.Fatalf("expected 1 config attempt, got %d", calls)
 	}
-	if err := rc.dial(); !errors.Is(err, errDialBackoff) {
+	if err := rc.dial(false); !errors.Is(err, errDialBackoff) {
 		t.Errorf("expected an immediate re-dial to be throttled, got %v", err)
 	}
 	if calls != 1 {
@@ -131,9 +131,33 @@ func TestDial_backoffThrottlesRepeatedFailures(t *testing.T) {
 	}
 
 	rc.resetBackoff()
-	_ = rc.dial()
+	_ = rc.dial(false)
 	if calls != 2 {
 		t.Errorf("after reset the dial should attempt again, got %d attempts", calls)
+	}
+}
+
+func TestDial_forceBypassesBackoff(t *testing.T) {
+	calls := 0
+	cf := func() (*client.Config, error) {
+		calls++
+		return nil, errors.New("network down")
+	}
+	rc := newTestReconnectClient(cf, &recordingHandler{})
+
+	_ = rc.dial(false)
+	if calls != 1 {
+		t.Fatalf("expected first dial to attempt, got %d", calls)
+	}
+	_ = rc.dial(false)
+	if calls != 1 {
+		t.Errorf("throttled dial must not attempt, got %d", calls)
+	}
+	if err := rc.dial(true); err == nil || errors.Is(err, errDialBackoff) {
+		t.Errorf("forced dial must bypass backoff, got %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("forced dial should attempt despite backoff, got %d", calls)
 	}
 }
 

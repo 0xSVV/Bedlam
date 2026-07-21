@@ -116,7 +116,7 @@ func newReconnectClient(
 		stopWatchdog:  make(chan struct{}),
 		watchdogDone:  make(chan struct{}),
 	}
-	if err := rc.dial(); err != nil {
+	if err := rc.dial(false); err != nil {
 		if rc.isTerminal(err) {
 			close(rc.watchdogDone)
 			return nil, err
@@ -131,7 +131,7 @@ func newReconnectClient(
 	return rc, nil
 }
 
-func (rc *reconnectClient) dial() error {
+func (rc *reconnectClient) dial(force bool) error {
 	rc.dialMu.Lock()
 	defer rc.dialMu.Unlock()
 
@@ -146,7 +146,7 @@ func (rc *reconnectClient) dial() error {
 	}
 	rc.mu.Unlock()
 
-	if rc.dialThrottled() {
+	if !force && rc.dialThrottled() {
 		return errDialBackoff
 	}
 
@@ -199,7 +199,7 @@ func (rc *reconnectClient) markDead(err error, source string) {
 func (rc *reconnectClient) reset() {
 	rc.markDead(errConnectionsReset, srcReset)
 	rc.resetBackoff()
-	if _, err := rc.currentClient(srcReset); err != nil {
+	if err := rc.dial(true); err != nil {
 		log(LogLevelDebug, srcReset, "Re-dial after reset failed: %s", err)
 	}
 }
@@ -226,7 +226,7 @@ func (rc *reconnectClient) currentClient(callerSource string) (client.Client, er
 		return c, nil
 	}
 	rc.mu.Unlock()
-	if err := rc.dial(); err != nil {
+	if err := rc.dial(false); err != nil {
 		if errors.Is(err, errDialBackoff) {
 			return nil, err
 		}

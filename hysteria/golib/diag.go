@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"errors"
 	"time"
 )
 
@@ -12,6 +13,13 @@ type TestResult struct {
 	Error     string
 }
 
+func diagError(err error) string {
+	if errors.Is(err, errDialBackoff) {
+		return "reconnecting, try again shortly"
+	}
+	return err.Error()
+}
+
 func (s *Session) TestUDP() *TestResult {
 	c := s.currentClient()
 	if c == nil {
@@ -20,7 +28,7 @@ func (s *Session) TestUDP() *TestResult {
 
 	rc, err := c.UDP()
 	if err != nil {
-		return &TestResult{Error: "UDP session failed: " + err.Error()}
+		return &TestResult{Error: "UDP session failed: " + diagError(err)}
 	}
 	defer rc.Close()
 
@@ -69,7 +77,7 @@ func (s *Session) TestDNSOverTCP() *TestResult {
 	resp, err := dnsOverTCP(c, "1.1.1.1:53", buildDNSQuery())
 	elapsed := time.Since(start).Milliseconds()
 	if err != nil {
-		return &TestResult{Error: err.Error()}
+		return &TestResult{Error: diagError(err)}
 	}
 	return &TestResult{
 		Ok:        true,
