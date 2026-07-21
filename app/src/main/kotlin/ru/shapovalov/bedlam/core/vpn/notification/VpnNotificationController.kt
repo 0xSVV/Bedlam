@@ -45,8 +45,10 @@ class VpnNotificationController(private val context: Context) {
         notificationManager.createNotificationChannel(channel)
     }
 
-    fun foregroundNotification(): Notification =
-        build(ConnectionState.Connecting, HysteriaClient.TrafficStats(0, 0), 0, 0)
+    fun foregroundNotification(): Notification {
+        synchronized(postLock) { closed = false }
+        return build(ConnectionState.Connecting, HysteriaClient.TrafficStats(0, 0), 0, 0)
+    }
 
     fun post(
         state: ConnectionState,
