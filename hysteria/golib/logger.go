@@ -28,6 +28,7 @@ const (
 	srcTun       = "tun"
 	srcTunStack  = "tun-stack"
 	srcWatchdog  = "watchdog"
+	srcReset     = "reset"
 	srcDNS       = "dns"
 	srcTLS       = "tls"
 	srcTransport = "transport"

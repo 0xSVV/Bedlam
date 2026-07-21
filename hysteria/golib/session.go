@@ -246,6 +246,9 @@ func (s *Session) ResetConnections() {
 	log(LogLevelInfo, srcTunnel, "Resetting upstream connections")
 	s.closeAllActiveConns()
 	s.dnsCache.clear()
+	if c := s.currentClient(); c != nil {
+		c.reset()
+	}
 }
 
 func (s *Session) GetTxBytes() int64 { return s.txBytes.Load() }
