@@ -88,6 +88,7 @@ class BedlamVpnService : VpnService() {
     @Volatile
     private var startJob: Job? = null
     private val startMutex = Mutex()
+    private val networkChangeMutex = Mutex()
     private var reconnectWatchdogJob: Job? = null
 
     @Volatile
@@ -416,12 +417,30 @@ class BedlamVpnService : VpnService() {
     }
 
     private suspend fun handleUnderlyingNetworkChange() {
-        val newPlan = runCatching { buildRoutePlan() }.getOrNull()
-        if (newPlan != null && newPlan != currentRoutePlan) {
-            reapplyTunnel(newPlan)
+        networkChangeMutex.withLock {
+            val newPlan = runCatching { buildRoutePlan() }.getOrNull()
+            if (newPlan != null && newPlan != currentRoutePlan) {
+                reapplyDnsForNetworkChange(newPlan)
+            }
+            runCatching { client.resetConnections() }
+                .onFailure { Log.w(TAG, "resetConnections failed", it) }
         }
-        runCatching { client.resetConnections() }
-            .onFailure { Log.w(TAG, "resetConnections failed", it) }
+    }
+
+    private suspend fun reapplyDnsForNetworkChange(plan: RoutePlan) {
+        val previous = currentRoutePlan
+        currentRoutePlan = plan
+        try {
+            client.updateTun(TunConfig(ipv6Enabled = plan.ipv6Enabled)) { tunConfig ->
+                establishTun(tunConfig)
+            }
+        } catch (e: CancellationException) {
+            currentRoutePlan = previous
+            throw e
+        } catch (e: Exception) {
+            currentRoutePlan = previous
+            Log.w(TAG, "DNS reapply after network change failed; keeping current tunnel", e)
+        }
     }
 
     private fun startReconnectWatchdog() {
