@@ -324,6 +324,7 @@
     <string name="profile_config_caution_tls_pin">Pinned hash overrides normal certificate validation.</string>
     <string name="profile_config_caution_tls_ca">Custom CA replaces the system trust store for this profile</string>
     <string name="profile_config_caution_tls_client">mTLS material must match what the server expects</string>
+    <string name="profile_config_caution_tls_ech">Base64 config list or ECH CONFIGS PEM block. A stale value makes connections fail until updated</string>
     <string name="profile_config_caution_obfs">Type (plain, salamander, gecko) and password must match the server</string>
     <string name="profile_config_caution_realm">Used only when the server address is a realm:// URI</string>
     <string name="profile_config_caution_quic">Tuning these can break the connection</string>

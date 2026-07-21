@@ -88,8 +88,16 @@ internal fun TlsSection(
             editMode = editMode,
             singleLine = false,
             caution = stringResource(R.string.profile_config_caution_tls_client),
-            showDivider = false,
             onChange = { onDraftChanged(draft.copy(tls = tls.copy(tlsClientKey = it))) },
+        )
+        TextFieldRow(
+            label = "ech",
+            value = tls.ech,
+            editMode = editMode,
+            singleLine = false,
+            caution = stringResource(R.string.profile_config_caution_tls_ech),
+            showDivider = false,
+            onChange = { onDraftChanged(draft.copy(tls = tls.copy(ech = it))) },
         )
     }
 }
