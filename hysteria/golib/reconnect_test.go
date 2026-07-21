@@ -7,11 +7,16 @@ import (
 	"reflect"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
 	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
+
+type noopClient struct{}
+
+func (noopClient) TCP(addr string) (net.Conn, error)  { return nil, nil }
+func (noopClient) UDP() (client.HyUDPConn, error)      { return nil, nil }
+func (noopClient) Close() error                        { return nil }
 
 type recordingHandler struct {
 	mu     sync.Mutex
@@ -54,34 +59,25 @@ func TestEmit_nilHandler(t *testing.T) {
 	}
 }
 
-type blockingClient struct {
-	tcpErr   error
-	tcpDelay time.Duration
-}
-
-func (c *blockingClient) TCP(addr string) (net.Conn, error) {
-	if c.tcpDelay > 0 {
-		time.Sleep(c.tcpDelay)
+func TestMarkDead_skippedWhenFatal(t *testing.T) {
+	rec := &recordingHandler{}
+	rc := &reconnectClient{handler: rec, inner: noopClient{}}
+	rc.fatal.Store(true)
+	rc.markDead(errors.New("boom"), "test")
+	if got := rec.snapshot(); len(got) != 0 {
+		t.Errorf("markDead must not emit once terminal, got %v", got)
 	}
-	return nil, c.tcpErr
-}
-func (c *blockingClient) UDP() (client.HyUDPConn, error) { return nil, nil }
-func (c *blockingClient) Close() error                   { return nil }
-
-func TestDialTCPWithTimeout_timesOut(t *testing.T) {
-	c := &blockingClient{tcpDelay: time.Second}
-	_, err := dialTCPWithTimeout(c, "example.com:443", 20*time.Millisecond)
-	if !errors.Is(err, errDialTimeout) {
-		t.Errorf("expected dial timeout, got %v", err)
+	if rc.inner == nil {
+		t.Error("markDead must not tear down the client when skipping")
 	}
 }
 
-func TestDialTCPWithTimeout_passesThroughError(t *testing.T) {
-	c := &blockingClient{tcpErr: coreErrs.DialError{Message: "refused"}}
-	_, err := dialTCPWithTimeout(c, "example.com:443", time.Second)
-	var de coreErrs.DialError
-	if !errors.As(err, &de) {
-		t.Errorf("expected dial error passthrough, got %v", err)
+func TestMarkDead_emitsWhenLive(t *testing.T) {
+	rec := &recordingHandler{}
+	rc := &reconnectClient{handler: rec, inner: noopClient{}}
+	rc.markDead(errors.New("boom"), "test")
+	if got := rec.snapshot(); !reflect.DeepEqual(got, []string{"reconnecting"}) {
+		t.Errorf("expected one reconnecting emit, got %v", got)
 	}
 }
 

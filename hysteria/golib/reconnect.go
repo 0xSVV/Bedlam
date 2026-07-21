@@ -16,15 +16,9 @@ import (
 const (
 	watchdogInterval = 60 * time.Second
 	probeDNSServer   = "1.1.1.1:53"
-
-	tcpDialTimeout          = 10 * time.Second
-	maxConsecutiveTCPStalls = 3
 )
 
-var (
-	errConnectionsReset = errors.New("connections reset")
-	errDialTimeout      = errors.New("dial timed out")
-)
+var errConnectionsReset = errors.New("connections reset")
 
 type reconnectClient struct {
 	configFunc    func() (*client.Config, error)
@@ -45,8 +39,6 @@ type reconnectClient struct {
 	dialMu       sync.Mutex
 	stopWatchdog chan struct{}
 	watchdogDone chan struct{}
-
-	tcpStalls atomic.Int32
 
 	lastTx int64
 	lastRx int64
@@ -136,7 +128,7 @@ func (rc *reconnectClient) dial() error {
 
 func (rc *reconnectClient) markDead(err error, source string) {
 	rc.mu.Lock()
-	if rc.closed || rc.inner == nil {
+	if rc.closed || rc.fatal.Load() || rc.inner == nil {
 		rc.mu.Unlock()
 		return
 	}
@@ -186,7 +178,14 @@ func (rc *reconnectClient) currentClient(callerSource string) (client.Client, er
 			rc.failTerminal(err)
 			return nil, err
 		}
-		gen := rc.nextGen()
+		rc.mu.Lock()
+		if rc.closed || rc.fatal.Load() || rc.inner != nil {
+			rc.mu.Unlock()
+			return nil, err
+		}
+		rc.generation++
+		gen := rc.generation
+		rc.mu.Unlock()
 		attempt := rc.attempt.Add(1)
 		rc.emit(gen, func() {
 			rc.handler.OnReconnecting(attempt, fmt.Sprintf("[%s] dial: %s", callerSource, err.Error()))
@@ -207,44 +206,11 @@ func (rc *reconnectClient) TCP(addr string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := dialTCPWithTimeout(c, addr, tcpDialTimeout)
-	switch {
-	case err == nil:
-		rc.tcpStalls.Store(0)
-	case errors.Is(err, errDialTimeout):
-		if rc.tcpStalls.Add(1) >= maxConsecutiveTCPStalls {
-			rc.tcpStalls.Store(0)
-			rc.markDead(fmt.Errorf("%d consecutive TCP dials stalled", maxConsecutiveTCPStalls), srcStream)
-		}
-	case isReconnectable(err):
+	conn, err := c.TCP(addr)
+	if isReconnectable(err) {
 		rc.markDead(err, srcStream)
 	}
 	return conn, err
-}
-
-func dialTCPWithTimeout(c client.Client, addr string, timeout time.Duration) (net.Conn, error) {
-	type result struct {
-		conn net.Conn
-		err  error
-	}
-	done := make(chan result, 1)
-	go func() {
-		conn, err := c.TCP(addr)
-		done <- result{conn, err}
-	}()
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case r := <-done:
-		return r.conn, r.err
-	case <-timer.C:
-		go func() {
-			if r := <-done; r.conn != nil {
-				_ = r.conn.Close()
-			}
-		}()
-		return nil, fmt.Errorf("TCP dial to %s: %w", addr, errDialTimeout)
-	}
 }
 
 func (rc *reconnectClient) UDP() (client.HyUDPConn, error) {
