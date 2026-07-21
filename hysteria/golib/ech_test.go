@@ -110,6 +110,34 @@ func TestValidateECHConfigList_emptyList(t *testing.T) {
 	}
 }
 
+func echList(entries ...[]byte) []byte {
+	var body []byte
+	for _, e := range entries {
+		body = append(body, e...)
+	}
+	list := make([]byte, 2+len(body))
+	binary.BigEndian.PutUint16(list, uint16(len(body)))
+	copy(list[2:], body)
+	return list
+}
+
+func TestValidateECHConfigList_unsupportedVersionOnly(t *testing.T) {
+	list := echList([]byte{0xfe, 0x0c, 0x00, 0x02, 0xaa, 0xbb})
+	if err := validateECHConfigList(list); err == nil {
+		t.Fatal("expected error for list without a supported-version config")
+	}
+}
+
+func TestValidateECHConfigList_mixedVersions(t *testing.T) {
+	list := echList(
+		[]byte{0xfe, 0x0c, 0x00, 0x02, 0xaa, 0xbb},
+		[]byte{0xfe, 0x0d, 0x00, 0x04, 0x01, 0x02, 0x03, 0x04},
+	)
+	if err := validateECHConfigList(list); err != nil {
+		t.Fatalf("expected mixed list with one supported config to pass, got %v", err)
+	}
+}
+
 func TestValidateConfig_validECH(t *testing.T) {
 	list := testECHConfigList(t)
 	js := `{"server":"host.example:443","tls_ech":"` + base64.StdEncoding.EncodeToString(list) + `"}`

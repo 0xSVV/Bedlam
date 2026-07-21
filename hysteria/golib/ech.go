@@ -9,7 +9,11 @@ import (
 	"strings"
 )
 
-const pemBlockECHConfigs = "ECH CONFIGS"
+const (
+	pemBlockECHConfigs = "ECH CONFIGS"
+
+	supportedECHVersion = 0xfe0d
+)
 
 func parseECHConfigList(s string) ([]byte, error) {
 	s = strings.TrimSpace(s)
@@ -65,19 +69,27 @@ func validateECHConfigList(list []byte) error {
 		return errors.New("malformed ECH config list: trailing data")
 	}
 	n := 0
+	supported := 0
 	for len(body) > 0 {
 		if len(body) < 4 {
 			return errors.New("malformed ECH config list: truncated config header")
 		}
+		version := binary.BigEndian.Uint16(body[:2])
 		_, next, err := readU16Prefixed(body[2:])
 		if err != nil {
 			return fmt.Errorf("malformed ECH config list: %w", err)
+		}
+		if version == supportedECHVersion {
+			supported++
 		}
 		body = next
 		n++
 	}
 	if n == 0 {
 		return errors.New("ECH config list contains no configs")
+	}
+	if supported == 0 {
+		return fmt.Errorf("ECH config list has no config with supported version 0x%04x", supportedECHVersion)
 	}
 	return nil
 }
