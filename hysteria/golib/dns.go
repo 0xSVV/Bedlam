@@ -95,3 +95,17 @@ func isDNSPort(addr string) bool {
 	_, port, err := net.SplitHostPort(addr)
 	return err == nil && port == "53"
 }
+
+func buildServFail(query []byte) []byte {
+	if len(query) < 12 {
+		return nil
+	}
+	resp := make([]byte, len(query))
+	copy(resp, query)
+	resp[2] |= 0x80
+	resp[3] = 0x80 | 0x02
+	resp[6], resp[7] = 0, 0
+	resp[8], resp[9] = 0, 0
+	resp[10], resp[11] = 0, 0
+	return resp
+}

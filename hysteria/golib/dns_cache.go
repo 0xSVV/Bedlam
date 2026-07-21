@@ -37,10 +37,12 @@ func newDNSCache() *dnsCache {
 	}
 }
 
-func (c *dnsCache) resolve(hc client.Client, dnsServer string, query []byte) ([]byte, error) {
+func (c *dnsCache) resolve(hc client.Client, dnsServer string, query []byte, onTunnel func(tx, rx int)) ([]byte, error) {
 	txID, qKey, ok := parseDNSQuery(query)
 	if !ok {
-		return dnsOverTCP(hc, dnsServer, query)
+		resp, err := dnsOverTCP(hc, dnsServer, query)
+		countTunnelDNS(onTunnel, query, resp, err)
+		return resp, err
 	}
 
 	cacheKey := dnsServer + "\x00" + qKey
@@ -55,6 +57,7 @@ func (c *dnsCache) resolve(hc client.Client, dnsServer string, query []byte) ([]
 		}
 
 		resp, err := dnsOverTCP(hc, dnsServer, query)
+		countTunnelDNS(onTunnel, query, resp, err)
 		if err != nil {
 			return nil, err
 		}
@@ -92,6 +95,17 @@ func (c *dnsCache) lookup(key string, txID uint16) []byte {
 		binary.BigEndian.PutUint16(resp[:2], txID)
 	}
 	return resp
+}
+
+func countTunnelDNS(onTunnel func(tx, rx int), query, resp []byte, err error) {
+	if onTunnel == nil {
+		return
+	}
+	rx := 0
+	if err == nil {
+		rx = len(resp)
+	}
+	onTunnel(len(query), rx)
 }
 
 func (c *dnsCache) store(key string, response []byte, ttl time.Duration) {

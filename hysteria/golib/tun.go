@@ -210,19 +210,28 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 		go func() {
 			defer func() { <-sem }()
 
-			resp, err := h.session.dnsCache.resolve(h.client, dnsAddr, query)
-			if err != nil {
-				if dnsErrLimiter.allow(dnsAddr) {
-					log(LogLevelWarn, srcDNS, "DNS error: %s: %s", dnsAddr, err)
-				}
-				return
-			}
-			log(LogLevelDebug, srcDNS, "DNS response: %d bytes from %s", len(resp), dnsAddr)
+			resp, err := h.session.dnsCache.resolve(h.client, dnsAddr, query, func(tx, rx int) {
+				h.session.addTx(tx)
+				h.session.addRx(rx)
+			})
 
 			var src M.Socksaddr
 			if ap, perr := netip.ParseAddrPort(dnsAddr); perr == nil {
 				src = M.SocksaddrFromNetIP(ap)
 			}
+
+			if err != nil {
+				if dnsErrLimiter.allow(dnsAddr) {
+					log(LogLevelWarn, srcDNS, "DNS error: %s: %s", dnsAddr, err)
+				}
+				if sf := buildServFail(query); sf != nil {
+					if werr := conn.WritePacket(buf.As(sf), src); werr != nil {
+						log(LogLevelDebug, srcDNS, "DNS servfail write error: %s", werr)
+					}
+				}
+				return
+			}
+			log(LogLevelDebug, srcDNS, "DNS response: %d bytes from %s", len(resp), dnsAddr)
 			if werr := conn.WritePacket(buf.As(resp), src); werr != nil {
 				log(LogLevelDebug, srcDNS, "DNS write to local error: %s", werr)
 			}
