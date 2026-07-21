@@ -388,6 +388,7 @@ class BedlamVpnService : VpnService() {
         networkObserver = null
         wakeLock.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        notifications.cancelReconnectWarning()
         notifications.cancel()
     }
 
@@ -465,6 +466,7 @@ class BedlamVpnService : VpnService() {
                         sawConnected = true
                         reconnectTimeoutJob?.cancel()
                         reconnectTimeoutJob = null
+                        notifications.cancelReconnectWarning()
                     }
 
                     is ConnectionState.Error -> {

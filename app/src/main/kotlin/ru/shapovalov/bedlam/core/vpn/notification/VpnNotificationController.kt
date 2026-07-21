@@ -71,6 +71,10 @@ class VpnNotificationController(private val context: Context) {
         }
     }
 
+    fun cancelReconnectWarning() {
+        notificationManager.cancel(WARNING_NOTIFICATION_ID)
+    }
+
     fun postReconnectTimeoutWarning() {
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setContentTitle(title())
