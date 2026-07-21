@@ -14,7 +14,8 @@ class HysteriaConfigParseTest {
 
     private fun sampleConfig(): HysteriaConfig =
         parseHysteriaUri(
-            "hysteria2://token@host.example:8443/?sni=foo&insecure=1&obfs=salamander&obfs-password=pw",
+            "hysteria2://token@host.example:8443/" +
+                "?sni=foo&insecure=1&obfs=salamander&obfs-password=pw&ech=AAT%2BDQAA",
         ).config
 
     @Test
@@ -43,6 +44,28 @@ class HysteriaConfigParseTest {
             .replaceFirst("{", "{\n  \"futureField\": \"x\",")
 
         assertEquals(original, parseHysteriaConfig(json).config)
+    }
+
+    @Test
+    fun `parses config json persisted before the ech field existed`() {
+        val legacy = """
+            {
+              "server": {"address": "host.example:443", "auth": "token"},
+              "tls": {
+                "tlsSni": "",
+                "tlsInsecure": false,
+                "tlsPinSHA256": "",
+                "tlsCa": "",
+                "tlsClientCert": "",
+                "tlsClientKey": ""
+              }
+            }
+        """.trimIndent()
+
+        val parsed = parseHysteriaConfig(legacy)
+
+        assertEquals("", parsed.config.tls.ech)
+        assertEquals("host.example:443", parsed.config.server.address)
     }
 
     @Test

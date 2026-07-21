@@ -98,6 +98,18 @@ class HysteriaUriTest {
     }
 
     @Test
+    fun `ech query maps to TLS with URL decoding`() {
+        val r = parseHysteriaUri("hysteria2://t@h/?ech=AEj%2BDQBA%3D%3D")
+        assertEquals("AEj+DQBA==", r.config.tls.ech)
+    }
+
+    @Test
+    fun `absent ech query yields empty ech`() {
+        val r = parseHysteriaUri("hysteria2://t@h/")
+        assertEquals("", r.config.tls.ech)
+    }
+
+    @Test
     fun `obfs query maps to obfuscation`() {
         val r = parseHysteriaUri("hysteria2://t@h/?obfs=salamander&obfs-password=p%20w")
         val o = r.config.obfuscation!!

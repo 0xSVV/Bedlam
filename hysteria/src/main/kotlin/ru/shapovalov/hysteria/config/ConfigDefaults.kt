@@ -6,7 +6,8 @@ val defaultTlsOptions = TlsOptions(
     tlsPinSHA256 = "",
     tlsCa = "",
     tlsClientCert = "",
-    tlsClientKey = ""
+    tlsClientKey = "",
+    ech = ""
 )
 
 val defaultQuicOptions = QuicOptions(

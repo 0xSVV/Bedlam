@@ -34,7 +34,8 @@ fun parseHysteriaConfig(input: String): ParsedHysteriaUri {
  * Format: `hysteria2://[auth@]hostname[:port]/?[key=value]&...[#name]`
  * Also accepts the `hy2://` scheme.
  *
- * Supported query parameters: sni, insecure, pinSHA256, obfs, obfs-password.
+ * Supported query parameters: sni, insecure, pinSHA256, obfs, obfs-password,
+ * ech.
  * The optional fragment is surfaced as [ParsedHysteriaUri.name].
  *
  * @see <a href="https://v2.hysteria.network/docs/developers/URI-Scheme/">Hysteria 2 URI Scheme</a>
@@ -79,6 +80,7 @@ fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
     val sni = sniParam.ifEmpty { if (isIpLiteral(parsedHost.host)) "" else parsedHost.host }
     val insecure = params["insecure"] == "1"
     val pinSHA256 = params["pinSHA256"].orEmpty()
+    val ech = params["ech"].orEmpty()
     val obfs = params["obfs"].orEmpty()
     val obfsPassword = params["obfs-password"].orEmpty()
     val name = URLDecoder.decode(rawFragment, "UTF-8")
@@ -92,6 +94,7 @@ fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
             tlsCa = defaultTlsOptions.tlsCa,
             tlsClientCert = defaultTlsOptions.tlsClientCert,
             tlsClientKey = defaultTlsOptions.tlsClientKey,
+            ech = ech,
         ),
         obfuscation = ObfuscationOptions(
             obfuscationType = obfs,

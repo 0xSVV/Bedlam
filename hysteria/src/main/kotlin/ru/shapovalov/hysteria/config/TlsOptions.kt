@@ -16,4 +16,10 @@ data class TlsOptions(
     val tlsCa: String,
     val tlsClientCert: String,
     val tlsClientKey: String,
+    /**
+     * Encrypted Client Hello config list: inline base64 or a PEM
+     * `ECH CONFIGS` block (from `sing-box generate ech-keypair`). Defaulted so
+     * profile JSON persisted before this field existed still deserializes.
+     */
+    val ech: String = "",
 )
