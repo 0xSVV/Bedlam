@@ -90,7 +90,7 @@ class HysteriaClientImpl : HysteriaClient {
             }
             markTunReady(generation)
         } catch (e: Exception) {
-            abortStart(e)
+            abortStart(generation, e)
             throw e
         }
     }
@@ -207,11 +207,11 @@ class HysteriaClientImpl : HysteriaClient {
         }
     }
 
-    private suspend fun abortStart(cause: Exception) {
+    private suspend fun abortStart(generation: Long, cause: Exception) {
+        val superseded = liveGeneration.get() != generation
         withContext(NonCancellable + Dispatchers.IO) { closeSessionLocked() }
-        if (cause !is CancellationException) {
-            _state.value = ConnectionState.Error(cause.message ?: "Start failed")
-        }
+        if (cause is CancellationException || superseded) return
+        _state.value = ConnectionState.Error(cause.message ?: "Start failed")
     }
 
     override suspend fun stop(reason: DisconnectReason) {
