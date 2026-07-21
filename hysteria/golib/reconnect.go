@@ -16,9 +16,15 @@ import (
 const (
 	watchdogInterval = 60 * time.Second
 	probeDNSServer   = "1.1.1.1:53"
+
+	dialBackoffBase = 1 * time.Second
+	dialBackoffMax  = 30 * time.Second
 )
 
-var errConnectionsReset = errors.New("connections reset")
+var (
+	errConnectionsReset = errors.New("connections reset")
+	errDialBackoff      = errors.New("dial backoff")
+)
 
 type reconnectClient struct {
 	configFunc    func() (*client.Config, error)
@@ -40,8 +46,40 @@ type reconnectClient struct {
 	stopWatchdog chan struct{}
 	watchdogDone chan struct{}
 
+	backoffMu  sync.Mutex
+	nextDialAt time.Time
+	backoffCur time.Duration
+
 	lastTx int64
 	lastRx int64
+}
+
+func (rc *reconnectClient) dialThrottled() bool {
+	rc.backoffMu.Lock()
+	defer rc.backoffMu.Unlock()
+	return !rc.nextDialAt.IsZero() && time.Now().Before(rc.nextDialAt)
+}
+
+func (rc *reconnectClient) noteDialFailure() {
+	rc.backoffMu.Lock()
+	defer rc.backoffMu.Unlock()
+	switch {
+	case rc.backoffCur == 0:
+		rc.backoffCur = dialBackoffBase
+	case rc.backoffCur < dialBackoffMax:
+		rc.backoffCur *= 2
+		if rc.backoffCur > dialBackoffMax {
+			rc.backoffCur = dialBackoffMax
+		}
+	}
+	rc.nextDialAt = time.Now().Add(rc.backoffCur)
+}
+
+func (rc *reconnectClient) resetBackoff() {
+	rc.backoffMu.Lock()
+	rc.backoffCur = 0
+	rc.nextDialAt = time.Time{}
+	rc.backoffMu.Unlock()
 }
 
 func (rc *reconnectClient) nextGen() uint64 {
@@ -108,12 +146,18 @@ func (rc *reconnectClient) dial() error {
 	}
 	rc.mu.Unlock()
 
+	if rc.dialThrottled() {
+		return errDialBackoff
+	}
+
 	cfg, err := rc.configFunc()
 	if err != nil {
+		rc.noteDialFailure()
 		return err
 	}
 	cli, info, err := client.NewClient(cfg)
 	if err != nil {
+		rc.noteDialFailure()
 		return err
 	}
 	rc.mu.Lock()
@@ -127,6 +171,7 @@ func (rc *reconnectClient) dial() error {
 	rc.generation++
 	gen := rc.generation
 	rc.mu.Unlock()
+	rc.resetBackoff()
 	rc.emit(gen, func() {
 		rc.handler.OnConnected(info.UDPEnabled, prevAttempt)
 	})
@@ -153,6 +198,7 @@ func (rc *reconnectClient) markDead(err error, source string) {
 
 func (rc *reconnectClient) reset() {
 	rc.markDead(errConnectionsReset, srcReset)
+	rc.resetBackoff()
 	if _, err := rc.currentClient(srcReset); err != nil {
 		log(LogLevelDebug, srcReset, "Re-dial after reset failed: %s", err)
 	}
@@ -181,6 +227,9 @@ func (rc *reconnectClient) currentClient(callerSource string) (client.Client, er
 	}
 	rc.mu.Unlock()
 	if err := rc.dial(); err != nil {
+		if errors.Is(err, errDialBackoff) {
+			return nil, err
+		}
 		if rc.isTerminal(err) {
 			rc.failTerminal(err)
 			return nil, err

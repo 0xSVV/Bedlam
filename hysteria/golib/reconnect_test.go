@@ -100,6 +100,62 @@ func TestNewReconnectClient_initialTerminalFailureReturnsError(t *testing.T) {
 	}
 }
 
+func newTestReconnectClient(cf func() (*client.Config, error), h EventHandler) *reconnectClient {
+	return &reconnectClient{
+		configFunc:   cf,
+		handler:      h,
+		stopWatchdog: make(chan struct{}),
+		watchdogDone: make(chan struct{}),
+	}
+}
+
+func TestDial_backoffThrottlesRepeatedFailures(t *testing.T) {
+	calls := 0
+	cf := func() (*client.Config, error) {
+		calls++
+		return nil, errors.New("network down")
+	}
+	rc := newTestReconnectClient(cf, &recordingHandler{})
+
+	if err := rc.dial(); err == nil {
+		t.Fatal("expected first dial to fail")
+	}
+	if calls != 1 {
+		t.Fatalf("expected 1 config attempt, got %d", calls)
+	}
+	if err := rc.dial(); !errors.Is(err, errDialBackoff) {
+		t.Errorf("expected an immediate re-dial to be throttled, got %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("throttled dial must not attempt a connection, got %d attempts", calls)
+	}
+
+	rc.resetBackoff()
+	_ = rc.dial()
+	if calls != 2 {
+		t.Errorf("after reset the dial should attempt again, got %d attempts", calls)
+	}
+}
+
+func TestCurrentClient_backoffSuppressesReconnectingSpam(t *testing.T) {
+	cf := func() (*client.Config, error) { return nil, errors.New("network down") }
+	rec := &recordingHandler{}
+	rc := newTestReconnectClient(cf, rec)
+
+	for i := 0; i < 8; i++ {
+		_, _ = rc.currentClient(srcStream)
+	}
+	n := 0
+	for _, e := range rec.snapshot() {
+		if e == "reconnecting" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("expected a single reconnecting event under backoff, got %d", n)
+	}
+}
+
 func TestMarkDead_emitsWhenLive(t *testing.T) {
 	rec := &recordingHandler{}
 	rc := &reconnectClient{handler: rec, inner: noopClient{}}
