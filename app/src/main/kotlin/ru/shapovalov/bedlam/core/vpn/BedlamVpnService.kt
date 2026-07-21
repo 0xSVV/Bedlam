@@ -21,6 +21,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -158,8 +159,8 @@ class BedlamVpnService : VpnService() {
 
             ACTION_RECONNECT -> {
                 startAsForeground()
-                if (!client.state.value.isActiveTunnel) {
-                    Log.i(TAG, "Reconnect requested with no active tunnel; stopping")
+                if (client.stats() == null) {
+                    Log.i(TAG, "Reconnect requested with no active session; stopping")
                     stop()
                     return START_NOT_STICKY
                 }
@@ -371,12 +372,12 @@ class BedlamVpnService : VpnService() {
         }
     }
 
-    private fun releaseForegroundResources() {
+    private suspend fun releaseForegroundResources() {
         settingsWatcherJob?.cancel()
         settingsWatcherJob = null
         reconnectTimeoutJob?.cancel()
         reconnectTimeoutJob = null
-        notificationJob?.cancel()
+        notificationJob?.cancelAndJoin()
         notificationJob = null
         runtimeHeartbeatJob?.cancel()
         runtimeHeartbeatJob = null
@@ -409,12 +410,18 @@ class BedlamVpnService : VpnService() {
             scope = scope,
             onAvailable = { network -> setUnderlyingNetworks(network?.let { arrayOf(it) }) },
             onSettledChange = {
-                scope.launch {
-                    runCatching { client.resetConnections() }
-                        .onFailure { Log.w(TAG, "resetConnections failed", it) }
-                }
+                scope.launch { handleUnderlyingNetworkChange() }
             },
         ).also { it.start() }
+    }
+
+    private suspend fun handleUnderlyingNetworkChange() {
+        val newPlan = runCatching { buildRoutePlan() }.getOrNull()
+        if (newPlan != null && newPlan != currentRoutePlan) {
+            reapplyTunnel(newPlan)
+        }
+        runCatching { client.resetConnections() }
+            .onFailure { Log.w(TAG, "resetConnections failed", it) }
     }
 
     private fun startReconnectWatchdog() {

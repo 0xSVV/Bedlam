@@ -23,6 +23,10 @@ class VpnNotificationController(private val context: Context) {
 
     private val rateHistory = RateHistory()
     private val sparklineRenderer = SparklineRenderer()
+    private val postLock = Any()
+
+    @Volatile
+    private var closed = false
 
     private val notificationManager: NotificationManager =
         requireNotNull(context.getSystemService(NotificationManager::class.java)) {
@@ -50,12 +54,19 @@ class VpnNotificationController(private val context: Context) {
         txRate: Long,
         rxRate: Long,
     ) {
-        notificationManager.notify(NOTIFICATION_ID, build(state, stats, txRate, rxRate))
+        val notification = build(state, stats, txRate, rxRate)
+        synchronized(postLock) {
+            if (closed) return
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        }
     }
 
     fun cancel() {
-        rateHistory.clear()
-        notificationManager.cancel(NOTIFICATION_ID)
+        synchronized(postLock) {
+            closed = true
+            rateHistory.clear()
+            notificationManager.cancel(NOTIFICATION_ID)
+        }
     }
 
     fun postReconnectTimeoutWarning() {
