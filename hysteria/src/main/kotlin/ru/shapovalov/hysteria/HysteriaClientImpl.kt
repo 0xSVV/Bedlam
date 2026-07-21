@@ -126,25 +126,31 @@ class HysteriaClientImpl : HysteriaClient {
 
     private fun sessionEventHandler(generation: Long): EventHandler = object : EventHandler {
         override fun onConnected(udpEnabled: Boolean, attempt: Int) {
-            if (liveGeneration.get() != generation) return
-            val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
-            lastConnectInfo.set(info)
-            if (tunReady) {
-                if (sessionStartMillis == 0L) sessionStartMillis = System.currentTimeMillis()
-                _state.value = ConnectionState.Connected(info, sessionStartMillis)
-            } else {
-                pendingConnect.set(info)
+            synchronized(lifecycleLock) {
+                if (liveGeneration.get() != generation) return
+                val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
+                lastConnectInfo.set(info)
+                if (tunReady) {
+                    if (sessionStartMillis == 0L) sessionStartMillis = System.currentTimeMillis()
+                    _state.value = ConnectionState.Connected(info, sessionStartMillis)
+                } else {
+                    pendingConnect.set(info)
+                }
             }
         }
 
         override fun onReconnecting(attempt: Int, reason: String) {
-            if (liveGeneration.get() != generation) return
-            _state.value = ConnectionState.Reconnecting(attempt, reason)
+            synchronized(lifecycleLock) {
+                if (liveGeneration.get() != generation) return
+                _state.value = ConnectionState.Reconnecting(attempt, reason)
+            }
         }
 
         override fun onDisconnected(reason: String) {
-            if (liveGeneration.get() != generation) return
-            _state.value = ConnectionState.Error(reason)
+            synchronized(lifecycleLock) {
+                if (liveGeneration.get() != generation) return
+                _state.value = ConnectionState.Error(reason)
+            }
         }
     }
 
@@ -191,11 +197,13 @@ class HysteriaClientImpl : HysteriaClient {
     }
 
     private fun markTunReady(generation: Long) {
-        if (liveGeneration.get() != generation) return
-        tunReady = true
-        pendingConnect.getAndSet(null)?.let {
-            if (sessionStartMillis == 0L) sessionStartMillis = System.currentTimeMillis()
-            _state.value = ConnectionState.Connected(it, sessionStartMillis)
+        synchronized(lifecycleLock) {
+            if (liveGeneration.get() != generation) return
+            tunReady = true
+            pendingConnect.getAndSet(null)?.let {
+                if (sessionStartMillis == 0L) sessionStartMillis = System.currentTimeMillis()
+                _state.value = ConnectionState.Connected(it, sessionStartMillis)
+            }
         }
     }
 
