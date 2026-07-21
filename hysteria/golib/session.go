@@ -81,6 +81,7 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 		func() (int64, int64) {
 			return s.txBytes.Load(), s.rxBytes.Load()
 		},
+		cfg.TLSECH != "",
 	)
 	if err != nil {
 		log(LogLevelError, srcTunnel, "Connection failed: %s", err.Error())

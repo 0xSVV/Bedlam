@@ -19,9 +19,10 @@ const (
 )
 
 type reconnectClient struct {
-	configFunc func() (*client.Config, error)
-	handler    EventHandler
-	statsFunc  func() (tx, rx int64)
+	configFunc    func() (*client.Config, error)
+	handler       EventHandler
+	statsFunc     func() (tx, rx int64)
+	echConfigured bool
 
 	mu      sync.Mutex
 	inner   client.Client
@@ -41,13 +42,15 @@ func newReconnectClient(
 	cf func() (*client.Config, error),
 	h EventHandler,
 	statsFunc func() (tx, rx int64),
+	echConfigured bool,
 ) (*reconnectClient, error) {
 	rc := &reconnectClient{
-		configFunc:   cf,
-		handler:      h,
-		statsFunc:    statsFunc,
-		stopWatchdog: make(chan struct{}),
-		watchdogDone: make(chan struct{}),
+		configFunc:    cf,
+		handler:       h,
+		statsFunc:     statsFunc,
+		echConfigured: echConfigured,
+		stopWatchdog:  make(chan struct{}),
+		watchdogDone:  make(chan struct{}),
 	}
 	if err := rc.dial(); err != nil {
 		close(rc.watchdogDone)
@@ -133,7 +136,7 @@ func (rc *reconnectClient) currentClient(callerSource string) (client.Client, er
 	}
 	rc.mu.Unlock()
 	if err := rc.dial(); err != nil {
-		if isTerminal(err) {
+		if rc.isTerminal(err) {
 			rc.failTerminal(err)
 			return nil, err
 		}
@@ -269,7 +272,7 @@ func isReconnectable(err error) bool {
 	return true
 }
 
-func isTerminal(err error) bool {
+func (rc *reconnectClient) isTerminal(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -284,6 +287,16 @@ func isTerminal(err error) bool {
 	var echErr *tls.ECHRejectionError
 	if errors.As(err, &echErr) {
 		return true
+	}
+	// When ECH is rejected, crypto/tls ignores InsecureSkipVerify and skips
+	// VerifyPeerCertificate, so self-signed/pinned setups surface a stale ECH
+	// config as a certificate verification failure instead of
+	// ECHRejectionError. Retrying cannot succeed in either case.
+	if rc.echConfigured {
+		var certErr *tls.CertificateVerificationError
+		if errors.As(err, &certErr) {
+			return true
+		}
 	}
 	return false
 }
