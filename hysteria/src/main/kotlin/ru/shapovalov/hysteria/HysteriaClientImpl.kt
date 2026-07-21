@@ -7,7 +7,9 @@ import golib.Golib
 import golib.LogHandler
 import golib.Session
 import golib.TestResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -30,6 +32,7 @@ import ru.shapovalov.hysteria.api.TunConfig
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.toJson
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class HysteriaClientImpl : HysteriaClient {
@@ -46,6 +49,8 @@ class HysteriaClientImpl : HysteriaClient {
     @Volatile
     private var session: Session? = null
     private val sessionLock = Mutex()
+    private val lifecycleLock = Any()
+    private val liveGeneration = AtomicLong(0)
 
     @Volatile
     private var serverAddress: String = ""
@@ -65,13 +70,25 @@ class HysteriaClientImpl : HysteriaClient {
     ): Unit = sessionLock.withLock {
         requireNotStarted()
         beginConnecting(config)
+        val generation = liveGeneration.incrementAndGet()
         try {
             withContext(Dispatchers.IO) {
-                val s = openSession(config, protector)
-                session = s
+                val s = openSession(config, protector, generation)
+                val published = synchronized(lifecycleLock) {
+                    if (liveGeneration.get() == generation) {
+                        session = s
+                        true
+                    } else {
+                        false
+                    }
+                }
+                if (!published) {
+                    runCatching { s.close() }
+                    throw CancellationException("client shut down during start")
+                }
                 attachTun(s, tunConfig, tun)
             }
-            markTunReady()
+            markTunReady(generation)
         } catch (e: Exception) {
             abortStart(e)
             throw e
@@ -100,14 +117,16 @@ class HysteriaClientImpl : HysteriaClient {
     private fun openSession(
         config: HysteriaConfig,
         protector: HysteriaClient.SocketProtector,
+        generation: Long,
     ): Session = Golib.newSession(
         config.toJson(),
         { fd: Int -> protector.protect(fd) },
-        sessionEventHandler(),
+        sessionEventHandler(generation),
     )
 
-    private fun sessionEventHandler(): EventHandler = object : EventHandler {
+    private fun sessionEventHandler(generation: Long): EventHandler = object : EventHandler {
         override fun onConnected(udpEnabled: Boolean, attempt: Int) {
+            if (liveGeneration.get() != generation) return
             val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
             lastConnectInfo.set(info)
             if (tunReady) {
@@ -119,10 +138,12 @@ class HysteriaClientImpl : HysteriaClient {
         }
 
         override fun onReconnecting(attempt: Int, reason: String) {
+            if (liveGeneration.get() != generation) return
             _state.value = ConnectionState.Reconnecting(attempt, reason)
         }
 
         override fun onDisconnected(reason: String) {
+            if (liveGeneration.get() != generation) return
             _state.value = ConnectionState.Error(reason)
         }
     }
@@ -169,7 +190,8 @@ class HysteriaClientImpl : HysteriaClient {
         }
     }
 
-    private fun markTunReady() {
+    private fun markTunReady(generation: Long) {
+        if (liveGeneration.get() != generation) return
         tunReady = true
         pendingConnect.getAndSet(null)?.let {
             if (sessionStartMillis == 0L) sessionStartMillis = System.currentTimeMillis()
@@ -178,13 +200,15 @@ class HysteriaClientImpl : HysteriaClient {
     }
 
     private suspend fun abortStart(cause: Exception) {
-        withContext(Dispatchers.IO) { closeSessionLocked() }
-        _state.value = ConnectionState.Error(cause.message ?: "Start failed")
+        withContext(NonCancellable + Dispatchers.IO) { closeSessionLocked() }
+        if (cause !is CancellationException) {
+            _state.value = ConnectionState.Error(cause.message ?: "Start failed")
+        }
     }
 
     override suspend fun stop(reason: DisconnectReason) {
         sessionLock.withLock {
-            withContext(Dispatchers.IO) { closeSessionLocked() }
+            withContext(NonCancellable + Dispatchers.IO) { closeSessionLocked() }
             tunReady = false
             sessionStartMillis = 0L
             pendingConnect.set(null)
@@ -195,7 +219,7 @@ class HysteriaClientImpl : HysteriaClient {
     }
 
     override suspend fun closeSession() = sessionLock.withLock {
-        withContext(Dispatchers.IO) { closeSessionLocked() }
+        withContext(NonCancellable + Dispatchers.IO) { closeSessionLocked() }
         tunReady = false
         sessionStartMillis = 0L
         pendingConnect.set(null)
@@ -203,8 +227,7 @@ class HysteriaClientImpl : HysteriaClient {
     }
 
     override fun shutdown(reason: DisconnectReason) {
-        val s = session
-        session = null
+        val s = invalidateSession()
         tunReady = false
         sessionStartMillis = 0L
         pendingConnect.set(null)
@@ -248,9 +271,15 @@ class HysteriaClientImpl : HysteriaClient {
         .onStart { LogSink.register(minLevel) }
         .onCompletion { LogSink.unregister(minLevel) }
 
-    private fun closeSessionLocked() {
-        val s = session ?: return
+    private fun invalidateSession(): Session? = synchronized(lifecycleLock) {
+        liveGeneration.incrementAndGet()
+        val current = session
         session = null
+        current
+    }
+
+    private fun closeSessionLocked() {
+        val s = invalidateSession() ?: return
         runCatching { s.close() }.onFailure {
             Log.w(TAG, "Session close failed", it)
         }
