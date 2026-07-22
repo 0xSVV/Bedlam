@@ -242,6 +242,12 @@ func (s *Session) Close() error {
 	return err
 }
 
+func (s *Session) CheckConnection() {
+	if c := s.currentClient(); c != nil {
+		c.poke()
+	}
+}
+
 func (s *Session) ResetConnections() {
 	log(LogLevelInfo, srcTunnel, "Resetting upstream connections")
 	s.closeAllActiveConns()

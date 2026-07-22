@@ -84,6 +84,7 @@ class BedlamVpnService : VpnService() {
     private var networkObserver: UnderlyingNetworkObserver? = null
     private var notificationJob: Job? = null
     private var runtimeHeartbeatJob: Job? = null
+    private var livenessKickJob: Job? = null
 
     @Volatile
     private var startJob: Job? = null
@@ -133,6 +134,7 @@ class BedlamVpnService : VpnService() {
         reconnectWatchdogJob?.cancel()
         reconnectTimeoutJob?.cancel()
         settingsWatcherJob?.cancel()
+        livenessKickJob?.cancel()
         networkObserver?.stop()
         wakeLock.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -188,6 +190,7 @@ class BedlamVpnService : VpnService() {
         startNotificationLoop()
         startRuntimeHeartbeat()
         startReconnectWatchdog()
+        startLivenessKick()
 
         scheduleAlwaysOnVpnStateUpdate()
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -384,6 +387,8 @@ class BedlamVpnService : VpnService() {
         runtimeHeartbeatJob = null
         reconnectWatchdogJob?.cancel()
         reconnectWatchdogJob = null
+        livenessKickJob?.cancel()
+        livenessKickJob = null
         networkObserver?.stop()
         networkObserver = null
         wakeLock.release()
@@ -513,6 +518,20 @@ class BedlamVpnService : VpnService() {
                 prevAtMillis = now
                 notifications.post(state, s, txRate, rxRate)
             }
+        }
+    }
+
+    private fun startLivenessKick() {
+        if (livenessKickJob != null) return
+        livenessKickJob = scope.launch {
+            screenOnFlow()
+                .distinctUntilChanged()
+                .collect { interactive ->
+                    if (interactive) {
+                        runCatching { client.checkConnection() }
+                            .onFailure { Log.w(TAG, "Liveness check failed", it) }
+                    }
+                }
         }
     }
 

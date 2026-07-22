@@ -93,6 +93,14 @@ interface HysteriaClient {
     suspend fun resetConnections()
 
     /**
+     * Runs an immediate liveness probe and reconnects if the tunnel is dead.
+     * A cheap no-op when it is healthy. Call on screen-on so a tunnel that
+     * died while the process was frozen recovers on wake rather than waiting
+     * for the next watchdog tick. No-op if the tunnel isn't running.
+     */
+    suspend fun checkConnection()
+
+    /**
      * Cumulative byte counters for the current session, or `null` if no
      * session is active. Counters reset on every successful [start]; they
      * survive QUIC reconnects.

@@ -180,6 +180,35 @@ func TestCurrentClient_backoffSuppressesReconnectingSpam(t *testing.T) {
 	}
 }
 
+func TestPoke_nonBlockingAndCoalesces(t *testing.T) {
+	rc := &reconnectClient{pokeCh: make(chan struct{}, 1)}
+	rc.poke()
+	rc.poke()
+	select {
+	case <-rc.pokeCh:
+	default:
+		t.Fatal("expected a queued poke")
+	}
+	select {
+	case <-rc.pokeCh:
+		t.Error("pokes should coalesce to at most one")
+	default:
+	}
+}
+
+func TestCheckNow_redialsWhenDown(t *testing.T) {
+	calls := 0
+	cf := func() (*client.Config, error) {
+		calls++
+		return nil, errors.New("network down")
+	}
+	rc := newTestReconnectClient(cf, &recordingHandler{})
+	rc.checkNow()
+	if calls != 1 {
+		t.Errorf("checkNow should re-dial when there is no live client, got %d attempts", calls)
+	}
+}
+
 func TestMarkDead_emitsWhenLive(t *testing.T) {
 	rec := &recordingHandler{}
 	rc := &reconnectClient{handler: rec, inner: noopClient{}}

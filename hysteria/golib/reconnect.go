@@ -45,6 +45,7 @@ type reconnectClient struct {
 	dialMu       sync.Mutex
 	stopWatchdog chan struct{}
 	watchdogDone chan struct{}
+	pokeCh       chan struct{}
 
 	backoffMu  sync.Mutex
 	nextDialAt time.Time
@@ -115,6 +116,7 @@ func newReconnectClient(
 		echConfigured: echConfigured,
 		stopWatchdog:  make(chan struct{}),
 		watchdogDone:  make(chan struct{}),
+		pokeCh:        make(chan struct{}, 1),
 	}
 	if err := rc.dial(false); err != nil {
 		if rc.isTerminal(err) {
@@ -309,10 +311,36 @@ func (rc *reconnectClient) watchdog() {
 		select {
 		case <-rc.stopWatchdog:
 			return
+		case <-rc.pokeCh:
+			rc.checkNow()
 		case <-ticker.C:
 			rc.tick()
 		}
 	}
+}
+
+func (rc *reconnectClient) poke() {
+	select {
+	case rc.pokeCh <- struct{}{}:
+	default:
+	}
+}
+
+func (rc *reconnectClient) checkNow() {
+	rc.mu.Lock()
+	if rc.closed || rc.fatal.Load() {
+		rc.mu.Unlock()
+		return
+	}
+	c := rc.inner
+	rc.mu.Unlock()
+	if c == nil {
+		if _, err := rc.currentClient(srcWatchdog); err != nil {
+			log(LogLevelDebug, srcWatchdog, "Poke re-dial failed: %s", err)
+		}
+		return
+	}
+	rc.probe(c)
 }
 
 func (rc *reconnectClient) tick() {

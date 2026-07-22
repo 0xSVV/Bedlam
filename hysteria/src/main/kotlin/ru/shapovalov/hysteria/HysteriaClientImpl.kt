@@ -252,6 +252,11 @@ class HysteriaClientImpl : HysteriaClient {
         withContext(Dispatchers.IO) { runCatching { s.resetConnections() } }
     }
 
+    override suspend fun checkConnection() {
+        val s = session ?: return
+        withContext(Dispatchers.IO) { runCatching { s.checkConnection() } }
+    }
+
     override fun stats(): HysteriaClient.TrafficStats? {
         val s = session ?: return null
         return HysteriaClient.TrafficStats(txBytes = s.txBytes, rxBytes = s.rxBytes)
