@@ -2,6 +2,7 @@ package golib
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -15,6 +16,8 @@ const (
 	dnsDialTimeout = 6 * time.Second
 	dnsIOTimeout   = 5 * time.Second
 )
+
+var errDNSTimeout = errors.New("dns query timed out")
 
 func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error) {
 	type result struct {
@@ -87,7 +90,7 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 			_ = conn.Close()
 		}
 		mu.Unlock()
-		return nil, fmt.Errorf("DNS query to %s timed out", dnsServer)
+		return nil, fmt.Errorf("DNS query to %s: %w", dnsServer, errDNSTimeout)
 	}
 }
 

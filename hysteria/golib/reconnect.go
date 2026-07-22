@@ -340,7 +340,24 @@ func (rc *reconnectClient) checkNow() {
 		}
 		return
 	}
-	rc.probe(c)
+	_, err := dnsOverTCP(c, probeDNSServer, buildDNSQuery())
+	if isProbeTimeout(err) {
+		_, err = dnsOverTCP(c, probeDNSServer, buildDNSQuery())
+	}
+	if isReconnectable(err) {
+		rc.markDead(fmt.Errorf("liveness probe failed: %w", err), srcWatchdog)
+	}
+}
+
+func isProbeTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errDNSTimeout) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }
 
 func (rc *reconnectClient) tick() {
