@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
@@ -58,7 +59,7 @@ class UpdateRepositoryImpl(
         if (!isNewer(candidate = latestVersion, installed = installedVersion())) {
             return@withContext null
         }
-        if (latestVersion == skippedVersion()) return@withContext null
+        if (isSuppressed(latestVersion)) return@withContext null
         val asset = pickAsset(release.assets, latestVersion) ?: return@withContext null
         AppUpdate(
             versionName = latestVersion,
@@ -111,10 +112,22 @@ class UpdateRepositoryImpl(
     }.flowOn(Dispatchers.IO)
 
     override suspend fun skipVersion(versionName: String) {
-        dataStore.edit { prefs -> prefs[KEY_SKIPPED_VERSION] = versionName }
+        dataStore.edit { prefs ->
+            prefs[KEY_SKIPPED_VERSION] = versionName
+            prefs[KEY_SKIPPED_AT] = System.currentTimeMillis()
+        }
     }
 
-    private suspend fun skippedVersion(): String? = dataStore.data.first()[KEY_SKIPPED_VERSION]
+    private suspend fun isSuppressed(candidate: String): Boolean {
+        val prefs = dataStore.data.first()
+        return isUpdateSuppressed(
+            skippedVersion = prefs[KEY_SKIPPED_VERSION],
+            skippedAtMillis = prefs[KEY_SKIPPED_AT],
+            candidate = candidate,
+            nowMillis = System.currentTimeMillis(),
+            ttlMillis = SKIP_TTL_MS,
+        )
+    }
 
     private fun pickAsset(
         assets: List<GitHubReleaseDto.AssetDto>,
@@ -149,5 +162,18 @@ class UpdateRepositoryImpl(
         const val DOWNLOAD_BUFFER_BYTES = 64 * 1024
         val NUMERIC_VERSION = Regex("""\d+(?:\.\d+)*""")
         val KEY_SKIPPED_VERSION = stringPreferencesKey("skipped_version")
+        val KEY_SKIPPED_AT = longPreferencesKey("skipped_at")
+        const val SKIP_TTL_MS = 6 * 60 * 60 * 1000L
     }
+}
+
+internal fun isUpdateSuppressed(
+    skippedVersion: String?,
+    skippedAtMillis: Long?,
+    candidate: String,
+    nowMillis: Long,
+    ttlMillis: Long,
+): Boolean {
+    if (skippedVersion != candidate || skippedAtMillis == null) return false
+    return nowMillis - skippedAtMillis in 0 until ttlMillis
 }
