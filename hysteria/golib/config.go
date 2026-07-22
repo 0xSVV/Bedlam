@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -78,6 +79,29 @@ type trackedPacketConn struct {
 func (t *trackedPacketConn) Close() error {
 	t.session.unregisterActiveConn(t.PacketConn)
 	return t.PacketConn.Close()
+}
+
+func (t *trackedPacketConn) SyscallConn() (syscall.RawConn, error) {
+	if u, ok := t.PacketConn.(interface {
+		SyscallConn() (syscall.RawConn, error)
+	}); ok {
+		return u.SyscallConn()
+	}
+	return nil, errors.ErrUnsupported
+}
+
+func (t *trackedPacketConn) SetReadBuffer(bytes int) error {
+	if u, ok := t.PacketConn.(interface{ SetReadBuffer(int) error }); ok {
+		return u.SetReadBuffer(bytes)
+	}
+	return errors.ErrUnsupported
+}
+
+func (t *trackedPacketConn) SetWriteBuffer(bytes int) error {
+	if u, ok := t.PacketConn.(interface{ SetWriteBuffer(int) error }); ok {
+		return u.SetWriteBuffer(bytes)
+	}
+	return errors.ErrUnsupported
 }
 
 func buildCoreConfig(cfg *clientConfig, serverAddr net.Addr, session *Session) (*client.Config, error) {
