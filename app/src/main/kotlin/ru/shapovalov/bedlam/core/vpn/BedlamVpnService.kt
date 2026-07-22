@@ -80,7 +80,6 @@ class BedlamVpnService : VpnService() {
     }
 
     private lateinit var notifications: VpnNotificationController
-    private lateinit var wakeLock: WakeLockHolder
     private var networkObserver: UnderlyingNetworkObserver? = null
     private var notificationJob: Job? = null
     private var runtimeHeartbeatJob: Job? = null
@@ -119,7 +118,6 @@ class BedlamVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         notifications = VpnNotificationController(this)
-        wakeLock = WakeLockHolder(this, scope)
         notifications.createChannel()
         scheduleAlwaysOnVpnStateUpdate()
     }
@@ -136,7 +134,6 @@ class BedlamVpnService : VpnService() {
         settingsWatcherJob?.cancel()
         livenessKickJob?.cancel()
         networkObserver?.stop()
-        wakeLock.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
         if (client.state.value.isActiveTunnel) client.shutdown()
         scope.cancel()
@@ -185,7 +182,6 @@ class BedlamVpnService : VpnService() {
         connectionName = intent?.getStringExtra(EXTRA_PROFILE_NAME).orEmpty()
         notifications.connectionName = connectionName
 
-        wakeLock.acquire()
         startNetworkObserver()
         startNotificationLoop()
         startRuntimeHeartbeat()
@@ -391,7 +387,6 @@ class BedlamVpnService : VpnService() {
         livenessKickJob = null
         networkObserver?.stop()
         networkObserver = null
-        wakeLock.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
         notifications.cancelReconnectWarning()
         notifications.cancel()
@@ -570,10 +565,10 @@ class BedlamVpnService : VpnService() {
         private const val TAG = "BedlamVpn"
         private const val NOTIFICATION_REFRESH_MS = 1000L
         private const val RECONNECT_WARNING_MS = 3 * 60 * 1000L
-        private const val RUNTIME_HEARTBEAT_MS = 15_000L
+        private const val RUNTIME_HEARTBEAT_MS = 30_000L
         private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
-        private const val ALWAYS_ON_STATE_REFRESH_MS = 30_000L
+        private const val ALWAYS_ON_STATE_REFRESH_MS = 60_000L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"

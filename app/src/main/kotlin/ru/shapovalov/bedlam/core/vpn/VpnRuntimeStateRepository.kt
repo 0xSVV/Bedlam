@@ -186,7 +186,7 @@ data class VpnRuntimeState(
         heartbeatAtMillis > 0L && nowMillis - heartbeatAtMillis <= HEARTBEAT_STALE_AFTER_MS
 
     companion object {
-        const val HEARTBEAT_STALE_AFTER_MS = 60_000L
+        const val HEARTBEAT_STALE_AFTER_MS = 90_000L
 
         private val RECOVERABLE_STATUSES = setOf(
             VpnRuntimeStatus.Starting,
