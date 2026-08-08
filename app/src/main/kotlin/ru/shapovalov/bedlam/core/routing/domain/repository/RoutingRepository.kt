@@ -22,4 +22,5 @@ interface RoutingRepository {
 
     suspend fun hasEquivalent(source: DirectRouteSource): Boolean
     suspend fun recordResolution(sourceId: String, cidrs: List<Cidr>, error: String?)
+    suspend fun recordResolutionError(sourceId: String, error: String?)
 }

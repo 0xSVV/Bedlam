@@ -31,7 +31,7 @@ class RefreshRouteSourcesUseCase(
                         repo.recordResolution(resolved.source.id, it, error = null)
                     }
                     result.onFailure {
-                        repo.recordResolution(resolved.source.id, emptyList(), error = it.message)
+                        repo.recordResolutionError(resolved.source.id, it.message)
                     }
                 }
             }.awaitAll()
