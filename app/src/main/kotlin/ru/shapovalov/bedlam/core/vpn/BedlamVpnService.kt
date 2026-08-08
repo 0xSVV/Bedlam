@@ -135,7 +135,8 @@ class BedlamVpnService : VpnService() {
         livenessKickJob?.cancel()
         networkObserver?.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        if (client.state.value.isActiveTunnel) client.shutdown()
+        notifications.cancelReconnectWarning()
+        client.shutdown()
         scope.cancel()
         super.onDestroy()
     }
