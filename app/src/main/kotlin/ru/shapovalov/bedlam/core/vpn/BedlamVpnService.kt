@@ -597,6 +597,7 @@ class BedlamVpnService : VpnService() {
         private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
         private const val ALWAYS_ON_STATE_REFRESH_MS = 60_000L
+        private const val DESTROY_PERSIST_TIMEOUT_MS = 500L
         private const val TUN_REAPPLY_ATTEMPTS = 2
         private const val TUN_REAPPLY_RETRY_DELAY_MS = 500L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
@@ -673,7 +674,9 @@ class BedlamVpnService : VpnService() {
         if (stopWasRequested || !client.state.value.isActiveTunnel) return
         runCatching {
             runBlocking(Dispatchers.IO) {
-                runtimeStateRepository.markInterrupted(serviceEpoch, "Service destroyed")
+                withTimeoutOrNull(DESTROY_PERSIST_TIMEOUT_MS) {
+                    runtimeStateRepository.markInterrupted(serviceEpoch, "Service destroyed")
+                } ?: Log.w(TAG, "Timed out persisting unexpected service destroy")
             }
         }.onFailure {
             Log.w(TAG, "Failed to persist unexpected service destroy", it)
