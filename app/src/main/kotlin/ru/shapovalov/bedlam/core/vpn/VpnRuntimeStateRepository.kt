@@ -208,8 +208,11 @@ enum class VpnRuntimeStatus {
 fun ConnectionState.effectiveWith(
     runtimeState: VpnRuntimeState,
     nowMillis: Long = System.currentTimeMillis(),
-): ConnectionState =
-    if (isRuntimeRecoveryPending(runtimeState, nowMillis)) ConnectionState.Connecting else this
+): ConnectionState = when {
+    isRuntimeRecoveryPending(runtimeState, nowMillis) -> ConnectionState.Connecting
+    isRuntimeFailureUnreported(runtimeState) -> ConnectionState.Error(runtimeState.lastError!!)
+    else -> this
+}
 
 private fun ConnectionState.isRuntimeRecoveryPending(
     runtimeState: VpnRuntimeState,
@@ -218,3 +221,8 @@ private fun ConnectionState.isRuntimeRecoveryPending(
     this is ConnectionState.Disconnected &&
         runtimeState.expectsActiveTunnel &&
         runtimeState.isHeartbeatFresh(nowMillis)
+
+private fun ConnectionState.isRuntimeFailureUnreported(runtimeState: VpnRuntimeState): Boolean =
+    this is ConnectionState.Disconnected &&
+        runtimeState.status == VpnRuntimeStatus.Failed &&
+        !runtimeState.lastError.isNullOrBlank()
