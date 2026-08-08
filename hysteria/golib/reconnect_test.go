@@ -3,13 +3,17 @@ package golib
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
+	"io"
 	"net"
+	"os"
 	"reflect"
 	"sync"
 	"testing"
 
 	"github.com/apernet/hysteria/core/v2/client"
 	coreErrs "github.com/apernet/hysteria/core/v2/errors"
+	"github.com/apernet/quic-go"
 )
 
 type noopClient struct{}
@@ -247,5 +251,57 @@ func TestIsTerminal_authAndConfig(t *testing.T) {
 	}
 	if rc.isTerminal(errors.New("transient")) {
 		t.Error("expected plain error to be retryable")
+	}
+}
+
+func TestIsTunnelDead(t *testing.T) {
+	streamLimit := &quic.StreamLimitReachedError{}
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"closed", coreErrs.ClosedError{}, true},
+		{"closed wrapped", fmt.Errorf("relay: %w", coreErrs.ClosedError{Err: io.EOF}), true},
+		{"connect", coreErrs.ConnectError{}, true},
+		{"connect wrapped", fmt.Errorf("dial: %w", coreErrs.ConnectError{}), true},
+		{"dial refused by server", coreErrs.DialError{Message: "UDP not enabled"}, false},
+		{"dial wrapped", fmt.Errorf("udp: %w", coreErrs.DialError{}), false},
+		{"stream limit reached", streamLimit, false},
+		{"stream limit wrapped", fmt.Errorf("open: %w", streamLimit), false},
+		{"unknown", errors.New("boom"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isTunnelDead(tc.err); got != tc.want {
+				t.Fatalf("isTunnelDead(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProbeIndicatesDead(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"timeout", errDNSTimeout, true},
+		{"timeout wrapped", fmt.Errorf("probe: %w", errDNSTimeout), true},
+		{"deadline exceeded", os.ErrDeadlineExceeded, true},
+		{"closed", coreErrs.ClosedError{}, true},
+		{"read failed", fmt.Errorf("read response length: %w", io.EOF), true},
+		{"dial refused by server", coreErrs.DialError{Message: "UDP not enabled"}, false},
+		{"malformed length", fmt.Errorf("%w: invalid response length: 0", errDNSMalformed), false},
+		{"malformed txid", fmt.Errorf("%w: response transaction ID mismatch", errDNSMalformed), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := probeIndicatesDead(tc.err); got != tc.want {
+				t.Fatalf("probeIndicatesDead(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }
