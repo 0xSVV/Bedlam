@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	utls "github.com/refraction-networking/utls"
+
 	"github.com/apernet/hysteria/core/v2/client"
 	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
@@ -447,6 +449,10 @@ func (rc *reconnectClient) isTerminal(err error) bool {
 	if errors.As(err, &echErr) {
 		return true
 	}
+	var uechErr *utls.ECHRejectionError
+	if errors.As(err, &uechErr) {
+		return true
+	}
 	// When ECH is rejected, crypto/tls ignores InsecureSkipVerify and skips
 	// VerifyPeerCertificate, so self-signed/pinned setups surface a stale ECH
 	// config as a certificate verification failure instead of
@@ -454,6 +460,10 @@ func (rc *reconnectClient) isTerminal(err error) bool {
 	if rc.echConfigured {
 		var certErr *tls.CertificateVerificationError
 		if errors.As(err, &certErr) {
+			return true
+		}
+		var ucertErr *utls.CertificateVerificationError
+		if errors.As(err, &ucertErr) {
 			return true
 		}
 	}
