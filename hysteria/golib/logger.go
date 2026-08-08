@@ -95,6 +95,8 @@ func log(level, source, format string, args ...interface{}) {
 	box.h.OnLog(level, source, fmt.Sprintf(format, args...))
 }
 
+const rateLimiterMaxKeys = 1024
+
 type rateLimiter struct {
 	interval time.Duration
 	mu       sync.Mutex
@@ -111,6 +113,13 @@ func (r *rateLimiter) allow(key string) bool {
 	now := time.Now()
 	if t, ok := r.last[key]; ok && now.Sub(t) < r.interval {
 		return false
+	}
+	if len(r.last) >= rateLimiterMaxKeys {
+		for k, t := range r.last {
+			if now.Sub(t) >= r.interval {
+				delete(r.last, k)
+			}
+		}
 	}
 	r.last[key] = now
 	return true
