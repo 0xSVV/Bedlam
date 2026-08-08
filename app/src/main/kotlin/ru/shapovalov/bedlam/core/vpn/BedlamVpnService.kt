@@ -113,6 +113,9 @@ class BedlamVpnService : VpnService() {
     @Volatile
     private var stopWasRequested: Boolean = false
 
+    @Volatile
+    private var lastStartId: Int = 0
+
     private val serviceEpoch: Long = System.currentTimeMillis()
 
     override fun onCreate() {
@@ -172,6 +175,9 @@ class BedlamVpnService : VpnService() {
                 return START_NOT_STICKY
             }
         }
+
+        lastStartId = startId
+        stopWasRequested = false
 
         if (!startAsForeground()) {
             scope.launch {
@@ -361,7 +367,7 @@ class BedlamVpnService : VpnService() {
             runCatching { client.stop(reason) }
                 .onFailure { Log.w(TAG, "client.stop failed", it) }
             runtimeStateRepository.markStopped(reason.name)
-            stopSelf()
+            stopSelf(lastStartId)
         }
     }
 
