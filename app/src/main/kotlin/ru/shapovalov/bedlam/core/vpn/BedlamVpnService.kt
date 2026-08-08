@@ -173,7 +173,13 @@ class BedlamVpnService : VpnService() {
             }
         }
 
-        startAsForeground()
+        if (!startAsForeground()) {
+            scope.launch {
+                runtimeStateRepository.markFailed("Android refused to start the VPN service")
+                releaseAndStopSelf(startId)
+            }
+            return START_NOT_STICKY
+        }
 
         if (startJob?.isActive == true) {
             Log.i(TAG, "Ignoring VPN start while startup is already in progress")
@@ -393,16 +399,22 @@ class BedlamVpnService : VpnService() {
         notifications.cancel()
     }
 
-    private fun startAsForeground() {
+    private fun startAsForeground(): Boolean {
         val notification = notifications.foregroundNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                VpnNotificationController.NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
-        } else {
-            startForeground(VpnNotificationController.NOTIFICATION_ID, notification)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    VpnNotificationController.NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                )
+            } else {
+                startForeground(VpnNotificationController.NOTIFICATION_ID, notification)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Foreground start was rejected", e)
+            false
         }
     }
 
