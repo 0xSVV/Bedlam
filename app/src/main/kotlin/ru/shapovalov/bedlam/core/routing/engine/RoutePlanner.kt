@@ -61,6 +61,7 @@ class RoutePlanner(
 
         val dnsServers = resolveDns(config)
             .filter { ipv6Enabled || ':' !in it }
+            .ifEmpty { CLOUDFLARE_DNS.filter { ipv6Enabled || ':' !in it } }
 
         // Tunnel DNS servers are claimed as host routes so a direct-route
         // source covering them (e.g. a resolver's ASN) can't pull plaintext
@@ -125,7 +126,13 @@ class RoutePlanner(
 
         DnsMode.Custom -> config.customDns
             .map { it.trim() }
-            .filter { it.isNotEmpty() }
+            .filter { isDnsAddress(it) }
+    }
+
+    private fun isDnsAddress(addr: String): Boolean {
+        if (addr.isEmpty()) return false
+        val prefix = if (':' in addr) 128 else 32
+        return Cidr.parseOrNull("$addr/$prefix") != null
     }
 
     companion object {
