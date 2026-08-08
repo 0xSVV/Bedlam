@@ -430,17 +430,26 @@ class BedlamVpnService : VpnService() {
 
     private suspend fun reapplyDnsForNetworkChange(plan: RoutePlan) {
         val previous = currentRoutePlan
-        currentRoutePlan = plan
-        try {
-            client.updateTun(TunConfig(ipv6Enabled = plan.ipv6Enabled)) { tunConfig ->
-                establishTun(tunConfig)
+        repeat(TUN_REAPPLY_ATTEMPTS) { attempt ->
+            currentRoutePlan = plan
+            try {
+                client.updateTun(TunConfig(ipv6Enabled = plan.ipv6Enabled)) { tunConfig ->
+                    establishTun(tunConfig)
+                }
+                return
+            } catch (e: CancellationException) {
+                currentRoutePlan = previous
+                throw e
+            } catch (e: Exception) {
+                currentRoutePlan = previous
+                if (attempt < TUN_REAPPLY_ATTEMPTS - 1) {
+                    Log.w(TAG, "DNS reapply after network change failed; retrying", e)
+                    delay(TUN_REAPPLY_RETRY_DELAY_MS)
+                } else {
+                    Log.e(TAG, "DNS reapply after network change failed; no interface left", e)
+                    stop()
+                }
             }
-        } catch (e: CancellationException) {
-            currentRoutePlan = previous
-            throw e
-        } catch (e: Exception) {
-            currentRoutePlan = previous
-            Log.w(TAG, "DNS reapply after network change failed; keeping current tunnel", e)
         }
     }
 
@@ -569,6 +578,8 @@ class BedlamVpnService : VpnService() {
         private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
         private const val ALWAYS_ON_STATE_REFRESH_MS = 60_000L
+        private const val TUN_REAPPLY_ATTEMPTS = 2
+        private const val TUN_REAPPLY_RETRY_DELAY_MS = 500L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"
