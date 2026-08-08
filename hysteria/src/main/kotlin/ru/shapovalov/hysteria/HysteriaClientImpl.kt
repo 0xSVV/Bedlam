@@ -232,6 +232,7 @@ class HysteriaClientImpl : HysteriaClient {
         sessionStartMillis = 0L
         pendingConnect.set(null)
         lastConnectInfo.set(null)
+        _state.value = ConnectionState.Disconnected(DisconnectReason.USER)
     }
 
     override fun shutdown(reason: DisconnectReason) {
