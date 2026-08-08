@@ -1,42 +1,13 @@
 package ru.shapovalov.hysteria.config
 
-val defaultTlsOptions = TlsOptions(
-    tlsSni = "",
-    tlsInsecure = false,
-    tlsPinSHA256 = "",
-    tlsCa = "",
-    tlsClientCert = "",
-    tlsClientKey = "",
-    ech = ""
-)
+val defaultTlsOptions = TlsOptions()
 
-val defaultQuicOptions = QuicOptions(
-    initStreamReceiveWindow = 0,
-    maxStreamReceiveWindow = 0,
-    initConnReceiveWindow = 0,
-    maxConnReceiveWindow = 0,
-    maxIdleTimeoutSec = 0,
-    keepAlivePeriodSec = 0,
-    disablePathMTUDiscovery = true
-)
+val defaultQuicOptions = QuicOptions()
 
-val defaultCongestionOptions = CongestionOptions(
-    congestionType = "",
-    bbrProfile = ""
-)
+val defaultCongestionOptions = CongestionOptions()
 
-val defaultBandwidthOptions = BandwidthOptions(
-    maxTxMbps = 0,
-    maxRxMbps = 0,
-    disableLossCompensation = false
-)
+val defaultBandwidthOptions = BandwidthOptions()
 
-val defaultTransportOptions = TransportOptions(
-    hopIntervalSec = 0,
-    minHopIntervalSec = 0,
-    maxHopIntervalSec = 0
-)
+val defaultTransportOptions = TransportOptions()
 
-val defaultBehaviorOptions = BehaviorOptions(
-    fastOpen = true
-)
+val defaultBehaviorOptions = BehaviorOptions()
