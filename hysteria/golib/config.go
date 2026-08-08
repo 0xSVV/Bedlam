@@ -45,6 +45,8 @@ type clientConfig struct {
 	MaxIdleTimeoutSec       int    `json:"max_idle_timeout"`
 	KeepAlivePeriodSec      int    `json:"keep_alive_period"`
 	DisablePathMTUDiscovery bool   `json:"disable_pmtud"`
+	DisableChromeParrot     bool   `json:"disable_chrome_parrot"`
+	DisableGSO              bool   `json:"disable_gso"`
 
 	CongestionType string `json:"congestion_type"`
 	BBRProfile     string `json:"bbr_profile"`
@@ -189,6 +191,8 @@ func applyClientOptions(coreConfig *client.Config, cfg *clientConfig, defaultSNI
 		InitialConnectionReceiveWindow: cfg.InitConnReceiveWindow,
 		MaxConnectionReceiveWindow:     cfg.MaxConnReceiveWindow,
 		DisablePathMTUDiscovery:        cfg.DisablePathMTUDiscovery,
+		DisableChromeParrot:            cfg.DisableChromeParrot,
+		DisableGSO:                     cfg.DisableGSO,
 	}
 	if cfg.MaxIdleTimeoutSec > 0 {
 		coreConfig.QUICConfig.MaxIdleTimeout = time.Duration(cfg.MaxIdleTimeoutSec) * time.Second
@@ -198,11 +202,12 @@ func applyClientOptions(coreConfig *client.Config, cfg *clientConfig, defaultSNI
 	}
 	if anyQUICTuned(cfg) {
 		log(LogLevelInfo, srcTransport,
-			"QUIC: stream-recv=[%d,%d] conn-recv=[%d,%d] idle=%ds keepalive=%ds pmtud-disabled=%v",
+			"QUIC: stream-recv=[%d,%d] conn-recv=[%d,%d] idle=%ds keepalive=%ds "+
+				"pmtud-disabled=%v parrot-disabled=%v gso-disabled=%v",
 			cfg.InitStreamReceiveWindow, cfg.MaxStreamReceiveWindow,
 			cfg.InitConnReceiveWindow, cfg.MaxConnReceiveWindow,
 			cfg.MaxIdleTimeoutSec, cfg.KeepAlivePeriodSec,
-			cfg.DisablePathMTUDiscovery)
+			cfg.DisablePathMTUDiscovery, cfg.DisableChromeParrot, cfg.DisableGSO)
 	}
 
 	if cfg.CongestionType != "" {
@@ -231,7 +236,7 @@ func anyQUICTuned(cfg *clientConfig) bool {
 	return cfg.InitStreamReceiveWindow != 0 || cfg.MaxStreamReceiveWindow != 0 ||
 		cfg.InitConnReceiveWindow != 0 || cfg.MaxConnReceiveWindow != 0 ||
 		cfg.MaxIdleTimeoutSec != 0 || cfg.KeepAlivePeriodSec != 0 ||
-		cfg.DisablePathMTUDiscovery
+		cfg.DisablePathMTUDiscovery || cfg.DisableChromeParrot || cfg.DisableGSO
 }
 
 func authSummary(auth string) string {

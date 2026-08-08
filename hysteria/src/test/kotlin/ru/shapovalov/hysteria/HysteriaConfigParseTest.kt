@@ -85,6 +85,23 @@ class HysteriaConfigParseTest {
     }
 
     @Test
+    fun `a profile saved before the parrot switch existed keeps the parrot off`() {
+        val legacy = """
+            {
+              "server": {"server": "host.example:443", "auth": "token"},
+              "tls": {},
+              "quic": {"maxIdleTimeoutSec": 30, "disablePathMTUDiscovery": true}
+            }
+        """.trimIndent()
+
+        val parsed = parseHysteriaConfig(legacy).config
+
+        assertEquals(true, parsed.quic?.disableChromeParrot)
+        assertEquals(false, parsed.quic?.disableGso)
+        assertEquals(30, parsed.quic?.maxIdleTimeoutSec)
+    }
+
+    @Test
     fun `applies documented defaults to empty option objects`() {
         val sparse = """
             {

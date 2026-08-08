@@ -11,4 +11,6 @@ data class QuicOptions(
     val maxIdleTimeoutSec: Int = 0,
     val keepAlivePeriodSec: Int = 0,
     val disablePathMTUDiscovery: Boolean = true,
+    val disableChromeParrot: Boolean = true,
+    val disableGso: Boolean = false,
 )
