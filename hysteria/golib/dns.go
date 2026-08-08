@@ -19,6 +19,8 @@ const (
 
 var errDNSTimeout = errors.New("dns query timed out")
 
+var errDNSMalformed = errors.New("malformed dns response")
+
 func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error) {
 	type result struct {
 		resp []byte
@@ -63,7 +65,7 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 		}
 		n := binary.BigEndian.Uint16(respLen[:])
 		if n == 0 {
-			done <- result{nil, fmt.Errorf("invalid response length: %d", n)}
+			done <- result{nil, fmt.Errorf("%w: invalid response length: %d", errDNSMalformed, n)}
 			return
 		}
 
@@ -74,7 +76,7 @@ func dnsOverTCP(c client.Client, dnsServer string, query []byte) ([]byte, error)
 		}
 		if len(query) >= 2 && len(resp) >= 2 &&
 			binary.BigEndian.Uint16(resp[:2]) != binary.BigEndian.Uint16(query[:2]) {
-			done <- result{nil, fmt.Errorf("response transaction ID mismatch")}
+			done <- result{nil, fmt.Errorf("%w: response transaction ID mismatch", errDNSMalformed)}
 			return
 		}
 		done <- result{resp, nil}
