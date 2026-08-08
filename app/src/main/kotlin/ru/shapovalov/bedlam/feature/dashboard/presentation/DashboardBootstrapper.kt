@@ -1,6 +1,8 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
+import android.util.Log
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineBootstrapper
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
@@ -32,6 +34,9 @@ internal class DashboardBootstrapper(
         scope.launch {
             combine(getProfiles(), observeActiveId()) { profiles, activeId ->
                 Action.ProfilesLoaded(profiles, activeId)
+            }.catch { error ->
+                Log.w(TAG, "Profile stream failed", error)
+                emit(Action.ProfilesLoaded(emptyList(), null))
             }.collect(::dispatch)
         }
         scope.launch {
@@ -51,5 +56,9 @@ internal class DashboardBootstrapper(
                 wasConnected = isConnected
             }
         }
+    }
+
+    private companion object {
+        const val TAG = "DashboardBootstrapper"
     }
 }
