@@ -392,7 +392,7 @@ class BedlamVpnService : VpnService() {
         reconnectTimeoutJob = null
         notificationJob?.cancelAndJoin()
         notificationJob = null
-        runtimeHeartbeatJob?.cancel()
+        runtimeHeartbeatJob?.cancelAndJoin()
         runtimeHeartbeatJob = null
         reconnectWatchdogJob?.cancel()
         reconnectWatchdogJob = null
