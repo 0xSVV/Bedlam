@@ -57,7 +57,7 @@ class DefaultNetworkListener(
                 Handler(Looper.getMainLooper()),
             )
         } else {
-            connectivityManager.requestNetwork(request, callback)
+            connectivityManager.registerNetworkCallback(request, callback)
         }
     }
 
