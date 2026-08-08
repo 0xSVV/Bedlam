@@ -388,7 +388,12 @@ func (f *connFactory) New(addr net.Addr) (net.PacketConn, error) {
 	tracked := &trackedPacketConn{PacketConn: conn, session: f.session}
 	f.session.registerActiveConn(conn)
 	if f.wrap != nil {
-		return f.wrap(tracked)
+		wrapped, err := f.wrap(tracked)
+		if err != nil {
+			_ = tracked.Close()
+			return nil, err
+		}
+		return wrapped, nil
 	}
 	return tracked, nil
 }
