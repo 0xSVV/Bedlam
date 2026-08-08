@@ -67,6 +67,7 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 
 	if err := stack.Start(); err != nil {
 		cancel()
+		_ = stack.Close()
 		tunIface.Close()
 		return fmt.Errorf("start TUN stack: %w", err)
 	}
