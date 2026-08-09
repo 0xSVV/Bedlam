@@ -33,6 +33,7 @@ internal fun ServerSection(
             editMode = editMode,
             caution = stringResource(R.string.profile_config_caution_auth),
             showDivider = false,
+            secret = true,
             onChange = { onDraftChanged(draft.copy(server = draft.server.copy(auth = it))) },
         )
     }
