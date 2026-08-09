@@ -51,6 +51,12 @@ class UpdateRepositoryImpl(
     }
 
     override suspend fun checkForUpdate(): AppUpdate? = withContext(Dispatchers.IO) {
+        val prefs = dataStore.data.first()
+        val now = System.currentTimeMillis()
+        if (isCheckThrottled(prefs[KEY_LAST_CHECK_AT], now, CHECK_INTERVAL_MS)) {
+            return@withContext null
+        }
+        dataStore.edit { it[KEY_LAST_CHECK_AT] = now }
         val release = json.decodeFromString(
             GitHubReleaseDto.serializer(),
             httpClient.get(LATEST_RELEASE_URL),
@@ -59,7 +65,17 @@ class UpdateRepositoryImpl(
         if (!isNewer(candidate = latestVersion, installed = installedVersion())) {
             return@withContext null
         }
-        if (isSuppressed(latestVersion)) return@withContext null
+        if (
+            isUpdateSuppressed(
+                skippedVersion = prefs[KEY_SKIPPED_VERSION],
+                skippedAtMillis = prefs[KEY_SKIPPED_AT],
+                candidate = latestVersion,
+                nowMillis = now,
+                ttlMillis = SKIP_TTL_MS,
+            )
+        ) {
+            return@withContext null
+        }
         val asset = pickAsset(release.assets, latestVersion) ?: return@withContext null
         AppUpdate(
             versionName = latestVersion,
@@ -125,17 +141,6 @@ class UpdateRepositoryImpl(
         }
     }
 
-    private suspend fun isSuppressed(candidate: String): Boolean {
-        val prefs = dataStore.data.first()
-        return isUpdateSuppressed(
-            skippedVersion = prefs[KEY_SKIPPED_VERSION],
-            skippedAtMillis = prefs[KEY_SKIPPED_AT],
-            candidate = candidate,
-            nowMillis = System.currentTimeMillis(),
-            ttlMillis = SKIP_TTL_MS,
-        )
-    }
-
     private fun pickAsset(
         assets: List<GitHubReleaseDto.AssetDto>,
         version: String,
@@ -170,9 +175,20 @@ class UpdateRepositoryImpl(
         val NUMERIC_VERSION = Regex("""\d+(?:\.\d+)*""")
         val KEY_SKIPPED_VERSION = stringPreferencesKey("skipped_version")
         val KEY_SKIPPED_AT = longPreferencesKey("skipped_at")
+        val KEY_LAST_CHECK_AT = longPreferencesKey("last_check_at")
         const val SKIP_TTL_MS = 6 * 60 * 60 * 1000L
+        const val CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
         const val MAX_APK_BYTES = 200L * 1024 * 1024
     }
+}
+
+internal fun isCheckThrottled(
+    lastCheckAtMillis: Long?,
+    nowMillis: Long,
+    intervalMillis: Long,
+): Boolean {
+    if (lastCheckAtMillis == null) return false
+    return nowMillis - lastCheckAtMillis in 0 until intervalMillis
 }
 
 internal fun isTrustedDownloadUrl(url: String): Boolean {
