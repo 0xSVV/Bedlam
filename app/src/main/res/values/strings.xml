@@ -342,4 +342,5 @@
     <string name="update_downloading">Downloading %1$s of %2$s…</string>
     <string name="update_installing">Installing…</string>
     <string name="update_failed">Update failed: %1$s</string>
+    <string name="update_error_signature">This download was not signed with the same key as your installed app. Get the update from the GitHub releases page instead.</string>
 </resources>

@@ -112,6 +112,11 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
 
                 UpdateStore.State.Phase.Installing -> InstallingIndicator()
 
+                UpdateStore.State.Phase.SignatureMismatch -> BlockedActions(
+                    message = stringResource(R.string.update_error_signature),
+                    onSkip = component::onSkip,
+                )
+
                 is UpdateStore.State.Phase.Failed -> FailedActions(
                     message = phase.message,
                     onRetry = component::onInstall,
@@ -220,6 +225,23 @@ private fun FailedActions(message: String, onRetry: () -> Unit, onSkip: () -> Un
             Text(stringResource(R.string.update_action_retry))
         }
         Spacer(Modifier.height(spacing.xSmall))
+        TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.update_action_skip))
+        }
+    }
+}
+
+@Composable
+private fun BlockedActions(message: String, onSkip: () -> Unit) {
+    val spacing = MaterialTheme.spacing
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(spacing.medium))
         TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.update_action_skip))
         }

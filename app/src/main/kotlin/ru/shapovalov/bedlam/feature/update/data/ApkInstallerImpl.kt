@@ -29,7 +29,16 @@ class ApkInstallerImpl(
     override suspend fun install(apk: File) = withContext(Dispatchers.IO) {
         _status.value = InstallStatus.InProgress
         try {
-            val installer = context.packageManager.packageInstaller
+            val pm = context.packageManager
+            if (!signersMatch(
+                    installed = pm.installedSigners(context.packageName),
+                    candidate = pm.archiveSigners(apk.absolutePath),
+                )
+            ) {
+                _status.value = InstallStatus.SignatureMismatch
+                return@withContext
+            }
+            val installer = pm.packageInstaller
             val params = PackageInstaller.SessionParams(
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL,
             ).apply {
