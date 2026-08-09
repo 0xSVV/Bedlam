@@ -34,5 +34,10 @@ internal fun SpeedTestWebView(modifier: Modifier = Modifier) {
                 loadUrl(SPEED_TEST_URL)
             }
         },
+        onRelease = { webView ->
+            webView.stopLoading()
+            webView.loadUrl("about:blank")
+            webView.destroy()
+        },
     )
 }
