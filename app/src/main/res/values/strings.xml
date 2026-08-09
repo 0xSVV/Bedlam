@@ -256,6 +256,7 @@
     <string name="session_title">Session</string>
     <string name="session_action_refresh_cd">Refresh</string>
     <string name="session_action_retry">Retry</string>
+    <string name="session_speed_test_error">The speed test could not load. Check that the tunnel is connected, then try again.</string>
     <string name="session_error_title">Could not load session</string>
     <string name="session_error_unknown">Session lookup failed. Check the tunnel and try again.</string>
     <string name="session_ip_explainer">Reported by public lookup services through the active tunnel. IPv6 appears only when this route supports it.</string>
