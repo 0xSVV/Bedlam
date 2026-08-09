@@ -134,6 +134,50 @@ class RoutePlannerTest {
         }
 
         @Test
+        fun `dns Custom drops entries that are not IP addresses`() {
+            val plan = planner().plan(
+                RoutingConfig(
+                    dnsMode = DnsMode.Custom,
+                    customDns = listOf("9.9.9.9", "cloudflare", "1.1.1.1.1", "999.1.1.1"),
+                ),
+                AppFilter(),
+            )
+            assertEquals(listOf("9.9.9.9"), plan.dnsServers)
+        }
+
+        @Test
+        fun `dns Custom falls back to Cloudflare when nothing is usable`() {
+            val plan = planner().plan(
+                RoutingConfig(dnsMode = DnsMode.Custom, customDns = listOf("cloudflare")),
+                AppFilter(),
+            )
+            assertEquals(RoutePlanner.CLOUDFLARE_DNS, plan.dnsServers)
+        }
+
+        @Test
+        fun `dns Custom falls back to Cloudflare when the list is empty`() {
+            val plan = planner().plan(
+                RoutingConfig(dnsMode = DnsMode.Custom, customDns = emptyList()),
+                AppFilter(),
+            )
+            assertEquals(RoutePlanner.CLOUDFLARE_DNS, plan.dnsServers)
+        }
+
+        @Test
+        fun `dns Custom falls back to v4 Cloudflare when only v6 is configured and IPv6 is off`() {
+            val plan = planner().plan(
+                RoutingConfig(
+                    ipv6Mode = Ipv6Mode.Disabled,
+                    dnsMode = DnsMode.Custom,
+                    customDns = listOf("2606:4700:4700::1111"),
+                ),
+                AppFilter(),
+            )
+            assertTrue(plan.dnsServers.contains("1.1.1.1"))
+            assertFalse(plan.dnsServers.any { ':' in it })
+        }
+
+        @Test
         fun `tunnel DNS servers are claimed as host routes`() {
             val plan = planner().plan(
                 RoutingConfig(

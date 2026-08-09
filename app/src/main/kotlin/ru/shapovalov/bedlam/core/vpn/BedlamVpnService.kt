@@ -113,6 +113,9 @@ class BedlamVpnService : VpnService() {
     @Volatile
     private var stopWasRequested: Boolean = false
 
+    @Volatile
+    private var lastStartId: Int = 0
+
     private val serviceEpoch: Long = System.currentTimeMillis()
 
     override fun onCreate() {
@@ -135,7 +138,8 @@ class BedlamVpnService : VpnService() {
         livenessKickJob?.cancel()
         networkObserver?.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        if (client.state.value.isActiveTunnel) client.shutdown()
+        notifications.cancelReconnectWarning()
+        client.shutdown()
         scope.cancel()
         super.onDestroy()
     }
@@ -172,7 +176,16 @@ class BedlamVpnService : VpnService() {
             }
         }
 
-        startAsForeground()
+        lastStartId = startId
+        stopWasRequested = false
+
+        if (!startAsForeground()) {
+            scope.launch {
+                runtimeStateRepository.markFailed("Android refused to start the VPN service")
+                releaseAndStopSelf(startId)
+            }
+            return START_NOT_STICKY
+        }
 
         if (startJob?.isActive == true) {
             Log.i(TAG, "Ignoring VPN start while startup is already in progress")
@@ -354,20 +367,20 @@ class BedlamVpnService : VpnService() {
             runCatching { client.stop(reason) }
                 .onFailure { Log.w(TAG, "client.stop failed", it) }
             runtimeStateRepository.markStopped(reason.name)
-            stopSelf()
+            stopSelf(lastStartId)
         }
     }
 
-    private fun stopAfterTerminalFailure() {
+    private fun stopAfterTerminalFailure(reason: String) {
         stopWasRequested = true
         currentConfig = null
         startJob?.cancel()
         startJob = null
         scope.launch(Dispatchers.Main.immediate) {
             releaseForegroundResources()
+            runtimeStateRepository.markFailed(reason)
             runCatching { client.closeSession() }
                 .onFailure { Log.w(TAG, "client.closeSession failed", it) }
-            runtimeStateRepository.markFailed("Terminal tunnel failure")
             stopSelf()
         }
     }
@@ -379,7 +392,7 @@ class BedlamVpnService : VpnService() {
         reconnectTimeoutJob = null
         notificationJob?.cancelAndJoin()
         notificationJob = null
-        runtimeHeartbeatJob?.cancel()
+        runtimeHeartbeatJob?.cancelAndJoin()
         runtimeHeartbeatJob = null
         reconnectWatchdogJob?.cancel()
         reconnectWatchdogJob = null
@@ -392,16 +405,22 @@ class BedlamVpnService : VpnService() {
         notifications.cancel()
     }
 
-    private fun startAsForeground() {
+    private fun startAsForeground(): Boolean {
         val notification = notifications.foregroundNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                VpnNotificationController.NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
-        } else {
-            startForeground(VpnNotificationController.NOTIFICATION_ID, notification)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    VpnNotificationController.NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                )
+            } else {
+                startForeground(VpnNotificationController.NOTIFICATION_ID, notification)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Foreground start was rejected", e)
+            false
         }
     }
 
@@ -430,17 +449,26 @@ class BedlamVpnService : VpnService() {
 
     private suspend fun reapplyDnsForNetworkChange(plan: RoutePlan) {
         val previous = currentRoutePlan
-        currentRoutePlan = plan
-        try {
-            client.updateTun(TunConfig(ipv6Enabled = plan.ipv6Enabled)) { tunConfig ->
-                establishTun(tunConfig)
+        repeat(TUN_REAPPLY_ATTEMPTS) { attempt ->
+            currentRoutePlan = plan
+            try {
+                client.updateTun(TunConfig(ipv6Enabled = plan.ipv6Enabled)) { tunConfig ->
+                    establishTun(tunConfig)
+                }
+                return
+            } catch (e: CancellationException) {
+                currentRoutePlan = previous
+                throw e
+            } catch (e: Exception) {
+                currentRoutePlan = previous
+                if (attempt < TUN_REAPPLY_ATTEMPTS - 1) {
+                    Log.w(TAG, "DNS reapply after network change failed; retrying", e)
+                    delay(TUN_REAPPLY_RETRY_DELAY_MS)
+                } else {
+                    Log.e(TAG, "DNS reapply after network change failed; no interface left", e)
+                    stop()
+                }
             }
-        } catch (e: CancellationException) {
-            currentRoutePlan = previous
-            throw e
-        } catch (e: Exception) {
-            currentRoutePlan = previous
-            Log.w(TAG, "DNS reapply after network change failed; keeping current tunnel", e)
         }
     }
 
@@ -470,7 +498,7 @@ class BedlamVpnService : VpnService() {
                     is ConnectionState.Error -> {
                         if (!stopWasRequested) {
                             Log.w(TAG, "Tunnel failed irrecoverably: ${state.message}")
-                            stopAfterTerminalFailure()
+                            stopAfterTerminalFailure(state.message)
                         }
                     }
 
@@ -569,6 +597,9 @@ class BedlamVpnService : VpnService() {
         private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
         private const val ALWAYS_ON_STATE_REFRESH_MS = 60_000L
+        private const val DESTROY_PERSIST_TIMEOUT_MS = 500L
+        private const val TUN_REAPPLY_ATTEMPTS = 2
+        private const val TUN_REAPPLY_RETRY_DELAY_MS = 500L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"
@@ -643,7 +674,9 @@ class BedlamVpnService : VpnService() {
         if (stopWasRequested || !client.state.value.isActiveTunnel) return
         runCatching {
             runBlocking(Dispatchers.IO) {
-                runtimeStateRepository.markInterrupted(serviceEpoch, "Service destroyed")
+                withTimeoutOrNull(DESTROY_PERSIST_TIMEOUT_MS) {
+                    runtimeStateRepository.markInterrupted(serviceEpoch, "Service destroyed")
+                } ?: Log.w(TAG, "Timed out persisting unexpected service destroy")
             }
         }.onFailure {
             Log.w(TAG, "Failed to persist unexpected service destroy", it)

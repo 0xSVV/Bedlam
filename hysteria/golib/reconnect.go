@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	utls "github.com/refraction-networking/utls"
+
 	"github.com/apernet/hysteria/core/v2/client"
 	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
@@ -265,7 +267,7 @@ func (rc *reconnectClient) TCP(addr string) (net.Conn, error) {
 		return nil, err
 	}
 	conn, err := c.TCP(addr)
-	if isReconnectable(err) {
+	if isTunnelDead(err) {
 		rc.markDead(err, srcStream)
 	}
 	return conn, err
@@ -277,7 +279,7 @@ func (rc *reconnectClient) UDP() (client.HyUDPConn, error) {
 		return nil, err
 	}
 	udp, err := c.UDP()
-	if isReconnectable(err) {
+	if isTunnelDead(err) {
 		rc.markDead(err, srcStream)
 	}
 	return udp, err
@@ -344,7 +346,7 @@ func (rc *reconnectClient) checkNow() {
 	if isProbeTimeout(err) {
 		_, err = dnsOverTCP(c, probeDNSServer, buildDNSQuery())
 	}
-	if isReconnectable(err) {
+	if probeIndicatesDead(err) {
 		rc.markDead(fmt.Errorf("liveness probe failed: %w", err), srcWatchdog)
 	}
 }
@@ -378,7 +380,7 @@ func (rc *reconnectClient) tick() {
 	}
 
 	udp, err := c.UDP()
-	if isReconnectable(err) {
+	if isTunnelDead(err) {
 		rc.markDead(err, srcWatchdog)
 		return
 	}
@@ -403,20 +405,32 @@ func (rc *reconnectClient) tick() {
 func (rc *reconnectClient) probe(c client.Client) {
 	log(LogLevelDebug, srcWatchdog, "Traffic stalled; probing tunnel")
 	_, err := dnsOverTCP(c, probeDNSServer, buildDNSQuery())
-	if isReconnectable(err) {
+	if probeIndicatesDead(err) {
 		rc.markDead(fmt.Errorf("stall probe failed: %w", err), srcWatchdog)
 	}
 }
 
-func isReconnectable(err error) bool {
+func isTunnelDead(err error) bool {
 	if err == nil {
 		return false
 	}
-	var dialErr coreErrs.DialError
-	if errors.As(err, &dialErr) {
+	var closedErr coreErrs.ClosedError
+	if errors.As(err, &closedErr) {
+		return true
+	}
+	var connectErr coreErrs.ConnectError
+	return errors.As(err, &connectErr)
+}
+
+func probeIndicatesDead(err error) bool {
+	if err == nil {
 		return false
 	}
-	return true
+	if errors.Is(err, errDNSMalformed) {
+		return false
+	}
+	var dialErr coreErrs.DialError
+	return !errors.As(err, &dialErr)
 }
 
 func (rc *reconnectClient) isTerminal(err error) bool {
@@ -435,6 +449,10 @@ func (rc *reconnectClient) isTerminal(err error) bool {
 	if errors.As(err, &echErr) {
 		return true
 	}
+	var uechErr *utls.ECHRejectionError
+	if errors.As(err, &uechErr) {
+		return true
+	}
 	// When ECH is rejected, crypto/tls ignores InsecureSkipVerify and skips
 	// VerifyPeerCertificate, so self-signed/pinned setups surface a stale ECH
 	// config as a certificate verification failure instead of
@@ -442,6 +460,10 @@ func (rc *reconnectClient) isTerminal(err error) bool {
 	if rc.echConfigured {
 		var certErr *tls.CertificateVerificationError
 		if errors.As(err, &certErr) {
+			return true
+		}
+		var ucertErr *utls.CertificateVerificationError
+		if errors.As(err, &ucertErr) {
 			return true
 		}
 	}

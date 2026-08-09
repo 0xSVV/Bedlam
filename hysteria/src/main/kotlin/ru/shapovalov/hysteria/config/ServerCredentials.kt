@@ -5,6 +5,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ServerCredentials(
-    @SerialName("server") val address: String,
-    val auth: String,
+    @SerialName("server") val address: String = "",
+    val auth: String = "",
 )

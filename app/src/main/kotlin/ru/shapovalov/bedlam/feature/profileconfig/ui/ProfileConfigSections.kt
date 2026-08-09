@@ -253,8 +253,22 @@ internal fun QuicSection(
             value = quic.disablePathMTUDiscovery,
             editMode = editMode,
             caution = caution,
-            showDivider = false,
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(disablePathMTUDiscovery = it))) },
+        )
+        SwitchRow(
+            label = "disableChromeParrot",
+            value = quic.disableChromeParrot,
+            editMode = editMode,
+            caution = caution,
+            onChange = { onDraftChanged(draft.copy(quic = quic.copy(disableChromeParrot = it))) },
+        )
+        SwitchRow(
+            label = "disableGso",
+            value = quic.disableGso,
+            editMode = editMode,
+            caution = caution,
+            showDivider = false,
+            onChange = { onDraftChanged(draft.copy(quic = quic.copy(disableGso = it))) },
         )
     }
 }

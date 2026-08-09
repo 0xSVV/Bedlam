@@ -83,6 +83,10 @@ class RoutingRepositoryImpl(
         dao.setSourceResolutionState(sourceId, System.currentTimeMillis(), error)
     }
 
+    override suspend fun recordResolutionError(sourceId: String, error: String?) {
+        dao.setSourceError(sourceId, error)
+    }
+
     private fun buildConfig(
         cfg: RoutingConfigEntity?,
         sources: List<RouteSourceEntity>,

@@ -4,6 +4,12 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import ru.shapovalov.hysteria.config.HysteriaConfig
+import ru.shapovalov.hysteria.config.defaultBandwidthOptions
+import ru.shapovalov.hysteria.config.defaultBehaviorOptions
+import ru.shapovalov.hysteria.config.defaultCongestionOptions
+import ru.shapovalov.hysteria.config.defaultQuicOptions
+import ru.shapovalov.hysteria.config.defaultTlsOptions
+import ru.shapovalov.hysteria.config.defaultTransportOptions
 
 class HysteriaConfigParseTest {
 
@@ -66,6 +72,58 @@ class HysteriaConfigParseTest {
 
         assertEquals("", parsed.config.tls.ech)
         assertEquals("host.example:443", parsed.config.server.address)
+    }
+
+    @Test
+    fun `parses config json that predates every optional field`() {
+        val legacy = """{"server": {"server": "host.example:443", "auth": "token"}, "tls": {}}"""
+
+        val parsed = parseHysteriaConfig(legacy).config
+
+        assertEquals("host.example:443", parsed.server.address)
+        assertEquals(defaultTlsOptions, parsed.tls)
+    }
+
+    @Test
+    fun `a profile saved before the parrot switch existed keeps the parrot off`() {
+        val legacy = """
+            {
+              "server": {"server": "host.example:443", "auth": "token"},
+              "tls": {},
+              "quic": {"maxIdleTimeoutSec": 30, "disablePathMTUDiscovery": true}
+            }
+        """.trimIndent()
+
+        val parsed = parseHysteriaConfig(legacy).config
+
+        assertEquals(true, parsed.quic?.disableChromeParrot)
+        assertEquals(false, parsed.quic?.disableGso)
+        assertEquals(30, parsed.quic?.maxIdleTimeoutSec)
+    }
+
+    @Test
+    fun `applies documented defaults to empty option objects`() {
+        val sparse = """
+            {
+              "server": {"server": "host.example:443", "auth": "token"},
+              "tls": {},
+              "quic": {},
+              "congestion": {},
+              "bandwidth": {},
+              "transport": {},
+              "behavior": {},
+              "obfuscation": {}
+            }
+        """.trimIndent()
+
+        val parsed = parseHysteriaConfig(sparse).config
+
+        assertEquals(defaultQuicOptions, parsed.quic)
+        assertEquals(defaultCongestionOptions, parsed.congestion)
+        assertEquals(defaultBandwidthOptions, parsed.bandwidth)
+        assertEquals(defaultTransportOptions, parsed.transport)
+        assertEquals(defaultBehaviorOptions, parsed.behavior)
+        assertEquals("", parsed.obfuscation?.obfuscationType)
     }
 
     @Test

@@ -4,11 +4,13 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class QuicOptions(
-    val initStreamReceiveWindow: Long,
-    val maxStreamReceiveWindow: Long,
-    val initConnReceiveWindow: Long,
-    val maxConnReceiveWindow: Long,
-    val maxIdleTimeoutSec: Int,
-    val keepAlivePeriodSec: Int,
-    val disablePathMTUDiscovery: Boolean,
+    val initStreamReceiveWindow: Long = 0,
+    val maxStreamReceiveWindow: Long = 0,
+    val initConnReceiveWindow: Long = 0,
+    val maxConnReceiveWindow: Long = 0,
+    val maxIdleTimeoutSec: Int = 0,
+    val keepAlivePeriodSec: Int = 0,
+    val disablePathMTUDiscovery: Boolean = true,
+    val disableChromeParrot: Boolean = true,
+    val disableGso: Boolean = false,
 )

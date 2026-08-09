@@ -3,6 +3,7 @@ package golib
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -168,12 +169,22 @@ func (s *Session) realmHTTPClient(insecure bool) *http.Client {
 	dialer := &net.Dialer{Timeout: 15 * time.Second}
 	if p := s.protector; p != nil {
 		dialer.Control = func(_, _ string, c syscall.RawConn) error {
-			return c.Control(func(fd uintptr) {
-				p.Protect(int32(fd))
-			})
+			var protected bool
+			if err := c.Control(func(fd uintptr) {
+				protected = p.Protect(int32(fd))
+			}); err != nil {
+				return err
+			}
+			if !protected {
+				return errors.New("realm: failed to protect socket from the VPN")
+			}
+			return nil
 		}
 	}
-	transport := &http.Transport{DialContext: dialer.DialContext}
+	transport := &http.Transport{
+		DialContext:       dialer.DialContext,
+		DisableKeepAlives: true,
+	}
 	if insecure {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}

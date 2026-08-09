@@ -32,6 +32,7 @@ interface DatabaseModule {
     ): BedlamDatabase = Room
         .databaseBuilder(context, BedlamDatabase::class.java, "bedlam.db")
         .addTypeConverter(converter)
+        .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
         .build()
 
     @Provides

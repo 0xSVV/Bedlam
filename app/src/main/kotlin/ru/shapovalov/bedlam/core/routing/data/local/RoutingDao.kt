@@ -40,6 +40,9 @@ interface RoutingDao {
     @Query("UPDATE route_source SET lastResolvedMillis = :ms, lastError = :err WHERE id = :id")
     suspend fun setSourceResolutionState(id: String, ms: Long?, err: String?)
 
+    @Query("UPDATE route_source SET lastError = :err WHERE id = :id")
+    suspend fun setSourceError(id: String, err: String?)
+
     @Query("SELECT * FROM resolved_cidr ORDER BY sourceId ASC, cidr ASC")
     fun observeAllResolved(): Flow<List<ResolvedCidrEntity>>
 
