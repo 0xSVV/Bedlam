@@ -1,7 +1,9 @@
 package ru.shapovalov.bedlam.feature.profileconfig.ui
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -163,9 +165,11 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 onDelete = component::onRequestDelete,
                 onCopy = {
                     val current = state.draft ?: return@ProfileActionsToolbar
-                    clipboardManager.setPrimaryClip(
-                        ClipData.newPlainText(clipboardLabel, current.toClipboardText())
-                    )
+                    val clip = ClipData.newPlainText(clipboardLabel, current.toClipboardText())
+                    clip.description.extras = PersistableBundle().apply {
+                        putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                    }
+                    clipboardManager.setPrimaryClip(clip)
                     scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
                 },
                 onEdit = component::onEnterEditMode,
