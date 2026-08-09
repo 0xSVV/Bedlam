@@ -30,6 +30,10 @@ class ApkInstallerImpl(
         _status.value = InstallStatus.InProgress
         try {
             val pm = context.packageManager
+            if (!pm.canRequestPackageInstalls()) {
+                _status.value = InstallStatus.NeedsInstallPermission
+                return@withContext
+            }
             if (!signersMatch(
                     installed = pm.installedSigners(context.packageName),
                     candidate = pm.archiveSigners(apk.absolutePath),

@@ -343,4 +343,6 @@
     <string name="update_installing">Installing…</string>
     <string name="update_failed">Update failed: %1$s</string>
     <string name="update_error_signature">This download was not signed with the same key as your installed app. Get the update from the GitHub releases page instead.</string>
+    <string name="update_error_install_permission">Android blocks Bedlam from installing apps. Allow it in settings, then try again.</string>
+    <string name="update_action_allow_installs">Open settings</string>
 </resources>

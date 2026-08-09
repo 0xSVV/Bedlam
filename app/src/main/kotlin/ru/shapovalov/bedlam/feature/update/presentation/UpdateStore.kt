@@ -23,6 +23,7 @@ interface UpdateStore : Store<UpdateStore.Intent, UpdateStore.State, UpdateStore
             data object Idle : Phase
             data class Downloading(val downloadedBytes: Long, val totalBytes: Long) : Phase
             data object Installing : Phase
+            data object NeedsInstallPermission : Phase
             data object SignatureMismatch : Phase
             data class Failed(val message: String) : Phase
         }
