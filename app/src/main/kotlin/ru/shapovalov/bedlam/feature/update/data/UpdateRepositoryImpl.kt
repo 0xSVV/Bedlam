@@ -95,6 +95,7 @@ class UpdateRepositoryImpl(
             val code = conn.responseCode
             if (code !in 200..299) throw IOException("HTTP $code from ${update.downloadUrl}")
             val total = conn.contentLengthLong.takeIf { it > 0 } ?: update.sizeBytes
+            val limit = update.sizeBytes.takeIf { it > 0 } ?: MAX_APK_BYTES
             var downloaded = 0L
             conn.inputStream.use { input ->
                 target.outputStream().use { output ->
@@ -102,8 +103,11 @@ class UpdateRepositoryImpl(
                     while (true) {
                         val n = input.read(buffer)
                         if (n < 0) break
-                        output.write(buffer, 0, n)
                         downloaded += n
+                        if (downloaded > limit) {
+                            throw IOException("Update download is larger than the release says")
+                        }
+                        output.write(buffer, 0, n)
                         emit(DownloadEvent.Progress(downloaded, total))
                     }
                 }
@@ -167,6 +171,7 @@ class UpdateRepositoryImpl(
         val KEY_SKIPPED_VERSION = stringPreferencesKey("skipped_version")
         val KEY_SKIPPED_AT = longPreferencesKey("skipped_at")
         const val SKIP_TTL_MS = 6 * 60 * 60 * 1000L
+        const val MAX_APK_BYTES = 200L * 1024 * 1024
     }
 }
 
