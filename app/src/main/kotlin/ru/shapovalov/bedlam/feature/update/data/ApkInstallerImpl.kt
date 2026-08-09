@@ -28,6 +28,7 @@ class ApkInstallerImpl(
 
     override suspend fun install(apk: File) = withContext(Dispatchers.IO) {
         _status.value = InstallStatus.InProgress
+        var openSessionId: Int? = null
         try {
             val pm = context.packageManager
             if (!pm.canRequestPackageInstalls()) {
@@ -50,6 +51,7 @@ class ApkInstallerImpl(
                 setSize(apk.length())
             }
             val sessionId = installer.createSession(params)
+            openSessionId = sessionId
             installer.openSession(sessionId).use { session ->
                 session.openWrite(apk.name, 0, apk.length()).use { output ->
                     apk.inputStream().use { it.copyTo(output) }
@@ -63,16 +65,24 @@ class ApkInstallerImpl(
                     PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 )
                 session.commit(pendingIntent.intentSender)
+                openSessionId = null
             }
         } catch (e: CancellationException) {
+            abandon(openSessionId)
             throw e
         } catch (e: Exception) {
+            abandon(openSessionId)
             _status.value = InstallStatus.Failed(e.message ?: e.javaClass.simpleName)
         }
     }
 
     override fun reset() {
         _status.value = InstallStatus.Idle
+    }
+
+    private fun abandon(sessionId: Int?) {
+        if (sessionId == null) return
+        runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
     }
 
     fun onInstallStatus(intent: Intent) {
