@@ -76,7 +76,8 @@ class UpdateRepositoryImpl(
         ) {
             return@withContext null
         }
-        val asset = pickAsset(release.assets, latestVersion) ?: return@withContext null
+        val asset = pickAsset(release.assets, latestVersion, Build.SUPPORTED_ABIS.toList())
+            ?: return@withContext null
         AppUpdate(
             versionName = latestVersion,
             releaseNotes = release.body.orEmpty().trim().take(MAX_NOTES_CHARS),
@@ -141,38 +142,12 @@ class UpdateRepositoryImpl(
         }
     }
 
-    private fun pickAsset(
-        assets: List<GitHubReleaseDto.AssetDto>,
-        version: String,
-    ): GitHubReleaseDto.AssetDto? {
-        Build.SUPPORTED_ABIS.forEach { abi ->
-            assets.find { it.name == "bedlam-v$version-$abi.apk" }?.let { return it }
-        }
-        return assets.find { it.name == "bedlam-v$version-universal.apk" }
-    }
-
-    private fun isNewer(candidate: String, installed: String): Boolean {
-        val a = parseVersion(candidate) ?: return false
-        val b = parseVersion(installed) ?: return false
-        val size = maxOf(a.size, b.size)
-        for (i in 0 until size) {
-            val x = a.getOrElse(i) { 0 }
-            val y = b.getOrElse(i) { 0 }
-            if (x != y) return x > y
-        }
-        return false
-    }
-
-    private fun parseVersion(version: String): List<Int>? =
-        NUMERIC_VERSION.find(version)?.value?.split('.')?.map { it.toInt() }
-
     private companion object {
         const val LATEST_RELEASE_URL =
             "https://api.github.com/repos/0xSVV/Bedlam/releases/latest"
         const val DOWNLOAD_DIR = "updates"
         const val DOWNLOAD_TIMEOUT_MS = 30_000
         const val DOWNLOAD_BUFFER_BYTES = 64 * 1024
-        val NUMERIC_VERSION = Regex("""\d+(?:\.\d+)*""")
         val KEY_SKIPPED_VERSION = stringPreferencesKey("skipped_version")
         val KEY_SKIPPED_AT = longPreferencesKey("skipped_at")
         val KEY_LAST_CHECK_AT = longPreferencesKey("last_check_at")
@@ -182,6 +157,34 @@ class UpdateRepositoryImpl(
         const val MAX_NOTES_CHARS = 4000
     }
 }
+
+internal fun pickAsset(
+    assets: List<GitHubReleaseDto.AssetDto>,
+    version: String,
+    abis: List<String>,
+): GitHubReleaseDto.AssetDto? {
+    abis.forEach { abi ->
+        assets.find { it.name == "bedlam-v$version-$abi.apk" }?.let { return it }
+    }
+    return assets.find { it.name == "bedlam-v$version-universal.apk" }
+}
+
+internal fun isNewer(candidate: String, installed: String): Boolean {
+    val a = parseVersion(candidate) ?: return false
+    val b = parseVersion(installed) ?: return false
+    val size = maxOf(a.size, b.size)
+    for (i in 0 until size) {
+        val x = a.getOrElse(i) { 0 }
+        val y = b.getOrElse(i) { 0 }
+        if (x != y) return x > y
+    }
+    return false
+}
+
+private fun parseVersion(version: String): List<Int>? =
+    NUMERIC_VERSION.find(version)?.value?.split('.')?.map { it.toInt() }
+
+private val NUMERIC_VERSION = Regex("""\d+(?:\.\d+)*""")
 
 internal fun isCheckThrottled(
     lastCheckAtMillis: Long?,
