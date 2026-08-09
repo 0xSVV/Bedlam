@@ -71,6 +71,9 @@ class UpdateRepositoryImpl(
     }
 
     override fun downloadApk(update: AppUpdate): Flow<DownloadEvent> = flow {
+        if (!isTrustedDownloadUrl(update.downloadUrl)) {
+            throw IOException("Refusing an update download from an untrusted address")
+        }
         val dir = File(context.cacheDir, DOWNLOAD_DIR)
         val target = File(dir, update.assetName)
         if (update.sizeBytes > 0 && target.length() == update.sizeBytes) {
@@ -166,6 +169,17 @@ class UpdateRepositoryImpl(
         const val SKIP_TTL_MS = 6 * 60 * 60 * 1000L
     }
 }
+
+internal fun isTrustedDownloadUrl(url: String): Boolean {
+    val parsed = runCatching { URL(url) }.getOrNull() ?: return false
+    if (!parsed.protocol.equals("https", ignoreCase = true)) return false
+    return parsed.host.lowercase() in TRUSTED_DOWNLOAD_HOSTS
+}
+
+private val TRUSTED_DOWNLOAD_HOSTS = setOf(
+    "github.com",
+    "objects.githubusercontent.com",
+)
 
 internal fun isUpdateSuppressed(
     skippedVersion: String?,
