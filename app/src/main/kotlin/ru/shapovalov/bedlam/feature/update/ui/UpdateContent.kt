@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.feature.update.ui
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -51,6 +52,8 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
+
+    BackHandler { component.onBack() }
 
     Column(
         modifier = modifier

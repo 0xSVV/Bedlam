@@ -33,6 +33,7 @@ class UpdateComponent(
 
     fun onInstall() = store.accept(UpdateStore.Intent.Install)
     fun onSkip() = store.accept(UpdateStore.Intent.Skip)
+    fun onBack() = onDismiss.invoke()
 
     fun interface OnDismiss {
         fun invoke()
