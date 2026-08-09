@@ -106,7 +106,6 @@ dependencies {
     implementation(project(":hysteria"))
     implementation(fileTree("${rootProject.projectDir}/hysteria/libs") { include("*.aar") })
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -133,7 +132,6 @@ dependencies {
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    implementation(libs.androidx.room.paging)
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.kotlin.inject.runtime)
