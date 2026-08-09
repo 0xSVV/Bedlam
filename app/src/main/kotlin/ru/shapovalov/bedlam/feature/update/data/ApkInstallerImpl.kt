@@ -26,6 +26,9 @@ class ApkInstallerImpl(
     private val _status = MutableStateFlow<InstallStatus>(InstallStatus.Idle)
     override val status: StateFlow<InstallStatus> = _status.asStateFlow()
 
+    @Volatile
+    private var committedApk: File? = null
+
     override suspend fun install(apk: File) = withContext(Dispatchers.IO) {
         _status.value = InstallStatus.InProgress
         var openSessionId: Int? = null
@@ -66,6 +69,7 @@ class ApkInstallerImpl(
                 )
                 session.commit(pendingIntent.intentSender)
                 openSessionId = null
+                committedApk = apk
             }
         } catch (e: CancellationException) {
             abandon(openSessionId)
@@ -100,7 +104,11 @@ class ApkInstallerImpl(
                 }
             }
 
-            PackageInstaller.STATUS_SUCCESS -> _status.value = InstallStatus.Idle
+            PackageInstaller.STATUS_SUCCESS -> {
+                committedApk?.let { runCatching { it.delete() } }
+                committedApk = null
+                _status.value = InstallStatus.Idle
+            }
 
             else -> {
                 val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
