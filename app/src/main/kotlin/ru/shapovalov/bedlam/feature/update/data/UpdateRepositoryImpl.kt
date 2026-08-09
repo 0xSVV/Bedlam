@@ -79,7 +79,7 @@ class UpdateRepositoryImpl(
         val asset = pickAsset(release.assets, latestVersion) ?: return@withContext null
         AppUpdate(
             versionName = latestVersion,
-            releaseNotes = release.body.orEmpty().trim(),
+            releaseNotes = release.body.orEmpty().trim().take(MAX_NOTES_CHARS),
             assetName = asset.name,
             downloadUrl = asset.downloadUrl,
             sizeBytes = asset.size,
@@ -179,6 +179,7 @@ class UpdateRepositoryImpl(
         const val SKIP_TTL_MS = 6 * 60 * 60 * 1000L
         const val CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
         const val MAX_APK_BYTES = 200L * 1024 * 1024
+        const val MAX_NOTES_CHARS = 4000
     }
 }
 
