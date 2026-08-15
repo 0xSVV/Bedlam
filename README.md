@@ -11,7 +11,7 @@ Releases are signed per-ABI APKs (arm64-v8a, armeabi-v7a, x86_64) published on G
 - The full Hysteria 2 configuration: authentication, TLS (custom SNI, custom CA, certificate pinning, mutual TLS), Salamander and Gecko obfuscation, QUIC window and timeout tuning, BBR and Brutal congestion control, bandwidth limits, and port hopping with configurable intervals.
 - Realm rendezvous mode: connect to a peer behind NAT through STUN and UDP hole punching by giving a `realm://` address, no public IP or port forwarding required.
 - A real TUN device backed by a gVisor userspace stack, carrying both TCP and UDP. DNS resolves through the tunnel and is cached, so other apps need no proxy settings.
-- Import straight from `hysteria2://` and `hy2://` links.
+- Import from `hysteria2://` and `hy2://` links or a profile JSON, from the clipboard or straight from a link tapped in another app.
 - Per-app allow and block lists, and rule-based split tunnelling.
 - Reconnects on its own: QUIC keep-alive, a watchdog that probes a stalled tunnel and re-resolves the server address, and an immediate re-dial when the network switches between Wi-Fi and mobile.
 - A Quick Settings tile, always-on VPN support, and a foreground service that holds up under aggressive battery management.
@@ -21,7 +21,7 @@ The UI is Jetpack Compose and Material 3 over a unidirectional architecture. It 
 
 ## Routing
 
-Routing is rule based. You decide what bypasses the tunnel and what goes through it using three kinds of source: CIDR ranges, autonomous systems (an ASN expands to its announced prefixes, pulled live from RIPEstat), and domains (resolved to addresses). The engine coalesces and subtracts those into a minimal route set, with LAN bypass. You can tunnel IPv6, block it, or leave it outside the VPN. DNS resolves through the tunnel against Cloudflare, Google, your own servers, or your network's resolvers.
+Routing is rule based. You decide what bypasses the tunnel and what goes through it using three kinds of source: CIDR ranges, autonomous systems (an ASN expands to its announced prefixes, pulled live from RIPEstat), and domains (resolved to addresses). The engine coalesces and subtracts those into a minimal route set, with LAN bypass. You can tunnel IPv6, block it, or leave it outside the VPN. DNS resolves through the tunnel against Cloudflare, Google, your own servers, or your network's resolvers, over plain UDP or TCP, DNS over TLS, DNS over HTTPS, or DNS over HTTP/3 — with IPv4 and IPv6 resolvers alike.
 
 GeoIP is deliberately out of scope: no bundled `geoip.dat` or `.mmdb`, and no country- or category-level matching. That kind of routing belongs to a general-purpose routing engine like sing-box, with a dedicated rule-matching layer and bundled geo databases. Bedlam is a focused tunnel rather than a routing engine, and keeps its routing explicit and transparent by design. If you need geographic rule sets, that is what a full routing engine is for.
 
