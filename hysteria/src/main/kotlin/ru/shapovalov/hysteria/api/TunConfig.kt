@@ -8,6 +8,13 @@ data class TunConfig(
      * sinks here rather than leaking around the VPN; apps fall back to IPv4.
      */
     val ipv6Enabled: Boolean = true,
+    /**
+     * Where queries reaching the on-TUN resolver ([IPV4_DNS_ADDRESS] /
+     * [IPV6_DNS_ADDRESS]) are forwarded. The TUN factory must advertise
+     * those addresses via `VpnService.Builder.addDnsServer`; the native layer
+     * answers UDP and TCP port 53 on them and refuses every other port.
+     */
+    val dns: DnsUpstream = DnsUpstream.Default,
 ) {
     init {
         require(mtu in MIN_MTU..MAX_MTU) { "MTU out of range: $mtu" }
@@ -22,6 +29,9 @@ data class TunConfig(
         const val IPV4_PREFIX_LENGTH: Int = 30
         const val IPV6_ADDRESS: String = "fdfe:dcba:9876::1"
         const val IPV6_PREFIX_LENGTH: Int = 126
+
+        const val IPV4_DNS_ADDRESS: String = "172.19.0.2"
+        const val IPV6_DNS_ADDRESS: String = "fdfe:dcba:9876::2"
 
         const val IPV4_CIDR: String = "$IPV4_ADDRESS/$IPV4_PREFIX_LENGTH"
         const val IPV6_CIDR: String = "$IPV6_ADDRESS/$IPV6_PREFIX_LENGTH"
