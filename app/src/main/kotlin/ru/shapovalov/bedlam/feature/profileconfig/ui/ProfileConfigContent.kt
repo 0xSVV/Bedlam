@@ -156,8 +156,10 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 state.notFound -> NotFoundMessage()
                 draft != null -> ConfigBody(
                     draft = draft,
+                    name = state.draftName.orEmpty(),
                     editMode = state.editMode,
                     onDraftChanged = component::onDraftChanged,
+                    onNameChanged = component::onDraftNameChanged,
                 )
             }
             ProfileActionsToolbar(
@@ -213,7 +215,7 @@ private fun TopActions(
                 }
                 TextButton(
                     onClick = component::onSave,
-                    enabled = !state.isSaving && state.isDirty,
+                    enabled = !state.isSaving && state.canSave,
                 ) {
                     if (state.isSaving) {
                         CircularProgressIndicator(
@@ -304,8 +306,10 @@ private fun DeleteConfirmationDialog(
 @Composable
 private fun ConfigBody(
     draft: HysteriaConfig,
+    name: String,
     editMode: Boolean,
     onDraftChanged: (HysteriaConfig) -> Unit,
+    onNameChanged: (String) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     LazyColumn(
@@ -318,6 +322,7 @@ private fun ConfigBody(
         ),
         verticalArrangement = Arrangement.spacedBy(spacing.medium),
     ) {
+        item(key = "profile") { ProfileSection(name, editMode, onNameChanged) }
         item(key = "server") { ServerSection(draft, editMode, onDraftChanged) }
         if (isRealmAddress(draft.server.address) || draft.realm != null) {
             item(key = "realm") { RealmSection(draft, editMode, onDraftChanged) }

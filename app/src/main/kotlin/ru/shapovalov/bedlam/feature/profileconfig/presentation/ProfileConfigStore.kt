@@ -10,6 +10,7 @@ interface ProfileConfigStore : Store<ProfileConfigStore.Intent, ProfileConfigSto
         data object EnterEditMode : Intent
         data object DiscardChanges : Intent
         data class UpdateDraft(val config: HysteriaConfig) : Intent
+        data class UpdateDraftName(val name: String) : Intent
         data object Save : Intent
         data object RequestDelete : Intent
         data object CancelDelete : Intent
@@ -21,6 +22,7 @@ interface ProfileConfigStore : Store<ProfileConfigStore.Intent, ProfileConfigSto
         val profileId: String,
         val original: Profile? = null,
         val draft: HysteriaConfig? = null,
+        val draftName: String? = null,
         val editMode: Boolean = false,
         val isLoading: Boolean = true,
         val isSaving: Boolean = false,
@@ -30,6 +32,10 @@ interface ProfileConfigStore : Store<ProfileConfigStore.Intent, ProfileConfigSto
         val saveError: String? = null,
     ) {
         val isDirty: Boolean
-            get() = draft != null && original != null && draft != original.config
+            get() = draft != null && original != null &&
+                    (draft != original.config || (draftName != null && draftName != original.name))
+
+        val canSave: Boolean
+            get() = isDirty && !draftName.isNullOrBlank()
     }
 }

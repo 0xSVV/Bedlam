@@ -310,6 +310,7 @@
     <string name="profile_config_docs_link">Hysteria full client config</string>
     <string name="profile_config_docs_url" translatable="false">https://v2.hysteria.network/docs/advanced/Full-Client-Config/</string>
 
+    <string name="profile_config_section_profile">Profile</string>
     <string name="profile_config_section_server">Server</string>
     <string name="profile_config_section_tls">TLS</string>
     <string name="profile_config_section_obfuscation">Obfuscation</string>
