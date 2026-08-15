@@ -94,6 +94,8 @@ func newDNSResolver(c client.Client, transport, server string) (dnsResolver, err
 		return newTLSResolver(c, server, nil), nil
 	case dnsTransportHTTPS:
 		return newHTTPSResolver(c, server, nil)
+	case dnsTransportHTTP3:
+		return newH3Resolver(c, server, nil)
 	default:
 		return nil, fmt.Errorf("unsupported dns transport %q", transport)
 	}
