@@ -26,6 +26,7 @@ class DnsPresetsTest {
             DnsPresets.cloudflare(DnsTransport.Udp),
         )
         assertEquals(DnsPresets.cloudflare(DnsTransport.Udp), DnsPresets.cloudflare(DnsTransport.Tcp))
+        assertEquals(DnsPresets.cloudflare(DnsTransport.Https), DnsPresets.cloudflare(DnsTransport.Http3))
         assertEquals(
             listOf("8.8.8.8:853", "8.8.4.4:853", "[2001:4860:4860::8888]:853", "[2001:4860:4860::8844]:853"),
             DnsPresets.google(DnsTransport.Tls),

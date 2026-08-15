@@ -35,7 +35,7 @@ object DnsPresets {
         return when (transport) {
             DnsTransport.Udp, DnsTransport.Tcp -> "$host:53"
             DnsTransport.Tls -> "$host:853"
-            DnsTransport.Https -> "https://$host/dns-query"
+            DnsTransport.Https, DnsTransport.Http3 -> "https://$host/dns-query"
         }
     }
 }

@@ -225,6 +225,7 @@
     <string name="routing_dns_transport_tcp">TCP</string>
     <string name="routing_dns_transport_tls">DNS over TLS</string>
     <string name="routing_dns_transport_https">DNS over HTTPS</string>
+    <string name="routing_dns_transport_http3">DNS over HTTP/3</string>
     <string name="routing_dns_transport_system_hint">System resolvers speak plain DNS — UDP or TCP only</string>
 
     <string name="routing_sources_title">Direct routes</string>

@@ -30,6 +30,8 @@ class DnsServerTest {
         "Https, https://dns.quad9.net:8443/custom, https://dns.quad9.net:8443/custom",
         "Https, https://dns.quad9.net/dns-query#frag, https://dns.quad9.net/dns-query",
         "Https, https://[2620:fe::fe]/dns-query, https://[2620:fe::fe]/dns-query",
+        "Http3, 1.1.1.1, https://1.1.1.1/dns-query",
+        "Http3, https://dns.google/dns-query, https://dns.google/dns-query",
     )
     fun `normalizes valid servers`(transport: DnsTransport, raw: String, expected: String) {
         assertEquals(DnsServerParse.Valid(expected), DnsServer.parse(raw, transport))

@@ -11,6 +11,7 @@ enum class DnsTransport(val wire: String) {
     Tcp("tcp"),
     Tls("tls"),
     Https("https"),
+    Http3("http3"),
 }
 
 /**
@@ -19,7 +20,8 @@ enum class DnsTransport(val wire: String) {
  * Server syntax depends on [transport]: `ip[:port]` or `[v6][:port]` for
  * [DnsTransport.Udp]/[DnsTransport.Tcp] (default port 53), `host|ip[:port]`
  * for [DnsTransport.Tls] (default 853), and an `https://` URL or a bare host
- * (expanded to `https://<host>/dns-query`) for [DnsTransport.Https].
+ * (expanded to `https://<host>/dns-query`) for [DnsTransport.Https] and
+ * [DnsTransport.Http3].
  */
 data class DnsUpstream(
     val transport: DnsTransport,
