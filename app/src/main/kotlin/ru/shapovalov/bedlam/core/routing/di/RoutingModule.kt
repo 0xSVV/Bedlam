@@ -28,6 +28,8 @@ interface RoutingModule {
         supportsExcludeRoute = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
         tunPrefixV4 = Cidr.parseV4(TunConfig.IPV4_CIDR),
         tunPrefixV6 = Cidr.parseV6(TunConfig.IPV6_CIDR),
+        resolverV4 = TunConfig.IPV4_DNS_ADDRESS,
+        resolverV6 = TunConfig.IPV6_DNS_ADDRESS,
         systemDnsServers = systemDnsProvider::publicDnsServers,
     )
 }

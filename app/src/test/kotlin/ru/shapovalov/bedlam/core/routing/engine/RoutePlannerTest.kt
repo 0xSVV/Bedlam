@@ -9,19 +9,33 @@ import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilter
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
 import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
+import ru.shapovalov.bedlam.core.routing.domain.model.DnsPresets
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
+import ru.shapovalov.hysteria.api.DnsTransport
+import ru.shapovalov.hysteria.api.DnsUpstream
 
 class RoutePlannerTest {
 
     private val tunV4 = Cidr.parse("172.19.0.1/30") as Cidr.V4
     private val tunV6 = Cidr.parse("fdfe:dcba:9876::1/126") as Cidr.V6
+    private val resolverV4 = "172.19.0.2"
+    private val resolverV6 = "fdfe:dcba:9876::2"
 
     private fun planner(
         supportsExclude: Boolean = true,
         max: Int = RoutePlanner.DEFAULT_MAX_TOTAL_ROUTES,
-    ): RoutePlanner = RoutePlanner(supportsExclude, tunV4, tunV6, maxTotalRoutes = max)
+        systemDns: () -> List<String> = { emptyList() },
+    ): RoutePlanner = RoutePlanner(
+        supportsExcludeRoute = supportsExclude,
+        tunPrefixV4 = tunV4,
+        tunPrefixV6 = tunV6,
+        resolverV4 = resolverV4,
+        resolverV6 = resolverV6,
+        maxTotalRoutes = max,
+        systemDnsServers = systemDns,
+    )
 
     private fun cidrSource(cidr: String, enabled: Boolean = true): ResolvedSource {
         val parsed = Cidr.parse(cidr)
@@ -87,38 +101,68 @@ class RoutePlannerTest {
         }
 
         @Test
-        fun `ipv6 disabled drops v6 DNS servers`() {
+        fun `ipv6 disabled advertises only the v4 resolver`() {
             val plan = planner().plan(
                 RoutingConfig(ipv6Mode = Ipv6Mode.Disabled, dnsMode = DnsMode.Cloudflare),
                 AppFilter(),
             )
-            assertTrue(plan.dnsServers.contains("1.1.1.1"))
-            assertFalse(plan.dnsServers.any { ':' in it })
+            assertEquals(listOf(resolverV4), plan.dnsServers)
+            assertTrue(plan.dnsUpstream.servers.contains("[2606:4700:4700::1111]:53"))
         }
 
         @Test
-        fun `dns Cloudflare uses CF addresses`() {
+        fun `dns Cloudflare uses CF addresses behind the on-TUN resolver`() {
             val plan = planner().plan(RoutingConfig(dnsMode = DnsMode.Cloudflare), AppFilter())
-            assertTrue(plan.dnsServers.contains("1.1.1.1"))
-            assertTrue(plan.dnsServers.contains("1.0.0.1"))
+            assertEquals(listOf(resolverV4, resolverV6), plan.dnsServers)
+            assertEquals(
+                DnsUpstream(DnsTransport.Tcp, DnsPresets.cloudflare(DnsTransport.Tcp)),
+                plan.dnsUpstream,
+            )
+        }
+
+        @Test
+        fun `dns Google follows the chosen transport`() {
+            val plan = planner().plan(
+                RoutingConfig(dnsMode = DnsMode.Google, dnsTransport = DnsTransport.Https),
+                AppFilter(),
+            )
+            assertEquals(
+                DnsUpstream(DnsTransport.Https, DnsPresets.google(DnsTransport.Https)),
+                plan.dnsUpstream,
+            )
         }
 
         @Test
         fun `dns System uses underlying network resolvers`() {
-            val p = RoutePlanner(
-                supportsExcludeRoute = true,
-                tunPrefixV4 = tunV4,
-                tunPrefixV6 = tunV6,
-                systemDnsServers = { listOf("9.9.9.9") },
+            val plan = planner(systemDns = { listOf("9.9.9.9") })
+                .plan(RoutingConfig(dnsMode = DnsMode.System), AppFilter())
+            assertEquals(listOf("9.9.9.9:53"), plan.dnsUpstream.servers)
+            assertEquals(listOf(resolverV4, resolverV6), plan.dnsServers)
+        }
+
+        @Test
+        fun `dns System orders v4 before v6 and keeps the transport plain`() {
+            val plan = planner(systemDns = { listOf("2001:db8::53", "9.9.9.9") }).plan(
+                RoutingConfig(dnsMode = DnsMode.System, dnsTransport = DnsTransport.Https),
+                AppFilter(),
             )
-            val plan = p.plan(RoutingConfig(dnsMode = DnsMode.System), AppFilter())
-            assertEquals(listOf("9.9.9.9"), plan.dnsServers)
+            assertEquals(DnsTransport.Tcp, plan.dnsUpstream.transport)
+            assertEquals(listOf("9.9.9.9:53", "[2001:db8::53]:53"), plan.dnsUpstream.servers)
+        }
+
+        @Test
+        fun `dns System keeps udp when chosen`() {
+            val plan = planner(systemDns = { listOf("9.9.9.9") }).plan(
+                RoutingConfig(dnsMode = DnsMode.System, dnsTransport = DnsTransport.Udp),
+                AppFilter(),
+            )
+            assertEquals(DnsTransport.Udp, plan.dnsUpstream.transport)
         }
 
         @Test
         fun `dns System falls back to Cloudflare when no public resolvers`() {
             val plan = planner().plan(RoutingConfig(dnsMode = DnsMode.System), AppFilter())
-            assertEquals(RoutePlanner.CLOUDFLARE_DNS, plan.dnsServers)
+            assertEquals(DnsPresets.cloudflare(DnsTransport.Tcp), plan.dnsUpstream.servers)
         }
 
         @Test
@@ -130,7 +174,7 @@ class RoutePlannerTest {
                 ),
                 AppFilter(),
             )
-            assertEquals(listOf("9.9.9.9", "149.112.112.112"), plan.dnsServers)
+            assertEquals(listOf("9.9.9.9:53", "149.112.112.112:53"), plan.dnsUpstream.servers)
         }
 
         @Test
@@ -142,16 +186,72 @@ class RoutePlannerTest {
                 ),
                 AppFilter(),
             )
-            assertEquals(listOf("9.9.9.9"), plan.dnsServers)
+            assertEquals(listOf("9.9.9.9:53"), plan.dnsUpstream.servers)
+        }
+
+        @Test
+        fun `dns Custom accepts bracketed IPv6 with a port`() {
+            val plan = planner().plan(
+                RoutingConfig(
+                    dnsMode = DnsMode.Custom,
+                    dnsTransport = DnsTransport.Udp,
+                    customDns = listOf("[2620:fe::fe]:5353", "2620:fe::9"),
+                ),
+                AppFilter(),
+            )
+            assertEquals(listOf("[2620:fe::fe]:5353", "[2620:fe::9]:53"), plan.dnsUpstream.servers)
+        }
+
+        @Test
+        fun `dns Custom accepts hosts for DoT and expands bare hosts for DoH`() {
+            val dot = planner().plan(
+                RoutingConfig(
+                    dnsMode = DnsMode.Custom,
+                    dnsTransport = DnsTransport.Tls,
+                    customDns = listOf("dns.quad9.net", "9.9.9.9:8853"),
+                ),
+                AppFilter(),
+            )
+            assertEquals(listOf("dns.quad9.net:853", "9.9.9.9:8853"), dot.dnsUpstream.servers)
+
+            val doh = planner().plan(
+                RoutingConfig(
+                    dnsMode = DnsMode.Custom,
+                    dnsTransport = DnsTransport.Https,
+                    customDns = listOf("dns.quad9.net", "https://dns.google/dns-query"),
+                ),
+                AppFilter(),
+            )
+            assertEquals(
+                listOf("https://dns.quad9.net/dns-query", "https://dns.google/dns-query"),
+                doh.dnsUpstream.servers,
+            )
+        }
+
+        @Test
+        fun `dns Custom rejects hostnames for UDP and TCP`() {
+            val plan = planner().plan(
+                RoutingConfig(
+                    dnsMode = DnsMode.Custom,
+                    dnsTransport = DnsTransport.Udp,
+                    customDns = listOf("dns.quad9.net", "9.9.9.9"),
+                ),
+                AppFilter(),
+            )
+            assertEquals(listOf("9.9.9.9:53"), plan.dnsUpstream.servers)
         }
 
         @Test
         fun `dns Custom falls back to Cloudflare when nothing is usable`() {
             val plan = planner().plan(
-                RoutingConfig(dnsMode = DnsMode.Custom, customDns = listOf("cloudflare")),
+                RoutingConfig(
+                    dnsMode = DnsMode.Custom,
+                    dnsTransport = DnsTransport.Tls,
+                    customDns = listOf("not a host"),
+                ),
                 AppFilter(),
             )
-            assertEquals(RoutePlanner.CLOUDFLARE_DNS, plan.dnsServers)
+            assertEquals(DnsPresets.cloudflare(DnsTransport.Tls), plan.dnsUpstream.servers)
         }
 
         @Test
@@ -160,11 +260,11 @@ class RoutePlannerTest {
                 RoutingConfig(dnsMode = DnsMode.Custom, customDns = emptyList()),
                 AppFilter(),
             )
-            assertEquals(RoutePlanner.CLOUDFLARE_DNS, plan.dnsServers)
+            assertEquals(DnsPresets.cloudflare(DnsTransport.Tcp), plan.dnsUpstream.servers)
         }
 
         @Test
-        fun `dns Custom falls back to v4 Cloudflare when only v6 is configured and IPv6 is off`() {
+        fun `dns Custom keeps v6 upstreams when IPv6 is off`() {
             val plan = planner().plan(
                 RoutingConfig(
                     ipv6Mode = Ipv6Mode.Disabled,
@@ -173,30 +273,45 @@ class RoutePlannerTest {
                 ),
                 AppFilter(),
             )
-            assertTrue(plan.dnsServers.contains("1.1.1.1"))
-            assertFalse(plan.dnsServers.any { ':' in it })
+            assertEquals(listOf("[2606:4700:4700::1111]:53"), plan.dnsUpstream.servers)
+            assertEquals(listOf(resolverV4), plan.dnsServers)
         }
 
         @Test
-        fun `tunnel DNS servers are claimed as host routes`() {
+        fun `dns transport is carried into the plan`() {
+            val plan = planner().plan(
+                RoutingConfig(dnsMode = DnsMode.Cloudflare, dnsTransport = DnsTransport.Tls),
+                AppFilter(),
+            )
+            assertEquals(DnsTransport.Tls, plan.dnsUpstream.transport)
+            assertEquals(DnsPresets.cloudflare(DnsTransport.Tls), plan.dnsUpstream.servers)
+        }
+
+        @Test
+        fun `on-TUN resolver is claimed as a host route`() {
+            val plan = planner().plan(RoutingConfig(), AppFilter())
+            assertTrue(plan.claimedV4.any { it == Cidr.parse("$resolverV4/32") })
+            assertTrue(plan.claimedV6.any { it == Cidr.parse("$resolverV6/128") })
+
+            val disabled = planner().plan(RoutingConfig(ipv6Mode = Ipv6Mode.Disabled), AppFilter())
+            assertFalse(disabled.claimedV6.any { it == Cidr.parse("$resolverV6/128") })
+            val bypass = planner().plan(RoutingConfig(ipv6Mode = Ipv6Mode.BypassOnly), AppFilter())
+            assertFalse(bypass.claimedV6.any { it == Cidr.parse("$resolverV6/128") })
+        }
+
+        @Test
+        fun `custom upstreams are never claimed as routes`() {
             val plan = planner().plan(
                 RoutingConfig(
-                    dnsMode = DnsMode.Cloudflare,
-                    sources = listOf(cidrSource("1.1.1.0/24")),
+                    dnsMode = DnsMode.Custom,
+                    customDns = listOf("9.9.9.9", "192.168.1.1"),
+                    sources = listOf(cidrSource("9.9.9.0/24")),
                 ),
                 AppFilter(),
             )
-            assertTrue(plan.excludedV4.any { it == Cidr.parse("1.1.1.0/24") })
-            assertTrue(plan.claimedV4.any { it == Cidr.parse("1.1.1.1/32") })
-        }
-
-        @Test
-        fun `private custom DNS is not claimed`() {
-            val plan = planner().plan(
-                RoutingConfig(dnsMode = DnsMode.Custom, customDns = listOf("192.168.1.1")),
-                AppFilter(),
-            )
+            assertFalse(plan.claimedV4.any { it == Cidr.parse("9.9.9.9/32") })
             assertFalse(plan.claimedV4.any { it == Cidr.parse("192.168.1.1/32") })
+            assertTrue(plan.excludedV4.any { it == Cidr.parse("9.9.9.0/24") })
         }
 
         @Test
@@ -297,6 +412,21 @@ class RoutePlannerTest {
                 CidrMath.contains(it, Cidr.V4(publicProbe, 32))
             }
             assertTrue(isPublicCovered)
+        }
+
+        @Test
+        fun `resolver host route survives TUN prefix subtraction and LAN bypass`() {
+            for (bypassLan in listOf(true, false)) {
+                val plan = planner(supportsExclude = false).plan(
+                    RoutingConfig(bypassLan = bypassLan),
+                    AppFilter(),
+                )
+                val resolver = Cidr.parse("$resolverV4/32")
+                val iface = Cidr.parse("${tunV4.asString().substringBefore('/')}/32")
+                assertTrue(plan.claimedV4.any { CidrMath.contains(it, resolver) }, "bypassLan=$bypassLan")
+                assertFalse(plan.claimedV4.any { CidrMath.contains(it, iface) }, "bypassLan=$bypassLan")
+                assertTrue(plan.claimedV6.any { CidrMath.contains(it, Cidr.parse("$resolverV6/128")) })
+            }
         }
     }
 }
