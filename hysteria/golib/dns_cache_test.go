@@ -1,10 +1,36 @@
 package golib
 
 import (
+	"context"
 	"encoding/binary"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type stubResolver struct {
+	name  string
+	calls atomic.Int32
+	reply func(query []byte) ([]byte, error)
+}
+
+func (s *stubResolver) exchange(_ context.Context, query []byte) ([]byte, error) {
+	s.calls.Add(1)
+	return s.reply(query)
+}
+
+func (s *stubResolver) id() string { return s.name }
+
+func (s *stubResolver) close() {}
+
+func echoAnswer(ip [4]byte) func(query []byte) ([]byte, error) {
+	return func(query []byte) ([]byte, error) {
+		resp := dnsResponse("example.com", 60, ip)
+		copy(resp[:2], query[:2])
+		return resp, nil
+	}
+}
 
 // dnsQuery builds a minimal A-record query for the given name.
 func dnsQuery(name string) []byte {
@@ -212,6 +238,83 @@ func TestDNSCacheLRUEvicts(t *testing.T) {
 	c.mu.RUnlock()
 	if size > dnsCacheMaxEntries {
 		t.Errorf("cache size %d exceeds max %d", size, dnsCacheMaxEntries)
+	}
+}
+
+func TestDNSCacheResolve_usesResolverAndKeysById(t *testing.T) {
+	c := newDNSCache()
+	a := &stubResolver{name: "tcp|1.1.1.1:53", reply: echoAnswer([4]byte{1, 1, 1, 1})}
+	b := &stubResolver{name: "tls|1.1.1.1:853", reply: echoAnswer([4]byte{2, 2, 2, 2})}
+	q := dnsQuery("example.com")
+
+	first, err := c.resolve(context.Background(), a, q, nil)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	second, err := c.resolve(context.Background(), a, q, nil)
+	if err != nil {
+		t.Fatalf("resolve (cached): %v", err)
+	}
+	if a.calls.Load() != 1 {
+		t.Errorf("resolver a called %d times, want 1 (second call served from cache)", a.calls.Load())
+	}
+	if first[len(first)-1] != 1 || second[len(second)-1] != 1 {
+		t.Errorf("cached answer changed: %v vs %v", first, second)
+	}
+
+	other, err := c.resolve(context.Background(), b, q, nil)
+	if err != nil {
+		t.Fatalf("resolve via b: %v", err)
+	}
+	if b.calls.Load() != 1 {
+		t.Errorf("resolver b called %d times, want 1 (different id must not share cache)", b.calls.Load())
+	}
+	if other[len(other)-1] != 2 {
+		t.Errorf("answer from b = %v, want 2.2.2.2", other)
+	}
+}
+
+func TestDNSCacheResolve_rewritesTxid(t *testing.T) {
+	c := newDNSCache()
+	r := &stubResolver{name: "tcp|1.1.1.1:53", reply: echoAnswer([4]byte{1, 1, 1, 1})}
+	q := dnsQuery("example.com")
+	if _, err := c.resolve(context.Background(), r, q, nil); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	q2 := dnsQuery("example.com")
+	binary.BigEndian.PutUint16(q2[:2], 0x4242)
+	resp, err := c.resolve(context.Background(), r, q2, nil)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if binary.BigEndian.Uint16(resp[:2]) != 0x4242 {
+		t.Errorf("txid = %#x, want 0x4242", binary.BigEndian.Uint16(resp[:2]))
+	}
+}
+
+func TestDNSCacheResolve_singleflight(t *testing.T) {
+	c := newDNSCache()
+	release := make(chan struct{})
+	r := &stubResolver{name: "tcp|1.1.1.1:53"}
+	r.reply = func(query []byte) ([]byte, error) {
+		<-release
+		return echoAnswer([4]byte{1, 1, 1, 1})(query)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := c.resolve(context.Background(), r, dnsQuery("example.com"), nil); err != nil {
+				t.Errorf("resolve: %v", err)
+			}
+		}()
+	}
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	if r.calls.Load() != 1 {
+		t.Errorf("resolver called %d times, want 1", r.calls.Load())
 	}
 }
 

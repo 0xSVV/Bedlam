@@ -178,7 +178,7 @@ func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn,
 	log(LogLevelDebug, srcTun, "UDP session: %s → %s", m.Source, dest)
 
 	if isDNSPort(dest) {
-		return h.handleDNSOverTCP(conn, dest)
+		return h.handleDNSOverTCP(ctx, conn, dest)
 	}
 
 	return h.handleUDPRelay(ctx, conn)
@@ -186,7 +186,7 @@ func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn,
 
 const maxConcurrentDNS = 16
 
-func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) error {
+func (h *tunHandler) handleDNSOverTCP(ctx context.Context, conn N.PacketConn, defaultDest string) error {
 	sem := make(chan struct{}, maxConcurrentDNS)
 	for {
 		buffer := buf.NewPacket()
@@ -211,7 +211,10 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 		go func() {
 			defer func() { <-sem }()
 
-			resp, err := h.session.dnsCache.resolve(h.client, dnsAddr, query, func(tx, rx int) {
+			qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
+			defer cancel()
+			resolver := &tcpResolver{client: h.client, server: dnsAddr}
+			resp, err := h.session.dnsCache.resolve(qctx, resolver, query, func(tx, rx int) {
 				h.session.addTx(tx)
 				h.session.addRx(rx)
 			})

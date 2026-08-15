@@ -14,13 +14,33 @@ import (
 )
 
 const (
-	dnsDialTimeout = 6 * time.Second
-	dnsIOTimeout   = 5 * time.Second
+	dnsDialTimeout  = 6 * time.Second
+	dnsIOTimeout    = 5 * time.Second
+	dnsQueryTimeout = 10 * time.Second
 )
 
 var errDNSTimeout = errors.New("dns query timed out")
 
 var errDNSMalformed = errors.New("malformed dns response")
+
+type dnsResolver interface {
+	exchange(ctx context.Context, query []byte) ([]byte, error)
+	id() string
+	close()
+}
+
+type tcpResolver struct {
+	client client.Client
+	server string
+}
+
+func (r *tcpResolver) exchange(ctx context.Context, query []byte) ([]byte, error) {
+	return dnsOverTCPContext(ctx, r.client, r.server, query)
+}
+
+func (r *tcpResolver) id() string { return "tcp|" + r.server }
+
+func (r *tcpResolver) close() {}
 
 func writeDNSFrame(w io.Writer, msg []byte) error {
 	if len(msg) > 0xffff {

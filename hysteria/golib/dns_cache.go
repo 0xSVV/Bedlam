@@ -2,11 +2,11 @@ package golib
 
 import (
 	"container/list"
+	"context"
 	"encoding/binary"
 	"sync"
 	"time"
 
-	"github.com/apernet/hysteria/core/v2/client"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -37,15 +37,15 @@ func newDNSCache() *dnsCache {
 	}
 }
 
-func (c *dnsCache) resolve(hc client.Client, dnsServer string, query []byte, onTunnel func(tx, rx int)) ([]byte, error) {
+func (c *dnsCache) resolve(ctx context.Context, r dnsResolver, query []byte, onTunnel func(tx, rx int)) ([]byte, error) {
 	txID, qKey, ok := parseDNSQuery(query)
 	if !ok {
-		resp, err := dnsOverTCP(hc, dnsServer, query)
+		resp, err := r.exchange(ctx, query)
 		countTunnelDNS(onTunnel, query, resp, err)
 		return resp, err
 	}
 
-	cacheKey := dnsServer + "\x00" + qKey
+	cacheKey := r.id() + "\x00" + qKey
 
 	if resp := c.lookup(cacheKey, txID); resp != nil {
 		return resp, nil
@@ -56,7 +56,7 @@ func (c *dnsCache) resolve(hc client.Client, dnsServer string, query []byte, onT
 			return resp, nil
 		}
 
-		resp, err := dnsOverTCP(hc, dnsServer, query)
+		resp, err := r.exchange(ctx, query)
 		countTunnelDNS(onTunnel, query, resp, err)
 		if err != nil {
 			return nil, err
