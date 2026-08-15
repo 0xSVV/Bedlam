@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +19,7 @@ import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
 import ru.shapovalov.bedlam.core.vpn.VpnServiceLauncher
 import ru.shapovalov.bedlam.di.appComponent
 import ru.shapovalov.bedlam.di.injected
+import ru.shapovalov.bedlam.navigation.RootComponent
 import ru.shapovalov.bedlam.ui.theme.BedlamTheme
 
 class MainActivity : ComponentActivity() {
@@ -25,6 +27,7 @@ class MainActivity : ComponentActivity() {
     private val vpnServiceLauncher: VpnServiceLauncher by injected { vpnServiceLauncher }
     private val profileRepository: ProfileRepository by injected { profileRepository }
     private var pendingStartProfileId: String? = null
+    private lateinit var root: RootComponent
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -54,13 +57,26 @@ class MainActivity : ComponentActivity() {
         ensureNotificationPermission()
 
         val rootContext = defaultComponentContext()
-        val root = appComponent.rootComponentFactory.create(
+        root = appComponent.rootComponentFactory.create(
             rootContext,
             { profile -> requestVpnPermissionThen(profile) },
             { stopVpnService() },
         )
+        if (savedInstanceState == null) handleImportIntent(intent)
 
         setContent { BedlamTheme { RootContent(root) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleImportIntent(intent)
+    }
+
+    private fun handleImportIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val link = intent.dataString ?: return
+        root.onImportLink(link)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

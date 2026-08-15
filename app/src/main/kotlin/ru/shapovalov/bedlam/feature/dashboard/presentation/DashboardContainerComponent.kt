@@ -5,6 +5,7 @@ import com.arkivanov.decompose.router.stack.ChildStack
 import com.arkivanov.decompose.router.stack.StackNavigation
 import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.router.stack.pop
+import com.arkivanov.decompose.router.stack.popTo
 import com.arkivanov.decompose.router.stack.pushNew
 import com.arkivanov.decompose.value.Value
 import kotlinx.serialization.Serializable
@@ -59,6 +60,11 @@ class DashboardContainerComponent(
 
     fun onBack() {
         navigation.pop()
+    }
+
+    fun onImportLink(link: String) {
+        navigation.popTo(0)
+        (childStack.value.items.first().instance as? Child.Root)?.component?.onOpenImport(link)
     }
 
     sealed interface Child {
