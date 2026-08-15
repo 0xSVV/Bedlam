@@ -64,6 +64,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.isRealmAddress
 import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigComponent
@@ -167,7 +171,10 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 onDelete = component::onRequestDelete,
                 onCopy = {
                     val current = state.draft ?: return@ProfileActionsToolbar
-                    val clip = ClipData.newPlainText(clipboardLabel, current.toClipboardText())
+                    val clip = ClipData.newPlainText(
+                        clipboardLabel,
+                        current.toClipboardText(state.original?.name.orEmpty()),
+                    )
                     clip.description.extras = PersistableBundle().apply {
                         putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
                     }
@@ -393,5 +400,8 @@ private fun NotFoundMessage() {
     }
 }
 
-private fun HysteriaConfig.toClipboardText(): String =
-    ClipboardJson.encodeToString(this)
+private fun HysteriaConfig.toClipboardText(name: String): String {
+    val config = ClipboardJson.encodeToJsonElement(this).jsonObject
+    val named = if (name.isBlank()) config else JsonObject(mapOf("name" to JsonPrimitive(name)) + config)
+    return ClipboardJson.encodeToString(named)
+}
