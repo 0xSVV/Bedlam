@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -94,6 +95,7 @@ class BedlamVpnService : VpnService() {
     @Volatile
     private var reconnectTimeoutJob: Job? = null
     private var settingsWatcherJob: Job? = null
+    private var profileNameWatcherJob: Job? = null
 
     @Volatile
     private var currentRoutePlan: RoutePlan? = null
@@ -135,6 +137,7 @@ class BedlamVpnService : VpnService() {
         reconnectWatchdogJob?.cancel()
         reconnectTimeoutJob?.cancel()
         settingsWatcherJob?.cancel()
+        profileNameWatcherJob?.cancel()
         livenessKickJob?.cancel()
         networkObserver?.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -232,6 +235,7 @@ class BedlamVpnService : VpnService() {
                     profileId = request.profileId,
                     profileName = request.profileName,
                 )
+                startProfileNameWatcher(request.profileId)
                 launchTunnel(request.config)
             }
         }
@@ -294,6 +298,18 @@ class BedlamVpnService : VpnService() {
             } else {
                 stopAfterStartFailure()
             }
+        }
+    }
+
+    private fun startProfileNameWatcher(profileId: String?) {
+        profileNameWatcherJob?.cancel()
+        profileNameWatcherJob = null
+        if (profileId == null) return
+        profileNameWatcherJob = scope.launch {
+            profileRepository.observe(profileId)
+                .mapNotNull { it?.name }
+                .distinctUntilChanged()
+                .collect { updateConnectionName(it) }
         }
     }
 
@@ -388,6 +404,8 @@ class BedlamVpnService : VpnService() {
     private suspend fun releaseForegroundResources() {
         settingsWatcherJob?.cancel()
         settingsWatcherJob = null
+        profileNameWatcherJob?.cancel()
+        profileNameWatcherJob = null
         reconnectTimeoutJob?.cancel()
         reconnectTimeoutJob = null
         notificationJob?.cancelAndJoin()
