@@ -213,7 +213,19 @@
     <string name="routing_dns_custom">Custom</string>
     <string name="routing_dns_system_warning">System DNS bypasses the tunnel — your LAN and ISP can see queries</string>
     <string name="routing_dns_custom_label">DNS servers</string>
-    <string name="routing_dns_custom_placeholder">9.9.9.9, 149.112.112.112</string>
+    <string name="routing_dns_custom_placeholder_ip">9.9.9.9, [2620:fe::fe]:53</string>
+    <string name="routing_dns_custom_placeholder_tls">dns.quad9.net, 9.9.9.9:853</string>
+    <string name="routing_dns_custom_placeholder_https">https://dns.quad9.net/dns-query, 9.9.9.9</string>
+    <string name="routing_dns_custom_hint_ip">IPv4 or IPv6, optional :port (default 53); tried in order</string>
+    <string name="routing_dns_custom_hint_tls">Host or IP, optional :port (default 853); tried in order</string>
+    <string name="routing_dns_custom_hint_https">https:// URL or host (expands to /dns-query); tried in order</string>
+    <string name="routing_dns_custom_invalid">Ignored: %1$s</string>
+    <string name="routing_dns_transport_title">Transport</string>
+    <string name="routing_dns_transport_udp">UDP</string>
+    <string name="routing_dns_transport_tcp">TCP</string>
+    <string name="routing_dns_transport_tls">DNS over TLS</string>
+    <string name="routing_dns_transport_https">DNS over HTTPS</string>
+    <string name="routing_dns_transport_system_hint">System resolvers speak plain DNS — UDP or TCP only</string>
 
     <string name="routing_sources_title">Direct routes</string>
     <string name="routing_sources_hint">CIDRs, ASNs, or domains that skip the tunnel. ASNs and domains are re-resolved daily.</string>
