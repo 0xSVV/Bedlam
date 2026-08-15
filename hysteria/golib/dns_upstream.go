@@ -88,6 +88,8 @@ func newDNSResolver(c client.Client, transport, server string) (dnsResolver, err
 	switch transport {
 	case dnsTransportTCP:
 		return &tcpResolver{client: c, server: server}, nil
+	case dnsTransportUDP:
+		return newUDPResolver(c, server), nil
 	default:
 		return nil, fmt.Errorf("unsupported dns transport %q", transport)
 	}
