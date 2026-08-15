@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
@@ -83,7 +82,6 @@ internal fun ImportProfileSheet(
                 .fillMaxWidth()
                 .padding(horizontal = spacing.large)
                 .padding(bottom = spacing.large)
-                .navigationBarsPadding()
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
