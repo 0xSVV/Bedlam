@@ -2,7 +2,9 @@ package ru.shapovalov.hysteria
 
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.defaultBandwidthOptions
 import ru.shapovalov.hysteria.config.defaultBehaviorOptions
@@ -29,7 +31,7 @@ class HysteriaConfigParseTest {
         val original = sampleConfig()
         val json = clipboardJson.encodeToString(HysteriaConfig.serializer(), original)
 
-        val parsed = parseHysteriaConfig(json)
+        val parsed = parseHysteriaJson(json)
 
         assertEquals(original, parsed.config)
         assertEquals("", parsed.name)
@@ -40,7 +42,7 @@ class HysteriaConfigParseTest {
         val original = sampleConfig()
         val json = "  \n" + clipboardJson.encodeToString(HysteriaConfig.serializer(), original) + "\n  "
 
-        assertEquals(original, parseHysteriaConfig(json).config)
+        assertEquals(original, parseHysteriaJson(json).config)
     }
 
     @Test
@@ -49,7 +51,7 @@ class HysteriaConfigParseTest {
         val json = clipboardJson.encodeToString(HysteriaConfig.serializer(), original)
             .replaceFirst("{", "{\n  \"futureField\": \"x\",")
 
-        assertEquals(original, parseHysteriaConfig(json).config)
+        assertEquals(original, parseHysteriaJson(json).config)
     }
 
     @Test
@@ -68,7 +70,7 @@ class HysteriaConfigParseTest {
             }
         """.trimIndent()
 
-        val parsed = parseHysteriaConfig(legacy)
+        val parsed = parseHysteriaJson(legacy)
 
         assertEquals("", parsed.config.tls.ech)
         assertEquals("host.example:443", parsed.config.server.address)
@@ -78,7 +80,7 @@ class HysteriaConfigParseTest {
     fun `parses config json that predates every optional field`() {
         val legacy = """{"server": {"server": "host.example:443", "auth": "token"}, "tls": {}}"""
 
-        val parsed = parseHysteriaConfig(legacy).config
+        val parsed = parseHysteriaJson(legacy).config
 
         assertEquals("host.example:443", parsed.server.address)
         assertEquals(defaultTlsOptions, parsed.tls)
@@ -94,7 +96,7 @@ class HysteriaConfigParseTest {
             }
         """.trimIndent()
 
-        val parsed = parseHysteriaConfig(legacy).config
+        val parsed = parseHysteriaJson(legacy).config
 
         assertEquals(true, parsed.quic?.disableChromeParrot)
         assertEquals(false, parsed.quic?.disableGso)
@@ -116,7 +118,7 @@ class HysteriaConfigParseTest {
             }
         """.trimIndent()
 
-        val parsed = parseHysteriaConfig(sparse).config
+        val parsed = parseHysteriaJson(sparse).config
 
         assertEquals(defaultQuicOptions, parsed.quic)
         assertEquals(defaultCongestionOptions, parsed.congestion)
@@ -127,10 +129,49 @@ class HysteriaConfigParseTest {
     }
 
     @Test
-    fun `still parses a hysteria uri`() {
-        val parsed = parseHysteriaConfig("hysteria2://token@host.example/#My Profile")
+    fun `reads an optional top-level name`() {
+        val original = sampleConfig()
+        val json = clipboardJson.encodeToString(HysteriaConfig.serializer(), original)
+            .replaceFirst("{", "{\n  \"name\": \"Home\",")
 
-        assertEquals("host.example:443", parsed.config.server.address)
-        assertEquals("My Profile", parsed.name)
+        val parsed = parseHysteriaJson(json)
+
+        assertEquals(original, parsed.config)
+        assertEquals("Home", parsed.name)
+    }
+
+    @Test
+    fun `explains that an official client config is not a profile`() {
+        val official = """
+            {
+              "server": "host.example:443",
+              "auth": "token",
+              "tls": {"sni": "foo", "insecure": true}
+            }
+        """.trimIndent()
+
+        val error = assertThrows<IllegalArgumentException> { parseHysteriaJson(official) }
+
+        assertTrue(error.message!!.contains("Hysteria client config"), error.message)
+    }
+
+    @Test
+    fun `rejects json that is not an object`() {
+        assertThrows<IllegalArgumentException> { parseHysteriaJson("[1, 2, 3]") }
+        assertThrows<IllegalArgumentException> { parseHysteriaJson("\"hysteria2://x@y/\"") }
+    }
+
+    @Test
+    fun `rejects text that is not json`() {
+        val error = assertThrows<IllegalArgumentException> {
+            parseHysteriaJson("hysteria2://token@host.example/#My Profile")
+        }
+
+        assertTrue(error.message!!.startsWith("Not valid JSON"), error.message)
+    }
+
+    @Test
+    fun `rejects an object without a server`() {
+        assertThrows<IllegalArgumentException> { parseHysteriaJson("""{"tls": {}}""") }
     }
 }

@@ -4,15 +4,17 @@ import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.latency.PingProfileUseCase
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
+import ru.shapovalov.bedlam.core.profile.domain.model.detectProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
-import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileFromUriUseCase
+import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
 import ru.shapovalov.hysteria.ConnectionState
 
 internal class DashboardExecutor(
     private val setActiveProfile: SetActiveProfileUseCase,
     private val deleteProfile: DeleteProfileUseCase,
-    private val importFromUri: ImportProfileFromUriUseCase,
+    private val importProfile: ImportProfileUseCase,
     private val pingProfile: PingProfileUseCase,
 ) : CoroutineExecutor<DashboardStore.Intent, Action, DashboardStore.State, Msg, DashboardStore.Label>() {
 
@@ -41,7 +43,11 @@ internal class DashboardExecutor(
             DashboardStore.Intent.ToggleConnection -> toggleConnection()
             is DashboardStore.Intent.SelectProfile -> scope.launch { setActiveProfile(intent.id) }
             is DashboardStore.Intent.DeleteProfile -> scope.launch { deleteProfile(intent.id) }
-            is DashboardStore.Intent.ImportProfileFromUri -> handleImport(intent.uri)
+            is DashboardStore.Intent.OpenImport -> openImport(intent.prefill)
+            DashboardStore.Intent.CloseImport -> dispatch(Msg.ImportSheetClosed)
+            is DashboardStore.Intent.ImportProfile ->
+                handleImport(intent.format, intent.text, intent.name)
+
             DashboardStore.Intent.DismissError -> dispatch(Msg.ErrorDismissed)
             is DashboardStore.Intent.PingProfile -> ping(intent.id)
             DashboardStore.Intent.PingAllProfiles -> pingAll()
@@ -66,23 +72,27 @@ internal class DashboardExecutor(
         }
     }
 
-    private fun handleImport(uri: String) {
-        val trimmed = uri.trim()
-        if (trimmed.isEmpty()) {
-            dispatch(Msg.ErrorRaised(DashboardStore.ErrorReason.ClipboardEmpty))
-            return
-        }
+    private fun openImport(prefill: String) {
+        val text = prefill.trim()
+        dispatch(
+            Msg.ImportSheetOpened(
+                DashboardStore.ImportSheetSeed(text, detectProfileImportFormat(text))
+            )
+        )
+    }
+
+    private fun handleImport(format: ProfileImportFormat, text: String, name: String) {
+        if (state().isImporting) return
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
         dispatch(Msg.ImportStarted)
         scope.launch {
-            importFromUri(trimmed)
+            importProfile(trimmed, format, name.trim().ifEmpty { null })
                 .onSuccess { profile ->
-                    dispatch(Msg.ImportFinished)
+                    dispatch(Msg.ImportSucceeded)
                     if (state().activeProfileId == null) setActiveProfile(profile.id)
                 }
-                .onFailure { e ->
-                    dispatch(Msg.ImportFinished)
-                    dispatch(Msg.ErrorRaised(DashboardStore.ErrorReason.ImportFailed(e.message)))
-                }
+                .onFailure { e -> dispatch(Msg.ImportFailed(e.message.orEmpty())) }
         }
     }
 

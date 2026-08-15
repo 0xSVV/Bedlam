@@ -89,7 +89,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                             ?.coerceToText(context)
                             ?.toString()
                             .orEmpty()
-                        component.onImportFromClipboard(pasted)
+                        component.onOpenImport(pasted)
                     }
                 },
                 isImporting = state.isImporting,
@@ -119,6 +119,16 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter),
         ) { data -> Snackbar(snackbarData = data) }
+    }
+
+    state.importSheet?.let { seed ->
+        ImportProfileSheet(
+            seed = seed,
+            isImporting = state.isImporting,
+            error = state.importError,
+            onDismiss = component::onCloseImport,
+            onImport = component::onImportProfile,
+        )
     }
 }
 
@@ -160,9 +170,6 @@ private fun DashboardTopBar(
 @Composable
 private fun DashboardStore.ErrorReason.resolve(): String = when (this) {
     DashboardStore.ErrorReason.NoActiveProfile -> stringResource(R.string.dashboard_error_no_profile)
-    DashboardStore.ErrorReason.ClipboardEmpty -> stringResource(R.string.dashboard_error_clipboard_empty)
-    is DashboardStore.ErrorReason.ImportFailed ->
-        cause ?: stringResource(R.string.dashboard_error_import_failed)
 }
 
 private val SmallIconSize = 20.dp

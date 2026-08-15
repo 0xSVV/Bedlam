@@ -1,6 +1,10 @@
 package ru.shapovalov.hysteria
 
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.ObfuscationOptions
 import ru.shapovalov.hysteria.config.ServerCredentials
@@ -9,8 +13,9 @@ import ru.shapovalov.hysteria.config.defaultTlsOptions
 import java.net.URLDecoder
 
 /**
- * Result of parsing a Hysteria 2 URI: a fully-formed [HysteriaConfig] plus the
- * human-readable [name] taken from the URI fragment (empty if absent).
+ * Result of parsing a Hysteria 2 URI or a Bedlam profile JSON: a fully-formed
+ * [HysteriaConfig] plus the human-readable [name] taken from the URI fragment
+ * or the JSON `name` key (empty if absent).
  */
 data class ParsedHysteriaUri(
     val config: HysteriaConfig,
@@ -19,13 +24,34 @@ data class ParsedHysteriaUri(
 
 private val importJson = Json { ignoreUnknownKeys = true }
 
-fun parseHysteriaConfig(input: String): ParsedHysteriaUri {
+/**
+ * Parses a Bedlam profile JSON — the shape produced by the app's "Copy config"
+ * action: a [HysteriaConfig] object with an optional top-level `name`.
+ *
+ * The official Hysteria client config (`server` as a plain string) is a
+ * different format and is rejected with an explanatory message.
+ */
+fun parseHysteriaJson(input: String): ParsedHysteriaUri {
     val trimmed = input.trim()
-    if (trimmed.startsWith("{")) {
-        val config = importJson.decodeFromString(HysteriaConfig.serializer(), trimmed)
-        return ParsedHysteriaUri(config = config, name = "")
+    val element = try {
+        importJson.parseToJsonElement(trimmed)
+    } catch (e: SerializationException) {
+        throw IllegalArgumentException("Not valid JSON: ${e.message}", e)
     }
-    return parseHysteriaUri(trimmed)
+    val obj = element as? JsonObject
+        ?: throw IllegalArgumentException("Profile JSON must be an object")
+    val server = obj["server"]
+    require(server !is JsonPrimitive || !server.isString) {
+        "This looks like a Hysteria client config, not a Bedlam profile. " +
+            "Import the hysteria2:// link instead, or paste a config copied from Bedlam."
+    }
+    val config = try {
+        importJson.decodeFromJsonElement(HysteriaConfig.serializer(), obj)
+    } catch (e: SerializationException) {
+        throw IllegalArgumentException("Invalid profile JSON: ${e.message}", e)
+    }
+    val name = (obj["name"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull.orEmpty()
+    return ParsedHysteriaUri(config = config, name = name)
 }
 
 /**

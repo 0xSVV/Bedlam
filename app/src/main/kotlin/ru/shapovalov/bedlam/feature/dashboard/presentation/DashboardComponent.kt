@@ -7,6 +7,7 @@ import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.bedlam.core.util.componentScope
 
 class DashboardComponent(
@@ -37,8 +38,10 @@ class DashboardComponent(
     fun onToggleConnection() = store.accept(DashboardStore.Intent.ToggleConnection)
     fun onSelectProfile(id: String) = store.accept(DashboardStore.Intent.SelectProfile(id))
     fun onDeleteProfile(id: String) = store.accept(DashboardStore.Intent.DeleteProfile(id))
-    fun onImportFromClipboard(uri: String) =
-        store.accept(DashboardStore.Intent.ImportProfileFromUri(uri))
+    fun onOpenImport(prefill: String) = store.accept(DashboardStore.Intent.OpenImport(prefill))
+    fun onCloseImport() = store.accept(DashboardStore.Intent.CloseImport)
+    fun onImportProfile(format: ProfileImportFormat, text: String, name: String) =
+        store.accept(DashboardStore.Intent.ImportProfile(format, text, name))
 
     fun onDismissError() = store.accept(DashboardStore.Intent.DismissError)
     fun onOpenSession() = onOpenSession.invoke()
