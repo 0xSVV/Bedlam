@@ -283,7 +283,7 @@ class BedlamVpnService : VpnService() {
             currentRoutePlan = plan
             client.start(
                 config = config,
-                tunConfig = TunConfig(ipv6Enabled = plan.ipv6Enabled),
+                tunConfig = plan.toTunConfig(),
                 protector = { fd -> protect(fd) },
                 tun = { tunConfig -> establishTun(tunConfig) },
             )
@@ -300,6 +300,9 @@ class BedlamVpnService : VpnService() {
             }
         }
     }
+
+    private fun RoutePlan.toTunConfig(): TunConfig =
+        TunConfig(ipv6Enabled = ipv6Enabled, dns = dnsUpstream)
 
     private fun startProfileNameWatcher(profileId: String?) {
         profileNameWatcherJob?.cancel()
@@ -347,7 +350,7 @@ class BedlamVpnService : VpnService() {
         try {
             Log.i(TAG, "Reapplying tunnel after settings change")
             currentRoutePlan = plan
-            client.updateTun(TunConfig(ipv6Enabled = plan.ipv6Enabled)) { tunConfig ->
+            client.updateTun(plan.toTunConfig()) { tunConfig ->
                 establishTun(tunConfig)
             }
         } catch (e: CancellationException) {
@@ -470,7 +473,7 @@ class BedlamVpnService : VpnService() {
         repeat(TUN_REAPPLY_ATTEMPTS) { attempt ->
             currentRoutePlan = plan
             try {
-                client.updateTun(TunConfig(ipv6Enabled = plan.ipv6Enabled)) { tunConfig ->
+                client.updateTun(plan.toTunConfig()) { tunConfig ->
                     establishTun(tunConfig)
                 }
                 return
