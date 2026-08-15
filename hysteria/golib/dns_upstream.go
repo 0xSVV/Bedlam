@@ -90,6 +90,8 @@ func newDNSResolver(c client.Client, transport, server string) (dnsResolver, err
 		return &tcpResolver{client: c, server: server}, nil
 	case dnsTransportUDP:
 		return newUDPResolver(c, server), nil
+	case dnsTransportTLS:
+		return newTLSResolver(c, server, nil), nil
 	default:
 		return nil, fmt.Errorf("unsupported dns transport %q", transport)
 	}
