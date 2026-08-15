@@ -15,6 +15,7 @@ import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.bedlam.core.routing.domain.repository.DirectRouteResolver
 import ru.shapovalov.bedlam.core.routing.domain.repository.RoutingRepository
+import ru.shapovalov.hysteria.api.DnsTransport
 
 class RefreshRouteSourcesUseCaseTest {
 
@@ -31,6 +32,7 @@ class RefreshRouteSourcesUseCaseTest {
         override suspend fun setBypassLan(enabled: Boolean) = Unit
         override suspend fun setIpv6Mode(mode: Ipv6Mode) = Unit
         override suspend fun setDnsMode(mode: DnsMode) = Unit
+        override suspend fun setDnsTransport(transport: DnsTransport) = Unit
         override suspend fun setCustomDns(servers: List<String>) = Unit
         override suspend fun upsertSource(source: DirectRouteSource) = Unit
         override suspend fun removeSource(id: String) = Unit

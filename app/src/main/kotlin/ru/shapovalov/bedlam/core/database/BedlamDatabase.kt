@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.core.database
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
@@ -21,8 +22,9 @@ import ru.shapovalov.bedlam.core.routing.data.local.RoutingDao
         RouteSourceEntity::class,
         ResolvedCidrEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
+    autoMigrations = [AutoMigration(from = 4, to = 5)],
 )
 @TypeConverters(HysteriaConfigConverter::class)
 abstract class BedlamDatabase : RoomDatabase() {

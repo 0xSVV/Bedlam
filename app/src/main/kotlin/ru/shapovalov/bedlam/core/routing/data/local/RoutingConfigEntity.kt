@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.core.routing.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -10,6 +11,8 @@ data class RoutingConfigEntity(
     val ipv6Mode: String = "Enabled",
     val dnsMode: String = "Cloudflare",
     val customDnsCsv: String = "",
+    @ColumnInfo(defaultValue = "Tcp")
+    val dnsTransport: String = "Tcp",
 ) {
     companion object {
         const val SINGLETON_ID = 1

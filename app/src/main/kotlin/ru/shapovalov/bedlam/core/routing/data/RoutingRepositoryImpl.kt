@@ -13,6 +13,7 @@ import ru.shapovalov.bedlam.core.routing.data.local.RoutingDao
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
 import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
+import ru.shapovalov.hysteria.api.DnsTransport
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
@@ -54,6 +55,11 @@ class RoutingRepositoryImpl(
     override suspend fun setDnsMode(mode: DnsMode) = mutex.withLock {
         val current = dao.getConfig() ?: RoutingConfigEntity()
         dao.upsertConfig(current.copy(dnsMode = mode.name))
+    }
+
+    override suspend fun setDnsTransport(transport: DnsTransport) = mutex.withLock {
+        val current = dao.getConfig() ?: RoutingConfigEntity()
+        dao.upsertConfig(current.copy(dnsTransport = transport.name))
     }
 
     override suspend fun setCustomDns(servers: List<String>) = mutex.withLock {
@@ -111,6 +117,8 @@ class RoutingRepositoryImpl(
                 .getOrDefault(Ipv6Mode.Enabled),
             dnsMode = runCatching { DnsMode.valueOf(configEntity.dnsMode) }
                 .getOrDefault(DnsMode.Cloudflare),
+            dnsTransport = runCatching { DnsTransport.valueOf(configEntity.dnsTransport) }
+                .getOrDefault(DnsTransport.Tcp),
             customDns = configEntity.customDnsCsv.toCsvList(),
             sources = domain,
         )
