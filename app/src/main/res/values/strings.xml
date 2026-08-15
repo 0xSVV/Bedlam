@@ -211,7 +211,7 @@
     <string name="routing_dns_cloudflare">Cloudflare</string>
     <string name="routing_dns_google">Google</string>
     <string name="routing_dns_custom">Custom</string>
-    <string name="routing_dns_system_warning">System DNS bypasses the tunnel — your LAN and ISP can see queries</string>
+    <string name="routing_dns_system_warning">Uses your network\'s resolvers, queried through the tunnel — your carrier or ISP resolver still sees every lookup</string>
     <string name="routing_dns_custom_label">DNS servers</string>
     <string name="routing_dns_custom_placeholder_ip">9.9.9.9, [2620:fe::fe]:53</string>
     <string name="routing_dns_custom_placeholder_tls">dns.quad9.net, 9.9.9.9:853</string>
