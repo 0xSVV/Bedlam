@@ -259,14 +259,13 @@ func normalizeDoHURL(raw string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// Ports belong in a full URL: a leftover `1.1.1.1:53` from a
+		// plain-DNS transport must not become https://1.1.1.1:53/dns-query.
+		if port != "" {
+			return "", fmt.Errorf("dns server %q: write a full https:// URL to use a port", raw)
+		}
 		if strings.Contains(host, ":") {
 			host = "[" + host + "]"
-		}
-		if port != "" {
-			if err := checkPort(port); err != nil {
-				return "", fmt.Errorf("dns server %q: %w", raw, err)
-			}
-			host += ":" + port
 		}
 		return "https://" + host + "/dns-query", nil
 	}
@@ -289,7 +288,7 @@ func normalizeDoHURL(raw string) (string, error) {
 		}
 	}
 	u.Scheme = "https"
-	if u.Path == "" {
+	if u.Path == "" || u.Path == "/" {
 		u.Path = "/dns-query"
 	}
 	u.Fragment = ""

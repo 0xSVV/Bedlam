@@ -8,7 +8,15 @@ sealed interface DnsServerParse {
     data class Invalid(val error: DnsServerError) : DnsServerParse
 }
 
-enum class DnsServerError { Empty, InvalidAddress, InvalidPort, HostNotAllowed, InvalidUrl, NotHttps }
+enum class DnsServerError {
+    Empty,
+    InvalidAddress,
+    InvalidPort,
+    PortNotAllowed,
+    HostNotAllowed,
+    InvalidUrl,
+    NotHttps,
+}
 
 object DnsServer {
 
@@ -45,14 +53,13 @@ object DnsServer {
         if ("://" !in value) {
             val (host, portText) = splitHostPort(value)
                 ?: return DnsServerParse.Invalid(DnsServerError.InvalidAddress)
-            val port = portText?.let { p ->
-                p.toIntOrNull()?.takeIf { it in 1..65535 }
-                    ?: return DnsServerParse.Invalid(DnsServerError.InvalidPort)
-            }
+            // A port on the bare form is ambiguous — `1.1.1.1:53` left over
+            // from a plain-DNS transport would silently become
+            // https://1.1.1.1:53/dns-query. Ports go in a full URL.
+            if (portText != null) return DnsServerParse.Invalid(DnsServerError.PortNotAllowed)
             val kind = classifyHost(host, bracketed = value.startsWith("["))
                 ?: return DnsServerParse.Invalid(DnsServerError.InvalidAddress)
-            val authority = kind.render(host) + (port?.let { ":$it" } ?: "")
-            return DnsServerParse.Valid("https://$authority/dns-query")
+            return DnsServerParse.Valid("https://${kind.render(host)}/dns-query")
         }
         val uri = runCatching { URI(value) }.getOrNull()
             ?: return DnsServerParse.Invalid(DnsServerError.InvalidUrl)
@@ -68,7 +75,8 @@ object DnsServer {
             return DnsServerParse.Invalid(DnsServerError.InvalidUrl)
         }
         val portPart = if (uri.port == -1) "" else ":${uri.port}"
-        val path = uri.rawPath.orEmpty().ifEmpty { "/dns-query" }
+        val rawPath = uri.rawPath.orEmpty()
+        val path = if (rawPath.isEmpty() || rawPath == "/") "/dns-query" else rawPath
         val query = uri.rawQuery?.let { "?$it" }.orEmpty()
         return DnsServerParse.Valid("https://$host$portPart$path$query")
     }
