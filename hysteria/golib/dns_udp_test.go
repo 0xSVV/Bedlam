@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -14,9 +15,7 @@ import (
 
 func udpEcho(ip [4]byte) func(data []byte, addr string) [][]byte {
 	return func(data []byte, addr string) [][]byte {
-		resp := dnsResponse("example.com", 60, ip)
-		copy(resp[:2], data[:2])
-		return [][]byte{resp}
+		return [][]byte{dnsResponseFor(data, 60, ip)}
 	}
 }
 
@@ -55,28 +54,27 @@ func TestUDPResolver_rewritesAndRestoresTxid(t *testing.T) {
 }
 
 func TestUDPResolver_demuxesConcurrentQueries(t *testing.T) {
-	fake := newFakeUDPConn(func(data []byte, addr string) [][]byte {
-		resp := dnsResponse("example.com", 60, [4]byte{data[len(data)-1], 0, 0, 0})
-		copy(resp[:2], data[:2])
-		return [][]byte{resp}
-	})
+	fake := newFakeUDPConn(udpEcho([4]byte{1, 1, 1, 1}))
 	r := newUDPResolver(&fakeClient{udp: func() (client.HyUDPConn, error) { return fake, nil }}, "1.1.1.1:53")
 	defer r.close()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			q := dnsQuery("example.com")
-			q[len(q)-1] = byte(i)
-			resp, err := r.exchange(context.Background(), q)
+			q := dnsQuery(fmt.Sprintf("h%02d.example", i))
+			want, _ := dnsQuestion(q)
+			resp, err := r.exchange(ctx, q)
 			if err != nil {
 				t.Errorf("exchange %d: %v", i, err)
 				return
 			}
-			if resp[len(resp)-4] != byte(i) {
-				t.Errorf("query %d got answer for %d", i, resp[len(resp)-4])
+			got, ok := dnsQuestion(resp)
+			if !ok || got != want {
+				t.Errorf("query %d received the answer to a different question", i)
 			}
 		}(i)
 	}
@@ -118,8 +116,7 @@ func TestUDPResolver_retransmitsOnce(t *testing.T) {
 
 func TestUDPResolver_truncatedFallsBackToTCP(t *testing.T) {
 	fake := newFakeUDPConn(func(data []byte, addr string) [][]byte {
-		resp := dnsResponse("example.com", 60, [4]byte{1, 1, 1, 1})
-		copy(resp[:2], data[:2])
+		resp := dnsResponseFor(data, 60, [4]byte{1, 1, 1, 1})
 		resp[2] |= 0x02
 		return [][]byte{resp}
 	})
@@ -171,7 +168,7 @@ func TestUDPResolver_reopensAfterReceiveEOF(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		r.mu.Lock()
-		gone := r.conn == nil
+		gone := r.session == nil
 		r.mu.Unlock()
 		if gone || time.Now().After(deadline) {
 			break
@@ -247,6 +244,142 @@ func TestUDPResolver_udpDisabledFallsBackToTCP(t *testing.T) {
 	}
 	if !r.isTCPOnly() {
 		t.Error("resolver should remember that UDP is unavailable")
+	}
+}
+
+func TestUDPResolver_teardownDuringReplyDoesNotPanic(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		fake := newFakeUDPConn(nil)
+		r := newUDPResolver(&fakeClient{udp: func() (client.HyUDPConn, error) { return fake, nil }}, "1.1.1.1:53")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = r.exchange(ctx, dnsQuery("example.com"))
+		}()
+
+		// Let the query register, then race a reply against teardown.
+		time.Sleep(time.Millisecond)
+		r.mu.Lock()
+		var txID uint16
+		for id := range r.inflight {
+			txID = id
+		}
+		r.mu.Unlock()
+		resp := dnsResponse("example.com", 60, [4]byte{1, 1, 1, 1})
+		binary.BigEndian.PutUint16(resp[:2], txID)
+
+		go fake.inject(resp, "1.1.1.1:53")
+		go r.close()
+
+		wg.Wait()
+		cancel()
+	}
+}
+
+func TestUDPResolver_ignoresRepliesFromOtherSources(t *testing.T) {
+	fake := newFakeUDPConn(nil)
+	r := newUDPResolver(&fakeClient{udp: func() (client.HyUDPConn, error) { return fake, nil }}, "1.1.1.1:53")
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.exchange(ctx, dnsQuery("bank.example"))
+		done <- err
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	r.mu.Lock()
+	var txID uint16
+	for id := range r.inflight {
+		txID = id
+	}
+	r.mu.Unlock()
+
+	spoof := dnsResponse("bank.example", 3600, [4]byte{6, 6, 6, 6})
+	binary.BigEndian.PutUint16(spoof[:2], txID)
+	fake.inject(spoof, "203.0.113.66:9999")
+
+	if err := <-done; err == nil {
+		t.Fatal("a reply from an unrelated source must not be accepted")
+	}
+}
+
+func TestUDPResolver_ignoresRepliesForAnotherQuestion(t *testing.T) {
+	fake := newFakeUDPConn(nil)
+	r := newUDPResolver(&fakeClient{udp: func() (client.HyUDPConn, error) { return fake, nil }}, "1.1.1.1:53")
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.exchange(ctx, dnsQuery("bank.example"))
+		done <- err
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	r.mu.Lock()
+	var txID uint16
+	for id := range r.inflight {
+		txID = id
+	}
+	r.mu.Unlock()
+
+	wrong := dnsResponse("attacker.example", 3600, [4]byte{6, 6, 6, 6})
+	binary.BigEndian.PutUint16(wrong[:2], txID)
+	fake.inject(wrong, "1.1.1.1:53")
+
+	if err := <-done; err == nil {
+		t.Fatal("a reply whose question differs must not be accepted")
+	}
+}
+
+func TestUDPResolver_acceptsEquivalentSourceForm(t *testing.T) {
+	fake := newFakeUDPConn(nil)
+	r := newUDPResolver(&fakeClient{udp: func() (client.HyUDPConn, error) { return fake, nil }}, "[2606:4700:4700::1111]:53")
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.exchange(ctx, dnsQuery("example.com"))
+		done <- err
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	r.mu.Lock()
+	var txID uint16
+	for id := range r.inflight {
+		txID = id
+	}
+	r.mu.Unlock()
+
+	resp := dnsResponse("example.com", 60, [4]byte{1, 1, 1, 1})
+	binary.BigEndian.PutUint16(resp[:2], txID)
+	fake.inject(resp, "[2606:4700:4700:0000::1111]:53")
+
+	if err := <-done; err != nil {
+		t.Fatalf("the same address written differently must be accepted: %v", err)
+	}
+}
+
+func TestUDPResolver_txIDsAreNotSequential(t *testing.T) {
+	seen := map[uint16]bool{}
+	for i := 0; i < 64; i++ {
+		id, err := randomTxID()
+		if err != nil {
+			t.Fatalf("randomTxID: %v", err)
+		}
+		seen[id] = true
+	}
+	if len(seen) < 60 {
+		t.Errorf("only %d distinct IDs out of 64", len(seen))
 	}
 }
 

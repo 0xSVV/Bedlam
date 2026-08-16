@@ -159,9 +159,12 @@ func normalizeDNSServer(transport, raw string) (string, error) {
 	}
 	switch transport {
 	case dnsTransportUDP, dnsTransportTCP:
-		return normalizeHostPort(raw, "53")
+		// IP literals only, matching the app-side validator: a plain-DNS
+		// upstream has no certificate to bind a name to, and the UDP reply
+		// check compares the source address against this string.
+		return normalizeHostPort(raw, "53", false)
 	case dnsTransportTLS:
-		return normalizeHostPort(raw, "853")
+		return normalizeHostPort(raw, "853", true)
 	case dnsTransportHTTPS, dnsTransportHTTP3:
 		return normalizeDoHURL(raw)
 	default:
@@ -169,7 +172,7 @@ func normalizeDNSServer(transport, raw string) (string, error) {
 	}
 }
 
-func normalizeHostPort(raw, defaultPort string) (string, error) {
+func normalizeHostPort(raw, defaultPort string, allowHost bool) (string, error) {
 	host, port, err := splitHostOptionalPort(raw)
 	if err != nil {
 		return "", err
@@ -179,6 +182,11 @@ func normalizeHostPort(raw, defaultPort string) (string, error) {
 	}
 	if err := checkPort(port); err != nil {
 		return "", fmt.Errorf("dns server %q: %w", raw, err)
+	}
+	if !allowHost {
+		if _, perr := netip.ParseAddr(host); perr != nil {
+			return "", fmt.Errorf("dns server %q: must be an IP address", raw)
+		}
 	}
 	return net.JoinHostPort(host, port), nil
 }

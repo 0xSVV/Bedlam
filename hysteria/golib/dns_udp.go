@@ -2,11 +2,13 @@ package golib
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -18,13 +20,34 @@ const dnsUDPRetransmit = 1500 * time.Millisecond
 
 var errUDPSessionClosed = errors.New("udp dns session closed")
 
+// udpSession owns one Hysteria UDP conn. Waiters select on dead rather than
+// on their own channel being closed, so a reply racing with teardown can
+// never be delivered to a closed channel.
+type udpSession struct {
+	conn      client.HyUDPConn
+	dead      chan struct{}
+	closeOnce sync.Once
+}
+
+func (s *udpSession) kill() {
+	s.closeOnce.Do(func() {
+		close(s.dead)
+		_ = s.conn.Close()
+	})
+}
+
+type udpWaiter struct {
+	ch       chan []byte
+	question string
+}
+
 type udpResolver struct {
 	client client.Client
 	server string
 
 	mu       sync.Mutex
-	conn     client.HyUDPConn
-	inflight map[uint16]chan []byte
+	session  *udpSession
+	inflight map[uint16]*udpWaiter
 	closed   bool
 	tcpOnly  bool
 
@@ -35,7 +58,7 @@ func newUDPResolver(c client.Client, server string) *udpResolver {
 	return &udpResolver{
 		client:   c,
 		server:   server,
-		inflight: map[uint16]chan []byte{},
+		inflight: map[uint16]*udpWaiter{},
 	}
 }
 
@@ -44,16 +67,12 @@ func (r *udpResolver) id() string { return "udp|" + r.server }
 func (r *udpResolver) close() {
 	r.mu.Lock()
 	r.closed = true
-	conn := r.conn
-	r.conn = nil
-	pending := r.inflight
-	r.inflight = map[uint16]chan []byte{}
+	s := r.session
+	r.session = nil
+	r.inflight = map[uint16]*udpWaiter{}
 	r.mu.Unlock()
-	if conn != nil {
-		_ = conn.Close()
-	}
-	for _, ch := range pending {
-		close(ch)
+	if s != nil {
+		s.kill()
 	}
 }
 
@@ -87,23 +106,27 @@ func (r *udpResolver) exchange(ctx context.Context, query []byte) ([]byte, error
 }
 
 func (r *udpResolver) exchangeOnce(ctx context.Context, query []byte) ([]byte, bool, error) {
-	conn, err := r.ensureConn()
+	s, err := r.ensureSession()
 	if err != nil {
 		return nil, false, err
 	}
 	origID := binary.BigEndian.Uint16(query[:2])
-	ch, txID, err := r.register(conn)
+	question, ok := dnsQuestion(query)
+	if !ok {
+		return nil, false, fmt.Errorf("%w: unparsable question", errDNSMalformed)
+	}
+	w, txID, err := r.register(s, question)
 	if err != nil {
 		return nil, true, err
 	}
-	defer r.unregister(txID, ch)
+	defer r.unregister(txID, w)
 
 	q := make([]byte, len(query))
 	copy(q, query)
 	binary.BigEndian.PutUint16(q[:2], txID)
 
-	if err := r.send(conn, q); err != nil {
-		r.dropConn(conn)
+	if err := r.send(s, q); err != nil {
+		r.dropSession(s)
 		return nil, true, fmt.Errorf("send DNS query: %w", err)
 	}
 
@@ -111,14 +134,11 @@ func (r *udpResolver) exchangeOnce(ctx context.Context, query []byte) ([]byte, b
 	defer retransmit.Stop()
 	for {
 		select {
-		case resp, ok := <-ch:
-			if !ok {
-				return nil, true, errUDPSessionClosed
-			}
+		case resp := <-w.ch:
 			out := make([]byte, len(resp))
 			copy(out, resp)
 			binary.BigEndian.PutUint16(out[:2], origID)
-			if len(out) >= 3 && out[2]&0x02 != 0 {
+			if out[2]&0x02 != 0 {
 				full, terr := dnsOverTCPContext(ctx, r.client, r.server, query)
 				if terr != nil {
 					return out, false, nil
@@ -126,9 +146,11 @@ func (r *udpResolver) exchangeOnce(ctx context.Context, query []byte) ([]byte, b
 				return full, false, nil
 			}
 			return out, false, nil
+		case <-s.dead:
+			return nil, true, errUDPSessionClosed
 		case <-retransmit.C:
-			if err := r.send(conn, q); err != nil {
-				r.dropConn(conn)
+			if err := r.send(s, q); err != nil {
+				r.dropSession(s)
 				return nil, true, fmt.Errorf("resend DNS query: %w", err)
 			}
 		case <-ctx.Done():
@@ -137,72 +159,92 @@ func (r *udpResolver) exchangeOnce(ctx context.Context, query []byte) ([]byte, b
 	}
 }
 
-func (r *udpResolver) ensureConn() (client.HyUDPConn, error) {
+func (r *udpResolver) ensureSession() (*udpSession, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
 		return nil, net.ErrClosed
 	}
-	if r.conn != nil {
-		return r.conn, nil
+	if r.session != nil {
+		return r.session, nil
 	}
 	conn, err := r.client.UDP()
 	if err != nil {
 		return nil, err
 	}
-	r.conn = conn
-	go r.recvLoop(conn)
-	return conn, nil
+	s := &udpSession{conn: conn, dead: make(chan struct{})}
+	r.session = s
+	go r.recvLoop(s)
+	return s, nil
 }
 
-func (r *udpResolver) recvLoop(conn client.HyUDPConn) {
+// recvLoop delivers replies while holding r.mu. The send is non-blocking and
+// the channel is never closed, so this can neither block nor panic.
+func (r *udpResolver) recvLoop(s *udpSession) {
 	for {
-		data, _, err := conn.Receive()
+		data, from, err := s.conn.Receive()
 		if err != nil {
-			r.dropConn(conn)
+			r.dropSession(s)
 			return
 		}
-		if len(data) < 2 {
+		if !r.isFromUpstream(from) || len(data) < 12 || data[2]&0x80 == 0 {
+			continue
+		}
+		question, ok := dnsQuestion(data)
+		if !ok {
 			continue
 		}
 		txID := binary.BigEndian.Uint16(data[:2])
+		pkt := make([]byte, len(data))
+		copy(pkt, data)
+
 		r.mu.Lock()
-		var ch chan []byte
-		if r.conn == conn {
-			ch = r.inflight[txID]
+		if r.session == s {
+			if w := r.inflight[txID]; w != nil && w.question == question {
+				select {
+				case w.ch <- pkt:
+				default:
+				}
+			}
 		}
 		r.mu.Unlock()
-		if ch == nil {
-			continue
-		}
-		select {
-		case ch <- data:
-		default:
-		}
 	}
 }
 
-func (r *udpResolver) dropConn(conn client.HyUDPConn) {
+// isFromUpstream rejects datagrams that did not come from the configured
+// server: without it a 16-bit transaction ID is the only thing standing
+// between an off-path answer and the shared DNS cache.
+func (r *udpResolver) isFromUpstream(from string) bool {
+	if from == r.server {
+		return true
+	}
+	fh, fp, ferr := net.SplitHostPort(from)
+	sh, sp, serr := net.SplitHostPort(r.server)
+	if ferr != nil || serr != nil || fp != sp {
+		return false
+	}
+	fa, ferr := netip.ParseAddr(fh)
+	sa, serr := netip.ParseAddr(sh)
+	return ferr == nil && serr == nil && fa.Unmap() == sa.Unmap()
+}
+
+func (r *udpResolver) dropSession(s *udpSession) {
 	r.mu.Lock()
-	if r.conn != conn {
+	if r.session != s {
 		r.mu.Unlock()
-		_ = conn.Close()
+		s.kill()
 		return
 	}
-	r.conn = nil
-	pending := r.inflight
-	r.inflight = map[uint16]chan []byte{}
+	r.session = nil
+	r.inflight = map[uint16]*udpWaiter{}
 	r.mu.Unlock()
-	_ = conn.Close()
-	for _, ch := range pending {
-		close(ch)
-	}
+	s.kill()
 }
 
-func (r *udpResolver) register(conn client.HyUDPConn) (chan []byte, uint16, error) {
+func (r *udpResolver) register(s *udpSession, question string) (*udpWaiter, uint16, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != conn {
+	if r.session != s {
 		return nil, 0, errUDPSessionClosed
 	}
 	if len(r.inflight) >= 0xffff {
@@ -210,28 +252,32 @@ func (r *udpResolver) register(conn client.HyUDPConn) (chan []byte, uint16, erro
 	}
 	var txID uint16
 	for {
-		txID = uint16(rand.Intn(0x10000))
-		if _, taken := r.inflight[txID]; !taken {
+		id, err := randomTxID()
+		if err != nil {
+			return nil, 0, err
+		}
+		if _, taken := r.inflight[id]; !taken {
+			txID = id
 			break
 		}
 	}
-	ch := make(chan []byte, 1)
-	r.inflight[txID] = ch
-	return ch, txID, nil
+	w := &udpWaiter{ch: make(chan []byte, 1), question: question}
+	r.inflight[txID] = w
+	return w, txID, nil
 }
 
-func (r *udpResolver) unregister(txID uint16, ch chan []byte) {
+func (r *udpResolver) unregister(txID uint16, w *udpWaiter) {
 	r.mu.Lock()
-	if cur, ok := r.inflight[txID]; ok && cur == ch {
+	if cur, ok := r.inflight[txID]; ok && cur == w {
 		delete(r.inflight, txID)
 	}
 	r.mu.Unlock()
 }
 
-func (r *udpResolver) send(conn client.HyUDPConn, q []byte) error {
+func (r *udpResolver) send(s *udpSession, q []byte) error {
 	r.sendMu.Lock()
 	defer r.sendMu.Unlock()
-	return conn.Send(q, r.server)
+	return s.conn.Send(q, r.server)
 }
 
 func (r *udpResolver) isTCPOnly() bool {
@@ -244,6 +290,16 @@ func (r *udpResolver) markTCPOnly() {
 	r.mu.Lock()
 	r.tcpOnly = true
 	r.mu.Unlock()
+}
+
+// randomTxID draws from crypto/rand: a predictable sequence would let an
+// attacker who never saw the query forge a matching answer.
+func randomTxID() (uint16, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(0x10000))
+	if err != nil {
+		return 0, fmt.Errorf("generate DNS transaction ID: %w", err)
+	}
+	return uint16(n.Int64()), nil
 }
 
 var udpDisabledLimiter = newRateLimiter(30 * time.Second)

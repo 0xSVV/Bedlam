@@ -97,6 +97,27 @@ func dnsResponse(name string, ttl uint32, ip [4]byte) []byte {
 	return buf
 }
 
+// dnsResponseFor echoes the query's own header and question, so the answer
+// always matches the question that was asked.
+func dnsResponseFor(query []byte, ttl uint32, ip [4]byte) []byte {
+	end := skipName(query, 12)
+	if end < 0 || end+4 > len(query) {
+		panic("dnsResponseFor: unparsable query")
+	}
+	resp := make([]byte, 0, end+4+16)
+	resp = append(resp, query[:end+4]...)
+	resp[2] = 0x81
+	resp[3] = 0x80
+	binary.BigEndian.PutUint16(resp[6:8], 1)
+	resp = append(resp, 0xc0, 0x0c)
+	resp = append(resp, 0x00, 0x01, 0x00, 0x01)
+	ttlBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(ttlBytes, ttl)
+	resp = append(resp, ttlBytes...)
+	resp = append(resp, 0x00, 0x04)
+	return append(resp, ip[:]...)
+}
+
 func TestParseDNSQuery_validQuery(t *testing.T) {
 	q := dnsQuery("example.com")
 	txID, key, ok := parseDNSQuery(q)
