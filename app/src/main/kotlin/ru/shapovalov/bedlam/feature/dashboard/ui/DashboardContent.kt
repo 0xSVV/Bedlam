@@ -170,6 +170,8 @@ private fun DashboardTopBar(
 @Composable
 private fun DashboardStore.ErrorReason.resolve(): String = when (this) {
     DashboardStore.ErrorReason.NoActiveProfile -> stringResource(R.string.dashboard_error_no_profile)
+    is DashboardStore.ErrorReason.DuplicateProfile ->
+        stringResource(R.string.dashboard_error_duplicate_profile, name)
 }
 
 private val SmallIconSize = 20.dp

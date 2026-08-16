@@ -4,6 +4,7 @@ import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.latency.PingProfileUseCase
+import ru.shapovalov.bedlam.core.profile.domain.model.DuplicateProfileException
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.model.detectProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
@@ -92,7 +93,14 @@ internal class DashboardExecutor(
                     dispatch(Msg.ImportSucceeded)
                     if (state().activeProfileId == null) setActiveProfile(profile.id)
                 }
-                .onFailure { e -> dispatch(Msg.ImportFailed(e.message.orEmpty())) }
+                .onFailure { e ->
+                    when (e) {
+                        is DuplicateProfileException ->
+                            dispatch(Msg.ImportRejectedAsDuplicate(e.existingName))
+
+                        else -> dispatch(Msg.ImportFailed(e.message.orEmpty()))
+                    }
+                }
         }
     }
 

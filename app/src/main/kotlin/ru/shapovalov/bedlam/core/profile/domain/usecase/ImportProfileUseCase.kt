@@ -1,6 +1,8 @@
 package ru.shapovalov.bedlam.core.profile.domain.usecase
 
+import kotlinx.coroutines.flow.first
 import me.tatarka.inject.annotations.Inject
+import ru.shapovalov.bedlam.core.profile.domain.model.DuplicateProfileException
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
@@ -23,6 +25,9 @@ class ImportProfileUseCase(
             ProfileImportFormat.Json -> parseHysteriaJson(text)
         }
         hysteriaClient.validateConfig(parsed.config).getOrThrow()
+        repository.observeAll().first()
+            .firstOrNull { it.config == parsed.config }
+            ?.let { throw DuplicateProfileException(it.name) }
         val profileName = name?.takeIf { it.isNotBlank() }
             ?: parsed.name.takeIf { it.isNotBlank() }
             ?: parsed.config.server.address

@@ -49,6 +49,7 @@
     <string name="dashboard_connection_error">Error: %1$s</string>
 
     <string name="dashboard_error_no_profile">Select a profile first</string>
+    <string name="dashboard_error_duplicate_profile">Already saved as \"%1$s\"</string>
 
     <string name="import_title">Import profile</string>
     <string name="import_format_link">Link</string>

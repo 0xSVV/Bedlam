@@ -13,6 +13,7 @@ internal sealed interface Msg {
     data object ImportStarted : Msg
     data object ImportSucceeded : Msg
     data class ImportFailed(val message: String) : Msg
+    data class ImportRejectedAsDuplicate(val name: String) : Msg
     data class ErrorRaised(val reason: DashboardStore.ErrorReason) : Msg
     data object ErrorDismissed : Msg
     data class LatencyUpdated(val id: String, val result: LatencyResult) : Msg
@@ -31,6 +32,12 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
         Msg.ImportStarted -> copy(isImporting = true, importError = null)
         Msg.ImportSucceeded -> copy(isImporting = false, importSheet = null, importError = null)
         is Msg.ImportFailed -> copy(isImporting = false, importError = msg.message)
+        is Msg.ImportRejectedAsDuplicate -> copy(
+            isImporting = false,
+            importSheet = null,
+            importError = null,
+            error = DashboardStore.ErrorReason.DuplicateProfile(msg.name),
+        )
         is Msg.ErrorRaised -> copy(error = msg.reason)
         Msg.ErrorDismissed -> copy(error = null)
         is Msg.LatencyUpdated -> copy(latencies = latencies + (msg.id to msg.result))
