@@ -68,6 +68,9 @@ internal fun ImportProfileSheet(
     var text by rememberSaveable(seed) { mutableStateOf(seed.text) }
     var name by rememberSaveable(seed) { mutableStateOf("") }
     var attemptedText by rememberSaveable(seed) { mutableStateOf<String?>(null) }
+    // Keep following the text — including a system paste, which never reaches
+    // the Paste button — until the user picks a format themselves.
+    var formatPinned by rememberSaveable(seed) { mutableStateOf(false) }
     val shownError = error
         ?.takeIf { attemptedText == text }
         ?.ifEmpty { stringResource(R.string.import_error_failed) }
@@ -95,7 +98,12 @@ internal fun ImportProfileSheet(
                 formats.forEachIndexed { index, entry ->
                     ToggleButton(
                         checked = format == entry,
-                        onCheckedChange = { if (it) format = entry },
+                        onCheckedChange = {
+                            if (it) {
+                                format = entry
+                                formatPinned = true
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .semantics { role = Role.RadioButton },
@@ -114,7 +122,10 @@ internal fun ImportProfileSheet(
             }
             OutlinedTextField(
                 value = text,
-                onValueChange = { text = it },
+                onValueChange = {
+                    text = it
+                    if (!formatPinned) format = detectProfileImportFormat(it)
+                },
                 label = { Text(format.fieldLabel()) },
                 placeholder = { Text(format.placeholder()) },
                 singleLine = format == ProfileImportFormat.Link,
@@ -144,7 +155,7 @@ internal fun ImportProfileSheet(
                                     .orEmpty()
                                 if (pasted.isNotEmpty()) {
                                     text = pasted
-                                    format = detectProfileImportFormat(pasted)
+                                    if (!formatPinned) format = detectProfileImportFormat(pasted)
                                 }
                             }
                         },
