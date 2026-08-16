@@ -65,20 +65,63 @@ func TestDNSStreamExchange_txidMismatch(t *testing.T) {
 	}
 }
 
-func TestDNSStreamExchange_zeroLength(t *testing.T) {
-	c, s := net.Pipe()
-	defer c.Close()
-	go func() {
-		defer s.Close()
-		if _, err := readDNSFrame(s); err != nil {
-			return
-		}
-		_, _ = s.Write([]byte{0, 0})
-	}()
+func TestDNSStreamExchange_rejectsRuntFrames(t *testing.T) {
+	// A frame too short to hold a DNS header must be an error, not a
+	// silently accepted "answer" that suppresses failover.
+	for _, payload := range [][]byte{{}, {0xff}, make([]byte, dnsHeaderLen-1)} {
+		c, s := net.Pipe()
+		go func(payload []byte) {
+			defer s.Close()
+			if _, err := readDNSFrame(s); err != nil {
+				return
+			}
+			frame := make([]byte, 2+len(payload))
+			frame[0] = byte(len(payload) >> 8)
+			frame[1] = byte(len(payload))
+			copy(frame[2:], payload)
+			_, _ = s.Write(frame)
+		}(payload)
 
-	_, err := dnsStreamExchange(c, dnsQuery("example.com"))
-	if !errors.Is(err, errDNSMalformed) {
-		t.Fatalf("err = %v, want errDNSMalformed", err)
+		_, err := dnsStreamExchange(c, dnsQuery("example.com"))
+		c.Close()
+		if !errors.Is(err, errDNSMalformed) {
+			t.Fatalf("%d-byte response: err = %v, want errDNSMalformed", len(payload), err)
+		}
+	}
+}
+
+func TestDNSUpstream_failsOverPastARuntResponse(t *testing.T) {
+	runt := &fakeClient{tcp: func(addr string) (net.Conn, error) {
+		c, s := net.Pipe()
+		go func() {
+			defer s.Close()
+			if _, err := readDNSFrame(s); err != nil {
+				return
+			}
+			_, _ = s.Write([]byte{0x00, 0x01, 0xff})
+		}()
+		return c, nil
+	}}
+	healthy := &stubResolver{name: "healthy", reply: echoAnswer([4]byte{7, 7, 7, 7})}
+	up := &dnsUpstream{
+		resolvers: []dnsResolver{&tcpResolver{client: runt, server: "1.1.1.1:53"}, healthy},
+		ident:     "tcp|runt,healthy",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	if resp[len(resp)-1] != 7 {
+		t.Errorf("answer = %v, want the healthy server's", resp)
+	}
+	if healthy.calls.Load() != 1 {
+		t.Error("the healthy server was never tried")
+	}
+	if up.preferred.Load() != 1 {
+		t.Errorf("preferred = %d, want the healthy server", up.preferred.Load())
 	}
 }
 

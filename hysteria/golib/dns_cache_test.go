@@ -15,9 +15,23 @@ type stubResolver struct {
 	reply func(query []byte) ([]byte, error)
 }
 
-func (s *stubResolver) exchange(_ context.Context, query []byte) ([]byte, error) {
+func (s *stubResolver) exchange(ctx context.Context, query []byte) ([]byte, error) {
 	s.calls.Add(1)
-	return s.reply(query)
+	type result struct {
+		resp []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		resp, err := s.reply(query)
+		done <- result{resp, err}
+	}()
+	select {
+	case r := <-done:
+		return r.resp, r.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (s *stubResolver) id() string { return s.name }
@@ -46,9 +60,9 @@ func dnsQuery(name string) []byte {
 		buf = append(buf, byte(len(label)))
 		buf = append(buf, []byte(label)...)
 	}
-	buf = append(buf, 0x00)             // root label terminator
-	buf = append(buf, 0x00, 0x01)       // TYPE = A
-	buf = append(buf, 0x00, 0x01)       // CLASS = IN
+	buf = append(buf, 0x00)       // root label terminator
+	buf = append(buf, 0x00, 0x01) // TYPE = A
+	buf = append(buf, 0x00, 0x01) // CLASS = IN
 	return buf
 }
 
@@ -87,12 +101,12 @@ func dnsResponse(name string, ttl uint32, ip [4]byte) []byte {
 	buf = append(buf, 0x00, 0x00, 0x01, 0x00, 0x01)
 	// answer section: pointer to question name at offset 12
 	buf = append(buf, 0xc0, 0x0c)
-	buf = append(buf, 0x00, 0x01)       // TYPE = A
-	buf = append(buf, 0x00, 0x01)       // CLASS = IN
+	buf = append(buf, 0x00, 0x01) // TYPE = A
+	buf = append(buf, 0x00, 0x01) // CLASS = IN
 	ttlBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(ttlBytes, ttl)
 	buf = append(buf, ttlBytes...)
-	buf = append(buf, 0x00, 0x04)        // RDLENGTH
+	buf = append(buf, 0x00, 0x04) // RDLENGTH
 	buf = append(buf, ip[:]...)
 	return buf
 }
@@ -231,6 +245,87 @@ func TestSkipName_compressionPointerTerminates(t *testing.T) {
 func TestSkipName_truncatedReturnsNegative(t *testing.T) {
 	if got := skipName([]byte{0x05, 'a'}, 0); got >= 0 {
 		t.Errorf("expected negative, got %d", got)
+	}
+}
+
+func TestCacheableTTL_rejectsTruncated(t *testing.T) {
+	resp := dnsResponse("example.com", 60, [4]byte{1, 2, 3, 4})
+	resp[2] |= 0x02
+	if got := cacheableTTL(resp); got != 0 {
+		t.Errorf("ttl = %v, want 0 for a truncated answer", got)
+	}
+}
+
+func TestParseDNSQuery_isCaseInsensitive(t *testing.T) {
+	_, lower, ok := parseDNSQuery(dnsQuery("google.com"))
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	_, mixed, ok := parseDNSQuery(dnsQuery("GooGLE.com"))
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if lower != mixed {
+		t.Error("0x20-randomised names must share a cache entry")
+	}
+}
+
+func TestParseDNSQuery_separatesEdnsClients(t *testing.T) {
+	plain := dnsQuery("example.com")
+	_, plainKey, _ := parseDNSQuery(plain)
+	_, smallKey, _ := parseDNSQuery(withEDNS(plain, 512, false))
+	_, bigKey, _ := parseDNSQuery(withEDNS(plain, 4096, false))
+	_, dnssecKey, _ := parseDNSQuery(withEDNS(plain, 4096, true))
+
+	keys := map[string]string{
+		"no EDNS":   plainKey,
+		"512":       smallKey,
+		"4096":      bigKey,
+		"4096 + DO": dnssecKey,
+	}
+	seen := map[string]string{}
+	for name, key := range keys {
+		if other, dup := seen[key]; dup {
+			t.Errorf("%s and %s share a cache key", name, other)
+		}
+		seen[key] = name
+	}
+}
+
+func TestParseDNSQuery_separatesCheckingDisabled(t *testing.T) {
+	q := dnsQuery("example.com")
+	_, plain, _ := parseDNSQuery(q)
+	cd := append([]byte(nil), q...)
+	cd[3] |= 0x10
+	_, withCD, _ := parseDNSQuery(cd)
+	if plain == withCD {
+		t.Error("CD=1 must not share a cache entry with CD=0")
+	}
+}
+
+// withEDNS appends an OPT record advertising udpSize, optionally with DO set.
+func withEDNS(query []byte, udpSize uint16, do bool) []byte {
+	out := append([]byte(nil), query...)
+	binary.BigEndian.PutUint16(out[10:12], 1) // arCount
+	ttl := uint32(0)
+	if do {
+		ttl |= 0x8000
+	}
+	opt := []byte{0x00}
+	opt = binary.BigEndian.AppendUint16(opt, 41)
+	opt = binary.BigEndian.AppendUint16(opt, udpSize)
+	opt = binary.BigEndian.AppendUint32(opt, ttl)
+	opt = binary.BigEndian.AppendUint16(opt, 0)
+	return append(out, opt...)
+}
+
+func TestEdnsOptions(t *testing.T) {
+	if _, _, ok := ednsOptions(dnsQuery("example.com")); ok {
+		t.Error("a query without an OPT record must report none")
+	}
+	size, do, ok := ednsOptions(withEDNS(dnsQuery("example.com"), 4096, true))
+	if !ok || size != 4096 || !do {
+		t.Errorf("ednsOptions = %d, %v, %v", size, do, ok)
 	}
 }
 

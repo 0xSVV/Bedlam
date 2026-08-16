@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
+	"time"
 )
 
 func TestParseDNSUpstream_json(t *testing.T) {
@@ -170,6 +171,70 @@ func TestDNSUpstream_allFail(t *testing.T) {
 	_, err := up.exchange(context.Background(), dnsQuery("example.com"))
 	if err == nil || err.Error() != "b down" {
 		t.Fatalf("err = %v, want last error", err)
+	}
+}
+
+func TestDNSUpstream_reachesEveryServerWithinTheQueryBudget(t *testing.T) {
+	blackhole := func(name string) *stubResolver {
+		return &stubResolver{name: name, reply: func(q []byte) ([]byte, error) {
+			// Never answers; only the attempt budget ends this.
+			time.Sleep(30 * time.Second)
+			return nil, errors.New("unreachable")
+		}}
+	}
+	a, b, c := blackhole("a"), blackhole("b"), blackhole("c")
+	d := &stubResolver{name: "d", reply: echoAnswer([4]byte{4, 4, 4, 4})}
+	up := &dnsUpstream{resolvers: []dnsResolver{a, b, c, d}, ident: "tcp|a,b,c,d"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("the fourth server answers, so the query must succeed: %v", err)
+	}
+	if resp[len(resp)-1] != 4 {
+		t.Errorf("answer = %v", resp)
+	}
+	for _, r := range []*stubResolver{a, b, c, d} {
+		if r.calls.Load() != 1 {
+			t.Errorf("resolver %s called %d times, want 1", r.name, r.calls.Load())
+		}
+	}
+	if up.preferred.Load() != 3 {
+		t.Errorf("preferred = %d, want 3", up.preferred.Load())
+	}
+}
+
+func TestDNSUpstream_rotatesAfterTotalFailure(t *testing.T) {
+	a := &stubResolver{name: "a", reply: func([]byte) ([]byte, error) { return nil, errors.New("a down") }}
+	b := &stubResolver{name: "b", reply: func([]byte) ([]byte, error) { return nil, errors.New("b down") }}
+	up := &dnsUpstream{resolvers: []dnsResolver{a, b}, ident: "tcp|a,b"}
+
+	if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err == nil {
+		t.Fatal("expected failure")
+	}
+	if up.preferred.Load() != 1 {
+		t.Errorf("preferred = %d, want 1 so the next query starts elsewhere", up.preferred.Load())
+	}
+}
+
+func TestDNSUpstream_attemptBudget(t *testing.T) {
+	up := &dnsUpstream{}
+	if got := up.attemptBudget(context.Background(), 4); got != dnsAttemptTimeout {
+		t.Errorf("no deadline: %v, want %v", got, dnsAttemptTimeout)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if got := up.attemptBudget(ctx, 4); got > dnsAttemptTimeout || got < 2*time.Second {
+		t.Errorf("4 servers left of 10s: %v, want ~2.5s", got)
+	}
+	if got := up.attemptBudget(ctx, 1); got != dnsAttemptTimeout {
+		t.Errorf("1 server left of 10s: %v, want the cap %v", got, dnsAttemptTimeout)
+	}
+	tight, cancelTight := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancelTight()
+	if got := up.attemptBudget(tight, 4); got != dnsMinAttemptTimeout {
+		t.Errorf("tight budget: %v, want the floor %v", got, dnsMinAttemptTimeout)
 	}
 }
 

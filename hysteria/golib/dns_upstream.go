@@ -16,7 +16,10 @@ import (
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
-const dnsAttemptTimeout = 5 * time.Second
+const (
+	dnsAttemptTimeout    = 5 * time.Second
+	dnsMinAttemptTimeout = 1500 * time.Millisecond
+)
 
 const (
 	dnsTransportUDP   = "udp"
@@ -114,7 +117,7 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 		}
 		idx := (start + i) % n
 		r := u.resolvers[idx]
-		actx, cancel := context.WithTimeout(ctx, dnsAttemptTimeout)
+		actx, cancel := context.WithTimeout(ctx, u.attemptBudget(ctx, n-i))
 		resp, err := r.exchange(actx, query)
 		cancel()
 		if err == nil {
@@ -128,10 +131,30 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 			log(LogLevelWarn, srcDNS, "DNS %s failed, trying next: %s", r.id(), err)
 		}
 	}
+	// Every server failed: start somewhere else next time so a dead first
+	// entry cannot pin every future query to the same losing order.
+	u.preferred.Store(int32((start + 1) % n))
 	if lastErr == nil {
 		lastErr = ctx.Err()
 	}
 	return nil, lastErr
+}
+
+// attemptBudget shares whatever time is left across the servers still to try,
+// so a fixed per-attempt timeout cannot make the tail of the list unreachable.
+func (u *dnsUpstream) attemptBudget(ctx context.Context, remainingServers int) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok || remainingServers <= 0 {
+		return dnsAttemptTimeout
+	}
+	per := time.Until(deadline) / time.Duration(remainingServers)
+	if per > dnsAttemptTimeout {
+		return dnsAttemptTimeout
+	}
+	if per < dnsMinAttemptTimeout {
+		return dnsMinAttemptTimeout
+	}
+	return per
 }
 
 func (u *dnsUpstream) id() string { return u.ident }

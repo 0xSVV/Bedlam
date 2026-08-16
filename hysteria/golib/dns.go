@@ -17,6 +17,8 @@ const (
 	dnsDialTimeout  = 6 * time.Second
 	dnsIOTimeout    = 5 * time.Second
 	dnsQueryTimeout = 10 * time.Second
+
+	dnsHeaderLen = 12
 )
 
 var errDNSTimeout = errors.New("dns query timed out")
@@ -59,8 +61,8 @@ func readDNSFrame(r io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("read response length: %w", err)
 	}
 	n := binary.BigEndian.Uint16(respLen[:])
-	if n == 0 {
-		return nil, fmt.Errorf("%w: invalid response length: %d", errDNSMalformed, n)
+	if n < dnsHeaderLen {
+		return nil, fmt.Errorf("%w: response shorter than a DNS header: %d", errDNSMalformed, n)
 	}
 	resp := make([]byte, n)
 	if _, err := io.ReadFull(r, resp); err != nil {
@@ -69,9 +71,17 @@ func readDNSFrame(r io.Reader) ([]byte, error) {
 	return resp, nil
 }
 
+// checkDNSTxID fails closed: a response too short to carry a transaction ID
+// is malformed, not implicitly trusted. Treating it as success would suppress
+// both SERVFAIL synthesis and failover to the next upstream.
 func checkDNSTxID(query, resp []byte) error {
-	if len(query) >= 2 && len(resp) >= 2 &&
-		binary.BigEndian.Uint16(resp[:2]) != binary.BigEndian.Uint16(query[:2]) {
+	if len(resp) < dnsHeaderLen {
+		return fmt.Errorf("%w: response shorter than a DNS header", errDNSMalformed)
+	}
+	if len(query) < 2 {
+		return fmt.Errorf("%w: query shorter than a DNS header", errDNSMalformed)
+	}
+	if binary.BigEndian.Uint16(resp[:2]) != binary.BigEndian.Uint16(query[:2]) {
 		return fmt.Errorf("%w: response transaction ID mismatch", errDNSMalformed)
 	}
 	return nil

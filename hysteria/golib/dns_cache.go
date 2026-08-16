@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"encoding/binary"
+	"strconv"
 	"sync"
 	"time"
 
@@ -56,7 +57,12 @@ func (c *dnsCache) resolve(ctx context.Context, r dnsResolver, query []byte, onT
 			return resp, nil
 		}
 
-		resp, err := r.exchange(ctx, query)
+		// Coalesced callers share this result, so the shared work gets its own
+		// full budget instead of inheriting whatever the leader had left.
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dnsQueryTimeout)
+		defer cancel()
+
+		resp, err := r.exchange(sctx, query)
 		countTunnelDNS(onTunnel, query, resp, err)
 		if err != nil {
 			return nil, err
@@ -152,37 +158,103 @@ func (c *dnsCache) clear() {
 }
 
 func parseDNSQuery(query []byte) (uint16, string, bool) {
-	if len(query) < 12 {
+	question, ok := dnsQuestion(query)
+	if !ok {
 		return 0, "", false
 	}
 	txID := binary.BigEndian.Uint16(query[0:2])
-	qdCount := binary.BigEndian.Uint16(query[4:6])
-	if qdCount != 1 {
-		return 0, "", false
+	return txID, question + "\x00" + dnsQuerySignature(query), true
+}
+
+// dnsQuestion returns the single question as a comparison key, with the name
+// lowercased so 0x20-randomising clients share cache entries. Label length
+// bytes are at most 63 and compression pointers start at 0xc0, so neither can
+// be mistaken for an upper-case letter.
+func dnsQuestion(msg []byte) (string, bool) {
+	if len(msg) < 12 || binary.BigEndian.Uint16(msg[4:6]) != 1 {
+		return "", false
 	}
+	end := skipName(msg, 12)
+	if end < 0 || end+4 > len(msg) {
+		return "", false
+	}
+	q := make([]byte, end+4-12)
+	copy(q, msg[12:end+4])
+	for i := 0; i < len(q)-4; i++ {
+		if c := q[i]; c >= 'A' && c <= 'Z' {
+			q[i] = c + ('a' - 'A')
+		}
+	}
+	return string(q), true
+}
+
+// dnsQuerySignature separates cache entries whose answers are not
+// interchangeable: an EDNS0 client accepting 4096 bytes must not be answered
+// from an entry created for a 512-byte client, and DO/CD change the content.
+func dnsQuerySignature(query []byte) string {
+	var flags byte
+	if query[2]&0x01 != 0 {
+		flags |= 1
+	}
+	if query[3]&0x10 != 0 {
+		flags |= 2
+	}
+	udpSize, do, ok := ednsOptions(query)
+	if !ok {
+		return "f" + strconv.Itoa(int(flags))
+	}
+	d := 0
+	if do {
+		d = 1
+	}
+	return "f" + strconv.Itoa(int(flags)) +
+		".e" + strconv.Itoa(int(udpSize)) +
+		"." + strconv.Itoa(d)
+}
+
+func ednsOptions(msg []byte) (udpSize uint16, do bool, ok bool) {
+	if len(msg) < 12 {
+		return 0, false, false
+	}
+	qdCount := binary.BigEndian.Uint16(msg[4:6])
+	anCount := binary.BigEndian.Uint16(msg[6:8])
+	nsCount := binary.BigEndian.Uint16(msg[8:10])
+	arCount := binary.BigEndian.Uint16(msg[10:12])
 
 	pos := 12
-	start := pos
-	for {
-		if pos >= len(query) {
-			return 0, "", false
+	for i := uint16(0); i < qdCount; i++ {
+		np := skipName(msg, pos)
+		if np < 0 || np+4 > len(msg) {
+			return 0, false, false
 		}
-		l := int(query[pos])
-		if l == 0 {
-			pos++
-			break
-		}
-		if l&0xc0 == 0xc0 {
-			pos += 2
-			break
-		}
-		pos += 1 + l
+		pos = np + 4
 	}
-
-	if pos+4 > len(query) {
-		return 0, "", false
+	for i := 0; i < int(anCount)+int(nsCount); i++ {
+		np := skipName(msg, pos)
+		if np < 0 || np+10 > len(msg) {
+			return 0, false, false
+		}
+		pos = np + 10 + int(binary.BigEndian.Uint16(msg[np+8:np+10]))
+		if pos > len(msg) {
+			return 0, false, false
+		}
 	}
-	return txID, string(query[start : pos+4]), true
+	for i := uint16(0); i < arCount; i++ {
+		np := skipName(msg, pos)
+		if np < 0 || np+10 > len(msg) {
+			return 0, false, false
+		}
+		if binary.BigEndian.Uint16(msg[np:np+2]) == 41 {
+			return binary.BigEndian.Uint16(msg[np+2 : np+4]),
+				binary.BigEndian.Uint32(msg[np+4:np+8])&0x8000 != 0,
+				true
+		}
+		pos = np + 10 + int(binary.BigEndian.Uint16(msg[np+8:np+10]))
+		if pos > len(msg) {
+			return 0, false, false
+		}
+	}
+	return 0, false, false
 }
 
 func cacheableTTL(response []byte) time.Duration {
@@ -190,6 +262,11 @@ func cacheableTTL(response []byte) time.Duration {
 		return 0
 	}
 	if response[3]&0x0f != 0 {
+		return 0
+	}
+	// A truncated answer is incomplete by definition; caching it would also
+	// pin the TC bit and suppress the client's own TCP retry for the TTL.
+	if response[2]&0x02 != 0 {
 		return 0
 	}
 	qdCount := binary.BigEndian.Uint16(response[4:6])
