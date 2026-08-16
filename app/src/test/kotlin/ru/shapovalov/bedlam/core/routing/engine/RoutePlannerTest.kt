@@ -300,18 +300,71 @@ class RoutePlannerTest {
         }
 
         @Test
-        fun `custom upstreams are never claimed as routes`() {
+        fun `public upstreams stay inside the tunnel when a source excludes them`() {
             val plan = planner().plan(
                 RoutingConfig(
                     dnsMode = DnsMode.Custom,
-                    customDns = listOf("9.9.9.9", "192.168.1.1"),
+                    customDns = listOf("9.9.9.9"),
                     sources = listOf(cidrSource("9.9.9.0/24")),
                 ),
                 AppFilter(),
             )
-            assertFalse(plan.claimedV4.any { it == Cidr.parse("9.9.9.9/32") })
-            assertFalse(plan.claimedV4.any { it == Cidr.parse("192.168.1.1/32") })
             assertTrue(plan.excludedV4.any { it == Cidr.parse("9.9.9.0/24") })
+            assertTrue(plan.claimedV4.any { it == Cidr.parse("9.9.9.9/32") })
+        }
+
+        @Test
+        fun `preset upstreams are claimed as host routes`() {
+            val plan = planner().plan(RoutingConfig(dnsMode = DnsMode.Cloudflare), AppFilter())
+            assertTrue(plan.claimedV4.any { it == Cidr.parse("1.1.1.1/32") })
+            assertTrue(plan.claimedV6.any { it == Cidr.parse("2606:4700:4700::1111/128") })
+        }
+
+        @Test
+        fun `a DoH upstream is claimed by the address in its URL`() {
+            val plan = planner().plan(
+                RoutingConfig(dnsMode = DnsMode.Cloudflare, dnsTransport = DnsTransport.Https),
+                AppFilter(),
+            )
+            assertTrue(plan.claimedV4.any { it == Cidr.parse("1.1.1.1/32") })
+        }
+
+        @Test
+        fun `a named upstream claims no route`() {
+            val plan = planner().plan(
+                RoutingConfig(
+                    dnsMode = DnsMode.Custom,
+                    dnsTransport = DnsTransport.Tls,
+                    customDns = listOf("dns.quad9.net"),
+                ),
+                AppFilter(),
+            )
+            assertEquals(listOf(Cidr.parse("$resolverV4/32")), plan.claimedV4.drop(1))
+        }
+
+        @Test
+        fun `a LAN resolver is advertised directly and never tunneled`() {
+            val plan = planner().plan(
+                RoutingConfig(
+                    dnsMode = DnsMode.Custom,
+                    customDns = listOf("192.168.1.10", "9.9.9.9"),
+                ),
+                AppFilter(),
+            )
+            assertTrue(plan.dnsServers.contains("192.168.1.10"))
+            assertFalse(plan.dnsUpstream.servers.any { it.startsWith("192.168.1.10") })
+            assertEquals(listOf("9.9.9.9:53"), plan.dnsUpstream.servers)
+            assertFalse(plan.claimedV4.any { it == Cidr.parse("192.168.1.10/32") })
+        }
+
+        @Test
+        fun `a LAN-only custom list still advertises the LAN resolver`() {
+            val plan = planner().plan(
+                RoutingConfig(dnsMode = DnsMode.Custom, customDns = listOf("192.168.1.10")),
+                AppFilter(),
+            )
+            assertTrue(plan.dnsServers.contains("192.168.1.10"))
+            assertEquals(DnsPresets.cloudflare(DnsTransport.Tcp), plan.dnsUpstream.servers)
         }
 
         @Test

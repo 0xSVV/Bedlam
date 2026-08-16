@@ -33,6 +33,27 @@ object DnsServer {
     fun normalizeOrNull(raw: String, transport: DnsTransport): String? =
         (parse(raw, transport) as? DnsServerParse.Valid)?.normalized
 
+    /**
+     * The IP literal a normalized endpoint points at, or null when it names a
+     * host. Used to keep resolver addresses inside the tunnel.
+     */
+    fun literalHostOf(normalized: String): String? {
+        val authority = when {
+            normalized.startsWith("https://") ->
+                normalized.removePrefix("https://").substringBefore('/')
+
+            else -> normalized
+        }
+        val host = when {
+            authority.startsWith("[") -> authority.substring(1, authority.indexOf(']').takeIf { it > 0 } ?: return null)
+            else -> authority.substringBeforeLast(':', authority)
+        }
+        return when (classifyHost(host, bracketed = authority.startsWith("["))) {
+            HostKind.V4, HostKind.V6 -> host
+            else -> null
+        }
+    }
+
     private fun parseHostPort(value: String, defaultPort: Int, allowHost: Boolean): DnsServerParse {
         val (host, portText) = splitHostPort(value)
             ?: return DnsServerParse.Invalid(DnsServerError.InvalidAddress)

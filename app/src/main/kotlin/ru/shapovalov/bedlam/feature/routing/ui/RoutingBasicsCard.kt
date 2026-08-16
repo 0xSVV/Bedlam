@@ -266,10 +266,15 @@ private fun CustomDnsEditor(
             placeholder = { Text(transport.placeholder()) },
             supportingText = {
                 Text(
-                    if (invalid.isEmpty()) {
-                        transport.hint()
-                    } else {
-                        stringResource(R.string.routing_dns_custom_invalid, invalid.joinToString(", "))
+                    when {
+                        invalid.isEmpty() -> transport.hint()
+                        invalid.size == entries.size ->
+                            stringResource(R.string.routing_dns_custom_none_usable)
+
+                        else -> stringResource(
+                            R.string.routing_dns_custom_invalid,
+                            invalid.joinToString(", "),
+                        )
                     }
                 )
             },
