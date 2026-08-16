@@ -156,10 +156,10 @@ func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metad
 		return fmt.Errorf("IPv6 disabled: %s", m.Destination)
 	}
 
+	if m.Destination.Port == 53 && h.dns != nil {
+		return h.serveDNSStream(ctx, conn)
+	}
 	if h.isResolverAddr(m.Destination) {
-		if m.Destination.Port == 53 {
-			return h.serveDNSStream(ctx, conn)
-		}
 		return fmt.Errorf("local resolver refuses %s", m.Destination)
 	}
 
@@ -212,11 +212,11 @@ func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn,
 	dest := m.Destination.String()
 	log(LogLevelDebug, srcTun, "UDP session: %s → %s", m.Source, dest)
 
-	if m.Destination.Port == 53 {
-		if h.isResolverAddr(m.Destination) {
-			return h.serveDNSPackets(ctx, conn, dest, func(string) dnsResolver { return h.dns })
-		}
-		return h.handleDNSOverTCP(ctx, conn, dest)
+	// Every DNS query answers from the configured upstream, not just the ones
+	// addressed to the on-TUN resolver: an app with a hard-coded resolver must
+	// not silently get plain DNS when the user picked an encrypted transport.
+	if m.Destination.Port == 53 && h.dns != nil {
+		return h.serveDNSPackets(ctx, conn, dest)
 	}
 
 	return h.handleUDPRelay(ctx, conn)
@@ -227,18 +227,7 @@ const (
 	dnsStreamIdleTimeout = 10 * time.Second
 )
 
-func (h *tunHandler) handleDNSOverTCP(ctx context.Context, conn N.PacketConn, defaultDest string) error {
-	return h.serveDNSPackets(ctx, conn, defaultDest, func(dnsAddr string) dnsResolver {
-		return &tcpResolver{client: h.client, server: dnsAddr}
-	})
-}
-
-func (h *tunHandler) serveDNSPackets(
-	ctx context.Context,
-	conn N.PacketConn,
-	defaultDest string,
-	pick func(dnsAddr string) dnsResolver,
-) error {
+func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, defaultDest string) error {
 	sem := make(chan struct{}, maxConcurrentDNS)
 	for {
 		buffer := buf.NewPacket()
@@ -256,9 +245,9 @@ func (h *tunHandler) serveDNSPackets(
 		if !isDNSPort(dnsAddr) {
 			dnsAddr = defaultDest
 		}
-		resolver := pick(dnsAddr)
+		resolver := h.dns
 
-		log(LogLevelDebug, srcDNS, "DNS query via %s (%d bytes)", resolver.id(), len(query))
+		log(LogLevelDebug, srcDNS, "DNS query for %s via %s (%d bytes)", dnsAddr, resolver.id(), len(query))
 
 		sem <- struct{}{}
 		go func() {

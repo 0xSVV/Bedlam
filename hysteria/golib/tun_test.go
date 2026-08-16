@@ -111,7 +111,7 @@ func TestServeDNSPackets_answersOnTunResolver(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- h.serveDNSPackets(context.Background(), pc, dest.String(), func(string) dnsResolver { return h.dns })
+		done <- h.serveDNSPackets(context.Background(), pc, dest.String())
 	}()
 
 	q := dnsQuery("example.com")
@@ -149,7 +149,7 @@ func TestServeDNSPackets_servfailOnError(t *testing.T) {
 	h := testHandler(t, stub)
 	pc := newFakePacketConn()
 	dest := M.SocksaddrFrom(netip.MustParseAddr("172.19.0.2"), 53)
-	go h.serveDNSPackets(context.Background(), pc, dest.String(), func(string) dnsResolver { return h.dns })
+	go h.serveDNSPackets(context.Background(), pc, dest.String())
 	defer pc.Close()
 
 	pc.in <- fakePacket{dnsQuery("example.com"), dest}
@@ -163,35 +163,61 @@ func TestServeDNSPackets_servfailOnError(t *testing.T) {
 	}
 }
 
-func TestHandleDNSOverTCP_usesPacketDestination(t *testing.T) {
-	answer := dnsResponse("example.com", 60, [4]byte{8, 8, 8, 8})
-	var dialed string
-	h := testHandler(t, &stubResolver{name: "stub", reply: echoAnswer([4]byte{1, 1, 1, 1})})
+func TestNewPacketConnection_hardcodedResolverUsesTheUpstream(t *testing.T) {
+	stub := &stubResolver{name: "stub", reply: echoAnswer([4]byte{7, 7, 7, 7})}
+	h := testHandler(t, stub)
+	// A direct dial would mean plaintext DNS to the hard-coded server.
 	h.client = &fakeClient{tcp: func(addr string) (net.Conn, error) {
-		dialed = addr
-		return pipeDNSServer(t, func(q []byte) []byte {
-			resp := append([]byte(nil), answer...)
-			copy(resp[:2], q[:2])
-			return resp
-		}), nil
+		t.Errorf("dialed %q directly instead of using the configured upstream", addr)
+		return nil, io.ErrUnexpectedEOF
 	}}
 	pc := newFakePacketConn()
 	dest := M.SocksaddrFrom(netip.MustParseAddr("8.8.8.8"), 53)
-	go h.handleDNSOverTCP(context.Background(), pc, dest.String())
+	go h.NewPacketConnection(context.Background(), pc, M.Metadata{Destination: dest})
 	defer pc.Close()
 
 	pc.in <- fakePacket{dnsQuery("example.com"), dest}
 	select {
 	case p := <-pc.out:
-		if p.data[len(p.data)-1] != 8 {
-			t.Errorf("answer = %v", p.data)
+		if p.data[len(p.data)-1] != 7 {
+			t.Errorf("answer = %v, want the upstream's", p.data)
+		}
+		if p.addr.String() != dest.String() {
+			t.Errorf("reply source = %s, want the address the app queried", p.addr)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no answer")
 	}
-	if dialed != "8.8.8.8:53" {
-		t.Errorf("legacy path dialed %q, want the packet destination", dialed)
+	if stub.calls.Load() != 1 {
+		t.Errorf("upstream calls = %d, want 1", stub.calls.Load())
 	}
+}
+
+func TestNewConnection_hardcodedResolverUsesTheUpstream(t *testing.T) {
+	stub := &stubResolver{name: "stub", reply: echoAnswer([4]byte{7, 7, 7, 7})}
+	h := testHandler(t, stub)
+	h.client = &fakeClient{tcp: func(addr string) (net.Conn, error) {
+		t.Errorf("relayed TCP:53 to %q instead of using the configured upstream", addr)
+		return nil, io.ErrUnexpectedEOF
+	}}
+
+	c, s := net.Pipe()
+	go func() {
+		_ = h.NewConnection(context.Background(), s, M.Metadata{
+			Destination: M.SocksaddrFrom(netip.MustParseAddr("8.8.8.8"), 53),
+		})
+	}()
+	if err := writeDNSFrame(c, dnsQuery("example.com")); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := readDNSFrame(c)
+	if err != nil {
+		t.Fatalf("TCP:53 to a hard-coded server should be served: %v", err)
+	}
+	if resp[len(resp)-1] != 7 {
+		t.Errorf("answer = %v", resp)
+	}
+	c.Close()
 }
 
 func TestServeDNSStream_framedRoundTrip(t *testing.T) {
