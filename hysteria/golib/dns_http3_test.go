@@ -17,9 +17,6 @@ import (
 	"github.com/apernet/quic-go/http3"
 )
 
-// bridgeUDPConn is a HyUDPConn backed by a real UDP socket connected to a
-// loopback server; Send ignores the address like the Hysteria server would
-// resolve it, and Receive reads datagrams straight from the socket.
 type bridgeUDPConn struct {
 	c         *net.UDPConn
 	closeOnce sync.Once
@@ -89,8 +86,6 @@ func newDoH3Server(t *testing.T, ip [4]byte) *doh3Server {
 
 func (d *doh3Server) url() string { return "https://" + d.addr.String() + "/dns-query" }
 
-// client returns a fake Hysteria client whose UDP sessions are bridged to the
-// server; every opened bridge is recorded so tests can kill it.
 func (d *doh3Server) client(t *testing.T) (*fakeClient, func() []*bridgeUDPConn) {
 	t.Helper()
 	var mu sync.Mutex

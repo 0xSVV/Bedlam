@@ -15,8 +15,6 @@ import (
 	"time"
 )
 
-// testCert returns a self-signed certificate valid for dns.test and 127.0.0.1
-// together with a pool that trusts it.
 func testCert(t *testing.T) (tls.Certificate, *x509.CertPool) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -48,9 +46,6 @@ func testCert(t *testing.T) (tls.Certificate, *x509.CertPool) {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, pool
 }
 
-// loopbackDoTServer serves framed DNS over TLS on a loopback listener; each
-// accepted connection is answered by respond, and a nil answer closes it.
-// It returns a dial function that opens a fresh connection to the server.
 func loopbackDoTServer(t *testing.T, cert tls.Certificate, respond func(conn int, query []byte) []byte) func() (net.Conn, error) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

@@ -19,8 +19,6 @@ type dohServer struct {
 	proto    atomic.Int32
 }
 
-// newDoHServer serves RFC 8484 POST requests over HTTP/2 on loopback and
-// answers every query with an A record for ip.
 func newDoHServer(t *testing.T, ip [4]byte, status int) *dohServer {
 	t.Helper()
 	d := &dohServer{}

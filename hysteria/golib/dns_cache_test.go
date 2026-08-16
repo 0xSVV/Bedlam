@@ -111,8 +111,6 @@ func dnsResponse(name string, ttl uint32, ip [4]byte) []byte {
 	return buf
 }
 
-// dnsResponseFor echoes the query's own header and question, so the answer
-// always matches the question that was asked.
 func dnsResponseFor(query []byte, ttl uint32, ip [4]byte) []byte {
 	end := skipName(query, 12)
 	if end < 0 || end+4 > len(query) {
@@ -303,7 +301,6 @@ func TestParseDNSQuery_separatesCheckingDisabled(t *testing.T) {
 	}
 }
 
-// withEDNS appends an OPT record advertising udpSize, optionally with DO set.
 func withEDNS(query []byte, udpSize uint16, do bool) []byte {
 	out := append([]byte(nil), query...)
 	binary.BigEndian.PutUint16(out[10:12], 1) // arCount

@@ -39,7 +39,6 @@ type h3Resolver struct {
 	udpDown bool
 }
 
-// maxH3Conns bounds the connections kept alive for draining after a redial.
 const maxH3Conns = 4
 
 func newH3Resolver(c client.Client, rawURL string, base *tls.Config) (*h3Resolver, error) {
@@ -105,8 +104,6 @@ func (r *h3Resolver) dialQUIC(ctx context.Context, _ string, tlsCfg *tls.Config,
 	return qc, nil
 }
 
-// pruneLocked drops connections whose session already died, and the oldest
-// survivors once the list is over budget. Returns the ones to close.
 func (r *h3Resolver) pruneLocked() []*h3Conn {
 	var keep, stale []*h3Conn
 	for _, c := range r.conns {

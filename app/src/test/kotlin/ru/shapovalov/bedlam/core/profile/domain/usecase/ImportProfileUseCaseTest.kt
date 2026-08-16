@@ -25,7 +25,6 @@ class ImportProfileUseCaseTest {
 
     private val link = "hysteria2://pw@example.com:443/?sni=example.com#Imported"
 
-    // Mirrors the profile editor's Copy config output.
     private val clipboardJson = Json { prettyPrint = true; encodeDefaults = true }
 
     private class FakeRepo(initial: List<Profile> = emptyList()) : ProfileRepository {

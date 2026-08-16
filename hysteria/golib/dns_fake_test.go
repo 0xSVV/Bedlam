@@ -32,8 +32,6 @@ func (f *fakeClient) UDP() (client.HyUDPConn, error) {
 
 func (f *fakeClient) Close() error { return nil }
 
-// pipeDNSServer returns the client end of a net.Pipe whose peer answers each
-// framed DNS query with respond(query); a nil answer closes the peer.
 func pipeDNSServer(t *testing.T, respond func(query []byte) []byte) net.Conn {
 	t.Helper()
 	c, s := net.Pipe()
@@ -61,8 +59,6 @@ type udpMsg struct {
 	addr string
 }
 
-// fakeUDPConn is an in-memory HyUDPConn: every Send is answered by respond,
-// whose datagrams become subsequent Receive results.
 type fakeUDPConn struct {
 	respond   func(data []byte, addr string) [][]byte
 	recv      chan udpMsg
