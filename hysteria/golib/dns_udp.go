@@ -187,7 +187,13 @@ func (r *udpResolver) recvLoop(s *udpSession) {
 			r.dropSession(s)
 			return
 		}
-		if !r.isFromUpstream(from) || len(data) < 12 || data[2]&0x80 == 0 {
+		if !r.isFromUpstream(from) {
+			if dnsSourceLimiter.allow(r.server) {
+				log(LogLevelWarn, srcDNS, "Ignoring DNS reply for %s from %s", r.server, from)
+			}
+			continue
+		}
+		if len(data) < dnsHeaderLen || data[2]&0x80 == 0 {
 			continue
 		}
 		question, ok := dnsQuestion(data)
@@ -302,4 +308,7 @@ func randomTxID() (uint16, error) {
 	return uint16(n.Int64()), nil
 }
 
-var udpDisabledLimiter = newRateLimiter(30 * time.Second)
+var (
+	udpDisabledLimiter = newRateLimiter(30 * time.Second)
+	dnsSourceLimiter   = newRateLimiter(30 * time.Second)
+)

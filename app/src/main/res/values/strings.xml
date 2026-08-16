@@ -218,7 +218,7 @@
     <string name="routing_dns_custom_placeholder_https">https://dns.quad9.net/dns-query, 9.9.9.9</string>
     <string name="routing_dns_custom_hint_ip">IPv4 or IPv6, optional :port (default 53); tried in order</string>
     <string name="routing_dns_custom_hint_tls">Host or IP, optional :port (default 853); tried in order</string>
-    <string name="routing_dns_custom_hint_https">https:// URL or host (expands to /dns-query); tried in order</string>
+    <string name="routing_dns_custom_hint_https">https:// URL, or a host that expands to /dns-query; use a full URL for a port. Tried in order</string>
     <string name="routing_dns_custom_invalid">Ignored: %1$s</string>
     <string name="routing_dns_custom_none_usable">No server usable with this transport — falling back to Cloudflare</string>
     <string name="routing_dns_transport_title">Transport</string>
