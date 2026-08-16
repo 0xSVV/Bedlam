@@ -51,6 +51,12 @@ class UpdateRepositoryImpl(
     }
 
     override suspend fun checkForUpdate(): AppUpdate? = withContext(Dispatchers.IO) {
+        val prefs = dataStore.data.first()
+        val now = System.currentTimeMillis()
+        if (isCheckThrottled(prefs[KEY_LAST_CHECK_AT], now, CHECK_INTERVAL_MS)) {
+            return@withContext null
+        }
+        dataStore.edit { it[KEY_LAST_CHECK_AT] = now }
         val release = json.decodeFromString(
             GitHubReleaseDto.serializer(),
             httpClient.get(LATEST_RELEASE_URL),
@@ -59,11 +65,22 @@ class UpdateRepositoryImpl(
         if (!isNewer(candidate = latestVersion, installed = installedVersion())) {
             return@withContext null
         }
-        if (isSuppressed(latestVersion)) return@withContext null
-        val asset = pickAsset(release.assets, latestVersion) ?: return@withContext null
+        if (
+            isUpdateSuppressed(
+                skippedVersion = prefs[KEY_SKIPPED_VERSION],
+                skippedAtMillis = prefs[KEY_SKIPPED_AT],
+                candidate = latestVersion,
+                nowMillis = now,
+                ttlMillis = SKIP_TTL_MS,
+            )
+        ) {
+            return@withContext null
+        }
+        val asset = pickAsset(release.assets, latestVersion, Build.SUPPORTED_ABIS.toList())
+            ?: return@withContext null
         AppUpdate(
             versionName = latestVersion,
-            releaseNotes = release.body.orEmpty().trim(),
+            releaseNotes = release.body.orEmpty().trim().take(MAX_NOTES_CHARS),
             assetName = asset.name,
             downloadUrl = asset.downloadUrl,
             sizeBytes = asset.size,
@@ -71,6 +88,9 @@ class UpdateRepositoryImpl(
     }
 
     override fun downloadApk(update: AppUpdate): Flow<DownloadEvent> = flow {
+        if (!isTrustedDownloadUrl(update.downloadUrl)) {
+            throw IOException("Refusing an update download from an untrusted address")
+        }
         val dir = File(context.cacheDir, DOWNLOAD_DIR)
         val target = File(dir, update.assetName)
         if (update.sizeBytes > 0 && target.length() == update.sizeBytes) {
@@ -92,6 +112,7 @@ class UpdateRepositoryImpl(
             val code = conn.responseCode
             if (code !in 200..299) throw IOException("HTTP $code from ${update.downloadUrl}")
             val total = conn.contentLengthLong.takeIf { it > 0 } ?: update.sizeBytes
+            val limit = update.sizeBytes.takeIf { it > 0 } ?: MAX_APK_BYTES
             var downloaded = 0L
             conn.inputStream.use { input ->
                 target.outputStream().use { output ->
@@ -99,8 +120,11 @@ class UpdateRepositoryImpl(
                     while (true) {
                         val n = input.read(buffer)
                         if (n < 0) break
-                        output.write(buffer, 0, n)
                         downloaded += n
+                        if (downloaded > limit) {
+                            throw IOException("Update download is larger than the release says")
+                        }
+                        output.write(buffer, 0, n)
                         emit(DownloadEvent.Progress(downloaded, total))
                     }
                 }
@@ -118,54 +142,69 @@ class UpdateRepositoryImpl(
         }
     }
 
-    private suspend fun isSuppressed(candidate: String): Boolean {
-        val prefs = dataStore.data.first()
-        return isUpdateSuppressed(
-            skippedVersion = prefs[KEY_SKIPPED_VERSION],
-            skippedAtMillis = prefs[KEY_SKIPPED_AT],
-            candidate = candidate,
-            nowMillis = System.currentTimeMillis(),
-            ttlMillis = SKIP_TTL_MS,
-        )
-    }
-
-    private fun pickAsset(
-        assets: List<GitHubReleaseDto.AssetDto>,
-        version: String,
-    ): GitHubReleaseDto.AssetDto? {
-        Build.SUPPORTED_ABIS.forEach { abi ->
-            assets.find { it.name == "bedlam-v$version-$abi.apk" }?.let { return it }
-        }
-        return assets.find { it.name == "bedlam-v$version-universal.apk" }
-    }
-
-    private fun isNewer(candidate: String, installed: String): Boolean {
-        val a = parseVersion(candidate) ?: return false
-        val b = parseVersion(installed) ?: return false
-        val size = maxOf(a.size, b.size)
-        for (i in 0 until size) {
-            val x = a.getOrElse(i) { 0 }
-            val y = b.getOrElse(i) { 0 }
-            if (x != y) return x > y
-        }
-        return false
-    }
-
-    private fun parseVersion(version: String): List<Int>? =
-        NUMERIC_VERSION.find(version)?.value?.split('.')?.map { it.toInt() }
-
     private companion object {
         const val LATEST_RELEASE_URL =
             "https://api.github.com/repos/0xSVV/Bedlam/releases/latest"
         const val DOWNLOAD_DIR = "updates"
         const val DOWNLOAD_TIMEOUT_MS = 30_000
         const val DOWNLOAD_BUFFER_BYTES = 64 * 1024
-        val NUMERIC_VERSION = Regex("""\d+(?:\.\d+)*""")
         val KEY_SKIPPED_VERSION = stringPreferencesKey("skipped_version")
         val KEY_SKIPPED_AT = longPreferencesKey("skipped_at")
+        val KEY_LAST_CHECK_AT = longPreferencesKey("last_check_at")
         const val SKIP_TTL_MS = 6 * 60 * 60 * 1000L
+        const val CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
+        const val MAX_APK_BYTES = 200L * 1024 * 1024
+        const val MAX_NOTES_CHARS = 4000
     }
 }
+
+internal fun pickAsset(
+    assets: List<GitHubReleaseDto.AssetDto>,
+    version: String,
+    abis: List<String>,
+): GitHubReleaseDto.AssetDto? {
+    abis.forEach { abi ->
+        assets.find { it.name == "bedlam-v$version-$abi.apk" }?.let { return it }
+    }
+    return assets.find { it.name == "bedlam-v$version-universal.apk" }
+}
+
+internal fun isNewer(candidate: String, installed: String): Boolean {
+    val a = parseVersion(candidate) ?: return false
+    val b = parseVersion(installed) ?: return false
+    val size = maxOf(a.size, b.size)
+    for (i in 0 until size) {
+        val x = a.getOrElse(i) { 0 }
+        val y = b.getOrElse(i) { 0 }
+        if (x != y) return x > y
+    }
+    return false
+}
+
+private fun parseVersion(version: String): List<Int>? =
+    NUMERIC_VERSION.find(version)?.value?.split('.')?.map { it.toInt() }
+
+private val NUMERIC_VERSION = Regex("""\d+(?:\.\d+)*""")
+
+internal fun isCheckThrottled(
+    lastCheckAtMillis: Long?,
+    nowMillis: Long,
+    intervalMillis: Long,
+): Boolean {
+    if (lastCheckAtMillis == null) return false
+    return nowMillis - lastCheckAtMillis in 0 until intervalMillis
+}
+
+internal fun isTrustedDownloadUrl(url: String): Boolean {
+    val parsed = runCatching { URL(url) }.getOrNull() ?: return false
+    if (!parsed.protocol.equals("https", ignoreCase = true)) return false
+    return parsed.host.lowercase() in TRUSTED_DOWNLOAD_HOSTS
+}
+
+private val TRUSTED_DOWNLOAD_HOSTS = setOf(
+    "github.com",
+    "objects.githubusercontent.com",
+)
 
 internal fun isUpdateSuppressed(
     skippedVersion: String?,

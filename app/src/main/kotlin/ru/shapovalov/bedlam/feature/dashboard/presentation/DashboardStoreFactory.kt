@@ -6,7 +6,7 @@ import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.latency.PingProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.GetProfilesUseCase
-import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileFromUriUseCase
+import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ObserveActiveProfileIdUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
 import ru.shapovalov.bedlam.core.vpn.ReconcileConnectionStateUseCase
@@ -20,7 +20,7 @@ class DashboardStoreFactory(
     private val observeActiveId: ObserveActiveProfileIdUseCase,
     private val setActiveProfile: SetActiveProfileUseCase,
     private val deleteProfile: DeleteProfileUseCase,
-    private val importFromUri: ImportProfileFromUriUseCase,
+    private val importProfile: ImportProfileUseCase,
     private val client: HysteriaClient,
     private val pingProfile: PingProfileUseCase,
     private val runtimeStateRepository: VpnRuntimeStateRepository,
@@ -43,7 +43,7 @@ class DashboardStoreFactory(
                     DashboardExecutor(
                         setActiveProfile,
                         deleteProfile,
-                        importFromUri,
+                        importProfile,
                         pingProfile
                     )
                 },

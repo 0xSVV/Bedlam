@@ -107,10 +107,12 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                     bypassLan = state.config.bypassLan,
                     ipv6Mode = state.config.ipv6Mode,
                     dnsMode = state.config.dnsMode,
+                    dnsTransport = state.config.dnsTransport,
                     customDns = state.config.customDns,
                     onSetBypassLan = component::onSetBypassLan,
                     onSetIpv6Mode = component::onSetIpv6Mode,
                     onSetDnsMode = component::onSetDnsMode,
+                    onSetDnsTransport = component::onSetDnsTransport,
                     onSetCustomDns = component::onSetCustomDns,
                 )
             }

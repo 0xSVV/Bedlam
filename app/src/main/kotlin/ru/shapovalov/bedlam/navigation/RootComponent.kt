@@ -82,6 +82,11 @@ class RootComponent(
         navigation.bringToFront(target)
     }
 
+    fun onImportLink(link: String) {
+        navigation.bringToFront(Config.Dashboard)
+        (childStack.value.active.instance as? Child.Dashboard)?.component?.onImportLink(link)
+    }
+
     private fun dispatchStartVpn(profile: Profile) {
         onStartVpn.invoke(profile)
     }

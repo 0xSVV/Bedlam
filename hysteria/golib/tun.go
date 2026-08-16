@@ -15,7 +15,7 @@ import (
 	N "github.com/sagernet/sing/common/network"
 )
 
-func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string, enableIPv6 bool) error {
+func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string, enableIPv6 bool, dnsJSON string) error {
 	s.tunMu.Lock()
 	defer s.tunMu.Unlock()
 
@@ -37,6 +37,15 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 		return fmt.Errorf("parse inet6 prefix %q: %w", inet6Prefix, err)
 	}
 
+	dnsCfg, err := parseDNSUpstream(dnsJSON)
+	if err != nil {
+		return fmt.Errorf("dns upstream: %w", err)
+	}
+	upstream, err := newDNSUpstream(c, dnsCfg)
+	if err != nil {
+		return fmt.Errorf("dns upstream: %w", err)
+	}
+
 	tunOpts := singtun.Options{
 		FileDescriptor: int(fd),
 		MTU:            uint32(mtu),
@@ -46,6 +55,7 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 
 	tunIface, err := singtun.New(tunOpts)
 	if err != nil {
+		upstream.close()
 		return fmt.Errorf("create TUN: %w", err)
 	}
 
@@ -56,12 +66,13 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 		Tun:        tunIface,
 		TunOptions: tunOpts,
 		UDPTimeout: 300,
-		Handler:    &tunHandler{session: s, client: c, ipv6Enabled: enableIPv6},
+		Handler:    &tunHandler{session: s, client: c, ipv6Enabled: enableIPv6, dns: upstream},
 		Logger:     &tunLogger{},
 	})
 	if err != nil {
 		cancel()
 		tunIface.Close()
+		upstream.close()
 		return fmt.Errorf("create TUN stack: %w", err)
 	}
 
@@ -69,14 +80,17 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 		cancel()
 		_ = stack.Close()
 		tunIface.Close()
+		upstream.close()
 		return fmt.Errorf("start TUN stack: %w", err)
 	}
 
 	s.tunIface = tunIface
 	s.tunStack = stack
 	s.tunCancel = cancel
+	s.tunDNS = upstream
 
-	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor, ipv6=%v)", fd, mtu, enableIPv6)
+	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor, ipv6=%v, dns=%s)",
+		fd, mtu, enableIPv6, upstream.id())
 	return nil
 }
 
@@ -84,14 +98,25 @@ func (h *tunHandler) rejectIPv6(dest M.Socksaddr) bool {
 	return !h.ipv6Enabled && dest.Addr.Is6() && !dest.Addr.Is4In6()
 }
 
+func (h *tunHandler) isResolverAddr(dest M.Socksaddr) bool {
+	return h.dns != nil && h.dns.isListenAddr(dest.Addr)
+}
+
+func (h *tunHandler) countDNS(tx, rx int) {
+	h.session.addTx(tx)
+	h.session.addRx(rx)
+}
+
 func (s *Session) StopTUN() error {
 	s.tunMu.Lock()
 	iface := s.tunIface
 	stack := s.tunStack
 	cancel := s.tunCancel
+	dns := s.tunDNS
 	s.tunIface = nil
 	s.tunStack = nil
 	s.tunCancel = nil
+	s.tunDNS = nil
 	s.tunMu.Unlock()
 
 	if iface == nil {
@@ -116,6 +141,9 @@ func (s *Session) StopTUN() error {
 		err = fmt.Errorf("TUN close timed out")
 		log(LogLevelWarn, srcTun, "TUN close timed out; continuing")
 	}
+	if dns != nil {
+		dns.close()
+	}
 
 	log(LogLevelInfo, srcTun, "TUN stopped")
 	return err
@@ -126,6 +154,13 @@ func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metad
 
 	if h.rejectIPv6(m.Destination) {
 		return fmt.Errorf("IPv6 disabled: %s", m.Destination)
+	}
+
+	if m.Destination.Port == 53 && h.dns != nil {
+		return h.serveDNSStream(ctx, conn)
+	}
+	if h.isResolverAddr(m.Destination) {
+		return fmt.Errorf("local resolver refuses %s", m.Destination)
 	}
 
 	target := m.Destination.String()
@@ -177,16 +212,22 @@ func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn,
 	dest := m.Destination.String()
 	log(LogLevelDebug, srcTun, "UDP session: %s → %s", m.Source, dest)
 
-	if isDNSPort(dest) {
-		return h.handleDNSOverTCP(conn, dest)
+	// Every DNS query answers from the configured upstream, not just the ones
+	// addressed to the on-TUN resolver: an app with a hard-coded resolver must
+	// not silently get plain DNS when the user picked an encrypted transport.
+	if m.Destination.Port == 53 && h.dns != nil {
+		return h.serveDNSPackets(ctx, conn, dest)
 	}
 
 	return h.handleUDPRelay(ctx, conn)
 }
 
-const maxConcurrentDNS = 16
+const (
+	maxConcurrentDNS     = 16
+	dnsStreamIdleTimeout = 10 * time.Second
+)
 
-func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) error {
+func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, defaultDest string) error {
 	sem := make(chan struct{}, maxConcurrentDNS)
 	for {
 		buffer := buf.NewPacket()
@@ -204,17 +245,17 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 		if !isDNSPort(dnsAddr) {
 			dnsAddr = defaultDest
 		}
+		resolver := h.dns
 
-		log(LogLevelDebug, srcDNS, "DNS-over-TCP: %s (%d bytes)", dnsAddr, len(query))
+		log(LogLevelDebug, srcDNS, "DNS query for %s via %s (%d bytes)", dnsAddr, resolver.id(), len(query))
 
 		sem <- struct{}{}
 		go func() {
 			defer func() { <-sem }()
 
-			resp, err := h.session.dnsCache.resolve(h.client, dnsAddr, query, func(tx, rx int) {
-				h.session.addTx(tx)
-				h.session.addRx(rx)
-			})
+			qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
+			defer cancel()
+			resp, err := h.session.dnsCache.resolve(qctx, resolver, query, h.countDNS)
 
 			var src M.Socksaddr
 			if ap, perr := netip.ParseAddrPort(dnsAddr); perr == nil {
@@ -222,8 +263,8 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 			}
 
 			if err != nil {
-				if dnsErrLimiter.allow(dnsAddr) {
-					log(LogLevelWarn, srcDNS, "DNS error: %s: %s", dnsAddr, err)
+				if dnsErrLimiter.allow(resolver.id()) {
+					log(LogLevelWarn, srcDNS, "DNS error: %s: %s", resolver.id(), err)
 				}
 				if sf := buildServFail(query); sf != nil {
 					if werr := conn.WritePacket(buf.As(sf), src); werr != nil {
@@ -232,11 +273,39 @@ func (h *tunHandler) handleDNSOverTCP(conn N.PacketConn, defaultDest string) err
 				}
 				return
 			}
-			log(LogLevelDebug, srcDNS, "DNS response: %d bytes from %s", len(resp), dnsAddr)
+			log(LogLevelDebug, srcDNS, "DNS response: %d bytes from %s", len(resp), resolver.id())
 			if werr := conn.WritePacket(buf.As(resp), src); werr != nil {
 				log(LogLevelDebug, srcDNS, "DNS write to local error: %s", werr)
 			}
 		}()
+	}
+}
+
+func (h *tunHandler) serveDNSStream(ctx context.Context, conn net.Conn) error {
+	for {
+		_ = conn.SetReadDeadline(time.Now().Add(dnsStreamIdleTimeout))
+		query, err := readDNSFrame(conn)
+		if err != nil {
+			return nil
+		}
+		_ = conn.SetReadDeadline(time.Time{})
+
+		qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
+		resp, err := h.session.dnsCache.resolve(qctx, h.dns, query, h.countDNS)
+		cancel()
+		if err != nil {
+			if dnsErrLimiter.allow(h.dns.id()) {
+				log(LogLevelWarn, srcDNS, "DNS error: %s: %s", h.dns.id(), err)
+			}
+			resp = buildServFail(query)
+			if resp == nil {
+				return err
+			}
+		}
+		_ = conn.SetWriteDeadline(time.Now().Add(dnsIOTimeout))
+		if err := writeDNSFrame(conn, resp); err != nil {
+			return err
+		}
 	}
 }
 

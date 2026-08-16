@@ -3,14 +3,20 @@ package ru.shapovalov.bedlam.core.routing.engine
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilter
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
+import ru.shapovalov.bedlam.core.routing.domain.model.DnsPresets
+import ru.shapovalov.bedlam.core.routing.domain.model.DnsServer
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutePlan
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
+import ru.shapovalov.hysteria.api.DnsTransport
+import ru.shapovalov.hysteria.api.DnsUpstream
 
 class RoutePlanner(
     private val supportsExcludeRoute: Boolean,
     private val tunPrefixV4: Cidr.V4,
     private val tunPrefixV6: Cidr.V6,
+    private val resolverV4: String,
+    private val resolverV6: String,
     private val maxTotalRoutes: Int = DEFAULT_MAX_TOTAL_ROUTES,
     private val systemDnsServers: () -> List<String> = { emptyList() },
 ) {
@@ -59,34 +65,48 @@ class RoutePlanner(
         val excludedV4 = CidrMath.coalesce(excludedV4Raw).filterIsInstance<Cidr.V4>()
         val excludedV6 = CidrMath.coalesce(excludedV6Raw).filterIsInstance<Cidr.V6>()
 
-        val dnsServers = resolveDns(config)
-            .filter { ipv6Enabled || ':' !in it }
-            .ifEmpty { CLOUDFLARE_DNS.filter { ipv6Enabled || ':' !in it } }
+        val transport = DnsPresets.effectiveTransport(config.dnsMode, config.dnsTransport)
+        // A resolver on the user's own network is unreachable from the Hysteria
+        // server, so it stays a direct resolver: advertised to Android as-is
+        // and left to the LAN bypass, exactly as before the tunnel took over.
+        val lanDns = lanDnsServers(config, transport)
+        val dnsUpstream = resolveDnsUpstream(config, transport, lanDns)
 
-        // Tunnel DNS servers are claimed as host routes so a direct-route
-        // source covering them (e.g. a resolver's ASN) can't pull plaintext
-        // DNS out of the tunnel. Longest prefix wins over any exclusion.
-        val dnsRoutes = dnsHostRoutes(dnsServers)
-        val dnsRoutesV4 = dnsRoutes.filterIsInstance<Cidr.V4>()
-        val dnsRoutesV6 =
-            if (baseV6.isEmpty()) emptyList() else dnsRoutes.filterIsInstance<Cidr.V6>()
+        val dnsServers = listOf(resolverV4) +
+                (if (ipv6Enabled) listOf(resolverV6) else emptyList()) +
+                lanDns.filter { ipv6Enabled || ':' !in it }
+
+        // The on-TUN resolver sits inside the excluded TUN prefix; a host route
+        // beats the exclusion (longest prefix wins) so the OS keeps sending DNS
+        // to it. Upstream resolvers are claimed too: an app with a hard-coded
+        // resolver must still reach the TUN even when a direct-route source
+        // covers that address, or its DNS would leave in plaintext.
+        val upstreamRoutes = upstreamHostRoutes(dnsUpstream.servers)
+        val resolverRoutesV4 = listOf(Cidr.parseV4("$resolverV4/32")) +
+                upstreamRoutes.filterIsInstance<Cidr.V4>()
+        val resolverRoutesV6 = if (ipv6Enabled) {
+            listOf(Cidr.parseV6("$resolverV6/128")) + upstreamRoutes.filterIsInstance<Cidr.V6>()
+        } else {
+            emptyList()
+        }
 
         return if (supportsExcludeRoute) {
             RoutePlan(
-                claimedV4 = baseV4 + dnsRoutesV4,
-                claimedV6 = baseV6 + dnsRoutesV6,
+                claimedV4 = baseV4 + resolverRoutesV4,
+                claimedV6 = baseV6 + resolverRoutesV6,
                 excludedV4 = excludedV4,
                 excludedV6 = excludedV6,
                 dnsServers = dnsServers,
+                dnsUpstream = dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
             )
         } else {
             val claimedV4 = CidrMath
-                .coalesce(CidrMath.subtract(baseV4, excludedV4) + dnsRoutesV4)
+                .coalesce(CidrMath.subtract(baseV4, excludedV4) + resolverRoutesV4)
                 .filterIsInstance<Cidr.V4>()
             val claimedV6 = CidrMath
-                .coalesce(CidrMath.subtract(baseV6, excludedV6) + dnsRoutesV6)
+                .coalesce(CidrMath.subtract(baseV6, excludedV6) + resolverRoutesV6)
                 .filterIsInstance<Cidr.V6>()
             RoutePlan(
                 claimedV4 = claimedV4,
@@ -94,45 +114,55 @@ class RoutePlanner(
                 excludedV4 = emptyList(),
                 excludedV6 = emptyList(),
                 dnsServers = dnsServers,
+                dnsUpstream = dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
             )
         }
     }
 
-    private fun dnsHostRoutes(dnsServers: List<String>): List<Cidr> =
-        dnsServers
-            .mapNotNull { addr ->
-                val prefix = if (':' in addr) 128 else 32
-                Cidr.parseOrNull("$addr/$prefix")
-            }
-            .filterNot { isLanAddress(it) }
+    private fun resolveDnsUpstream(
+        config: RoutingConfig,
+        transport: DnsTransport,
+        lanDns: List<String>,
+    ): DnsUpstream {
+        val servers = when (config.dnsMode) {
+            DnsMode.System -> systemDnsServers()
+                .sortedBy { ':' in it }
+                .mapNotNull { DnsServer.normalizeOrNull(it, transport) }
+
+            DnsMode.Cloudflare -> DnsPresets.cloudflare(transport)
+            DnsMode.Google -> DnsPresets.google(transport)
+            DnsMode.Custom -> config.customDns
+                .mapNotNull { DnsServer.normalizeOrNull(it, transport) }
+                .filterNot { normalized ->
+                    DnsServer.literalHostOf(normalized)?.let { it in lanDns } == true
+                }
+        }.ifEmpty { DnsPresets.cloudflare(transport) }
+        return DnsUpstream(transport, servers)
+    }
+
+    private fun lanDnsServers(config: RoutingConfig, transport: DnsTransport): List<String> {
+        if (config.dnsMode != DnsMode.Custom) return emptyList()
+        return config.customDns
+            .mapNotNull { DnsServer.normalizeOrNull(it, transport) }
+            .mapNotNull { DnsServer.literalHostOf(it) }
+            .filter { host -> Cidr.parseOrNull(hostRoute(host))?.let(::isLanAddress) == true }
+            .distinct()
+    }
+
+    private fun upstreamHostRoutes(servers: List<String>): List<Cidr> =
+        servers
+            .mapNotNull { DnsServer.literalHostOf(it) }
+            .distinct()
+            .mapNotNull { Cidr.parseOrNull(hostRoute(it)) }
+            .filterNot(::isLanAddress)
+
+    private fun hostRoute(host: String): String = "$host/${if (':' in host) 128 else 32}"
 
     private fun isLanAddress(c: Cidr): Boolean = when (c) {
         is Cidr.V4 -> LanRanges.IPV4.any { CidrMath.contains(it, c) }
         is Cidr.V6 -> LanRanges.IPV6.any { CidrMath.contains(it, c) }
-    }
-
-    private fun resolveDns(config: RoutingConfig): List<String> = when (config.dnsMode) {
-        DnsMode.System -> systemDnsServers().ifEmpty { CLOUDFLARE_DNS }
-        DnsMode.Cloudflare -> CLOUDFLARE_DNS
-
-        DnsMode.Google -> listOf(
-            "8.8.8.8",
-            "8.8.4.4",
-            "2001:4860:4860::8888",
-            "2001:4860:4860::8844",
-        )
-
-        DnsMode.Custom -> config.customDns
-            .map { it.trim() }
-            .filter { isDnsAddress(it) }
-    }
-
-    private fun isDnsAddress(addr: String): Boolean {
-        if (addr.isEmpty()) return false
-        val prefix = if (':' in addr) 128 else 32
-        return Cidr.parseOrNull("$addr/$prefix") != null
     }
 
     companion object {
@@ -141,12 +171,5 @@ class RoutePlanner(
 
         val IPV4_DEFAULT: Cidr.V4 = Cidr.parseV4("0.0.0.0/0")
         val IPV6_DEFAULT: Cidr.V6 = Cidr.parseV6("::/0")
-
-        val CLOUDFLARE_DNS: List<String> = listOf(
-            "1.1.1.1",
-            "1.0.0.1",
-            "2606:4700:4700::1111",
-            "2606:4700:4700::1001",
-        )
     }
 }

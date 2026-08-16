@@ -24,6 +24,9 @@ class ProfileConfigComponent(
     fun onDraftChanged(config: HysteriaConfig) =
         store.accept(ProfileConfigStore.Intent.UpdateDraft(config))
 
+    fun onDraftNameChanged(name: String) =
+        store.accept(ProfileConfigStore.Intent.UpdateDraftName(name))
+
     fun onSave() = store.accept(ProfileConfigStore.Intent.Save)
     fun onRequestDelete() = store.accept(ProfileConfigStore.Intent.RequestDelete)
     fun onCancelDelete() = store.accept(ProfileConfigStore.Intent.CancelDelete)

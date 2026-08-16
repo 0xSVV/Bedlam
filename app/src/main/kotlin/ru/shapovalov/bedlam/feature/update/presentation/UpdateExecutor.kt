@@ -24,6 +24,8 @@ internal class UpdateExecutor(
             is Action.InstallStatusChanged -> when (val status = action.status) {
                 InstallStatus.Idle -> Unit
                 InstallStatus.InProgress -> dispatch(Msg.Installing)
+                InstallStatus.NeedsInstallPermission -> dispatch(Msg.NeedsInstallPermission)
+                InstallStatus.SignatureMismatch -> dispatch(Msg.SignatureMismatch)
                 is InstallStatus.Failed -> dispatch(Msg.Failed(status.message))
             }
         }

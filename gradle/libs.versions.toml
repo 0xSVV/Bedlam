@@ -1,12 +1,11 @@
 [versions]
 minSdk = "29"
 targetSdk = "37"
-versionName = "1.4.0"
-versionCode = "18"
+versionName = "1.5.0"
+versionCode = "20"
 agp = "9.2.1"
 kotlin = "2.4.0"
 coreKtx = "1.19.0"
-appcompat = "1.7.1"
 material = "1.14.0"
 activityCompose = "1.13.0"
 composeBom = "2026.06.00"
@@ -28,7 +27,6 @@ coreSplashscreen = "1.2.0"
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
-androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -54,7 +52,6 @@ mvikotlin-logging = { group = "com.arkivanov.mvikotlin", name = "mvikotlin-loggi
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
-androidx-room-paging = { group = "androidx.room", name = "room-paging", version.ref = "room" }
 
 kotlin-inject-runtime = { group = "me.tatarka.inject", name = "kotlin-inject-runtime", version.ref = "kotlinInject" }
 kotlin-inject-compiler = { group = "me.tatarka.inject", name = "kotlin-inject-compiler-ksp", version.ref = "kotlinInject" }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -33,11 +34,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
+import ru.shapovalov.bedlam.core.routing.domain.model.DnsPresets
+import ru.shapovalov.bedlam.core.routing.domain.model.DnsServer
+import ru.shapovalov.bedlam.core.routing.domain.model.DnsServerParse
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 import ru.shapovalov.bedlam.ui.theme.spacing
+import ru.shapovalov.hysteria.api.DnsTransport
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -46,14 +52,18 @@ internal fun BasicsCard(
     bypassLan: Boolean,
     ipv6Mode: Ipv6Mode,
     dnsMode: DnsMode,
+    dnsTransport: DnsTransport,
     customDns: List<String>,
     onSetBypassLan: (Boolean) -> Unit,
     onSetIpv6Mode: (Ipv6Mode) -> Unit,
     onSetDnsMode: (DnsMode) -> Unit,
+    onSetDnsTransport: (DnsTransport) -> Unit,
     onSetCustomDns: (List<String>) -> Unit,
 ) {
     val ipv6Options = remember { Ipv6Mode.entries.toList() }
     val dnsOptions = remember { DnsMode.entries.toList() }
+    val transportOptions = remember(dnsMode) { DnsPresets.supportedTransports(dnsMode) }
+    val effectiveTransport = DnsPresets.effectiveTransport(dnsMode, dnsTransport)
 
     ElevatedCard(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
         Column(modifier = Modifier.padding(vertical = MaterialTheme.spacing.small)) {
@@ -86,9 +96,26 @@ internal fun BasicsCard(
                 renderLabel = { it.label() },
                 onPick = onSetDnsMode,
             )
+            DividerRow()
+            DropdownRow(
+                title = stringResource(R.string.routing_dns_transport_title),
+                value = effectiveTransport.label(),
+                subtitle = if (dnsMode == DnsMode.System) {
+                    stringResource(R.string.routing_dns_transport_system_hint)
+                } else {
+                    null
+                },
+                options = transportOptions,
+                renderLabel = { it.label() },
+                onPick = onSetDnsTransport,
+            )
             if (dnsMode == DnsMode.Custom) {
                 DividerRow()
-                CustomDnsEditor(initial = customDns, onChange = onSetCustomDns)
+                CustomDnsEditor(
+                    initial = customDns,
+                    transport = effectiveTransport,
+                    onChange = onSetCustomDns,
+                )
             }
         }
     }
@@ -217,9 +244,17 @@ private fun <T> DropdownRow(
 }
 
 @Composable
-private fun CustomDnsEditor(initial: List<String>, onChange: (List<String>) -> Unit) {
+private fun CustomDnsEditor(
+    initial: List<String>,
+    transport: DnsTransport,
+    onChange: (List<String>) -> Unit,
+) {
     val spacing = MaterialTheme.spacing
     var text by remember { mutableStateOf(initial.joinToString(", ")) }
+    val entries = remember(text) { text.split(',', '\n').map(String::trim).filter(String::isNotEmpty) }
+    val invalid = remember(entries, transport) {
+        entries.filter { DnsServer.parse(it, transport) is DnsServerParse.Invalid }
+    }
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
             value = text,
@@ -228,7 +263,26 @@ private fun CustomDnsEditor(initial: List<String>, onChange: (List<String>) -> U
                 onChange(it.split(',', '\n').map(String::trim).filter(String::isNotEmpty))
             },
             label = { Text(stringResource(R.string.routing_dns_custom_label)) },
-            placeholder = { Text(stringResource(R.string.routing_dns_custom_placeholder)) },
+            placeholder = { Text(transport.placeholder()) },
+            supportingText = {
+                Text(
+                    when {
+                        invalid.isEmpty() -> transport.hint()
+                        invalid.size == entries.size ->
+                            stringResource(R.string.routing_dns_custom_none_usable)
+
+                        else -> stringResource(
+                            R.string.routing_dns_custom_invalid,
+                            invalid.joinToString(", "),
+                        )
+                    }
+                )
+            },
+            isError = invalid.isNotEmpty(),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Uri,
+                autoCorrectEnabled = false,
+            ),
             modifier = Modifier.fillMaxWidth(),
             singleLine = false,
         )
@@ -259,5 +313,34 @@ private fun DnsMode.label(): String = stringResource(
         DnsMode.Cloudflare -> R.string.routing_dns_cloudflare
         DnsMode.Google -> R.string.routing_dns_google
         DnsMode.Custom -> R.string.routing_dns_custom
+    }
+)
+
+@Composable
+private fun DnsTransport.label(): String = stringResource(
+    when (this) {
+        DnsTransport.Udp -> R.string.routing_dns_transport_udp
+        DnsTransport.Tcp -> R.string.routing_dns_transport_tcp
+        DnsTransport.Tls -> R.string.routing_dns_transport_tls
+        DnsTransport.Https -> R.string.routing_dns_transport_https
+        DnsTransport.Http3 -> R.string.routing_dns_transport_http3
+    }
+)
+
+@Composable
+private fun DnsTransport.placeholder(): String = stringResource(
+    when (this) {
+        DnsTransport.Udp, DnsTransport.Tcp -> R.string.routing_dns_custom_placeholder_ip
+        DnsTransport.Tls -> R.string.routing_dns_custom_placeholder_tls
+        DnsTransport.Https, DnsTransport.Http3 -> R.string.routing_dns_custom_placeholder_https
+    }
+)
+
+@Composable
+private fun DnsTransport.hint(): String = stringResource(
+    when (this) {
+        DnsTransport.Udp, DnsTransport.Tcp -> R.string.routing_dns_custom_hint_ip
+        DnsTransport.Tls -> R.string.routing_dns_custom_hint_tls
+        DnsTransport.Https, DnsTransport.Http3 -> R.string.routing_dns_custom_hint_https
     }
 )

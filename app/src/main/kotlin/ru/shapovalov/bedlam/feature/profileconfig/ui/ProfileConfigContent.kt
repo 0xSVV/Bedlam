@@ -1,7 +1,9 @@
 package ru.shapovalov.bedlam.feature.profileconfig.ui
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -62,6 +64,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.isRealmAddress
 import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigComponent
@@ -154,8 +160,10 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 state.notFound -> NotFoundMessage()
                 draft != null -> ConfigBody(
                     draft = draft,
+                    name = state.draftName.orEmpty(),
                     editMode = state.editMode,
                     onDraftChanged = component::onDraftChanged,
+                    onNameChanged = component::onDraftNameChanged,
                 )
             }
             ProfileActionsToolbar(
@@ -163,9 +171,14 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 onDelete = component::onRequestDelete,
                 onCopy = {
                     val current = state.draft ?: return@ProfileActionsToolbar
-                    clipboardManager.setPrimaryClip(
-                        ClipData.newPlainText(clipboardLabel, current.toClipboardText())
+                    val clip = ClipData.newPlainText(
+                        clipboardLabel,
+                        current.toClipboardText(state.original?.name.orEmpty()),
                     )
+                    clip.description.extras = PersistableBundle().apply {
+                        putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                    }
+                    clipboardManager.setPrimaryClip(clip)
                     scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
                 },
                 onEdit = component::onEnterEditMode,
@@ -209,7 +222,7 @@ private fun TopActions(
                 }
                 TextButton(
                     onClick = component::onSave,
-                    enabled = !state.isSaving && state.isDirty,
+                    enabled = !state.isSaving && state.canSave,
                 ) {
                     if (state.isSaving) {
                         CircularProgressIndicator(
@@ -300,8 +313,10 @@ private fun DeleteConfirmationDialog(
 @Composable
 private fun ConfigBody(
     draft: HysteriaConfig,
+    name: String,
     editMode: Boolean,
     onDraftChanged: (HysteriaConfig) -> Unit,
+    onNameChanged: (String) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     LazyColumn(
@@ -314,6 +329,7 @@ private fun ConfigBody(
         ),
         verticalArrangement = Arrangement.spacedBy(spacing.medium),
     ) {
+        item(key = "profile") { ProfileSection(name, editMode, onNameChanged) }
         item(key = "server") { ServerSection(draft, editMode, onDraftChanged) }
         if (isRealmAddress(draft.server.address) || draft.realm != null) {
             item(key = "realm") { RealmSection(draft, editMode, onDraftChanged) }
@@ -384,5 +400,8 @@ private fun NotFoundMessage() {
     }
 }
 
-private fun HysteriaConfig.toClipboardText(): String =
-    ClipboardJson.encodeToString(this)
+private fun HysteriaConfig.toClipboardText(name: String): String {
+    val config = ClipboardJson.encodeToJsonElement(this).jsonObject
+    val named = if (name.isBlank()) config else JsonObject(mapOf("name" to JsonPrimitive(name)) + config)
+    return ClipboardJson.encodeToString(named)
+}

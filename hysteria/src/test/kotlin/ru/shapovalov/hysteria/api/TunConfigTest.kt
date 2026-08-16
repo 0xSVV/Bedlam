@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import ru.shapovalov.hysteria.config.toWireJson
 
 class TunConfigTest {
 
@@ -77,5 +78,40 @@ class TunConfigTest {
         assertFalse(isNumericIpv6(":1"))
         assertFalse(isNumericIpv6("1:"))
         assertFalse(isNumericIpv6("12345::1")) // group > 4 chars
+    }
+
+    @Test
+    fun `resolver addresses are numeric and differ from the interface addresses`() {
+        assertEquals(IpFamily.V4, numericIpFamily(TunConfig.IPV4_DNS_ADDRESS))
+        assertEquals(IpFamily.V6, numericIpFamily(TunConfig.IPV6_DNS_ADDRESS))
+        assertTrue(TunConfig.IPV4_DNS_ADDRESS != TunConfig.IPV4_ADDRESS)
+        assertTrue(TunConfig.IPV6_DNS_ADDRESS != TunConfig.IPV6_ADDRESS)
+    }
+
+    @Test
+    fun `default dns upstream is tcp to cloudflare`() {
+        assertEquals(DnsTransport.Tcp, TunConfig.Default.dns.transport)
+        assertEquals(listOf("1.1.1.1:53", "1.0.0.1:53"), TunConfig.Default.dns.servers)
+    }
+
+    @Test
+    fun `dns upstream requires servers`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            DnsUpstream(DnsTransport.Https, emptyList())
+        }
+    }
+
+    @Test
+    fun `dns upstream wire json`() {
+        val json = DnsUpstream(DnsTransport.Https, listOf("https://1.1.1.1/dns-query")).toWireJson()
+        assertEquals(
+            """{"transport":"https","servers":["https://1.1.1.1/dns-query"],"listen":["172.19.0.2","fdfe:dcba:9876::2"]}""",
+            json,
+        )
+    }
+
+    @Test
+    fun `transport wire names are lowercase and stable`() {
+        assertEquals(listOf("udp", "tcp", "tls", "https", "http3"), DnsTransport.entries.map { it.wire })
     }
 }

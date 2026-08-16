@@ -26,10 +26,27 @@ class ApkInstallerImpl(
     private val _status = MutableStateFlow<InstallStatus>(InstallStatus.Idle)
     override val status: StateFlow<InstallStatus> = _status.asStateFlow()
 
+    @Volatile
+    private var committedApk: File? = null
+
     override suspend fun install(apk: File) = withContext(Dispatchers.IO) {
         _status.value = InstallStatus.InProgress
+        var openSessionId: Int? = null
         try {
-            val installer = context.packageManager.packageInstaller
+            val pm = context.packageManager
+            if (!pm.canRequestPackageInstalls()) {
+                _status.value = InstallStatus.NeedsInstallPermission
+                return@withContext
+            }
+            if (!signersMatch(
+                    installed = pm.installedSigners(context.packageName),
+                    candidate = pm.archiveSigners(apk.absolutePath),
+                )
+            ) {
+                _status.value = InstallStatus.SignatureMismatch
+                return@withContext
+            }
+            val installer = pm.packageInstaller
             val params = PackageInstaller.SessionParams(
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL,
             ).apply {
@@ -37,6 +54,7 @@ class ApkInstallerImpl(
                 setSize(apk.length())
             }
             val sessionId = installer.createSession(params)
+            openSessionId = sessionId
             installer.openSession(sessionId).use { session ->
                 session.openWrite(apk.name, 0, apk.length()).use { output ->
                     apk.inputStream().use { it.copyTo(output) }
@@ -50,16 +68,25 @@ class ApkInstallerImpl(
                     PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 )
                 session.commit(pendingIntent.intentSender)
+                openSessionId = null
+                committedApk = apk
             }
         } catch (e: CancellationException) {
+            abandon(openSessionId)
             throw e
         } catch (e: Exception) {
+            abandon(openSessionId)
             _status.value = InstallStatus.Failed(e.message ?: e.javaClass.simpleName)
         }
     }
 
     override fun reset() {
         _status.value = InstallStatus.Idle
+    }
+
+    private fun abandon(sessionId: Int?) {
+        if (sessionId == null) return
+        runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
     }
 
     fun onInstallStatus(intent: Intent) {
@@ -77,7 +104,11 @@ class ApkInstallerImpl(
                 }
             }
 
-            PackageInstaller.STATUS_SUCCESS -> _status.value = InstallStatus.Idle
+            PackageInstaller.STATUS_SUCCESS -> {
+                committedApk?.let { runCatching { it.delete() } }
+                committedApk = null
+                _status.value = InstallStatus.Idle
+            }
 
             else -> {
                 val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)

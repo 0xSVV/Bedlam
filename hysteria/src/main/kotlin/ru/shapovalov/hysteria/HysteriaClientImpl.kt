@@ -31,6 +31,7 @@ import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
 import ru.shapovalov.hysteria.api.TunConfig
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.toJson
+import ru.shapovalov.hysteria.config.toWireJson
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -189,6 +190,7 @@ class HysteriaClientImpl : HysteriaClient {
                 TunConfig.IPV4_CIDR,
                 TunConfig.IPV6_CIDR,
                 tunConfig.ipv6Enabled,
+                tunConfig.dns.toWireJson(),
             )
         } catch (t: Throwable) {
             runCatching { ParcelFileDescriptor.adoptFd(fd).close() }

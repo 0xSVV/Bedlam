@@ -1,5 +1,8 @@
 package ru.shapovalov.bedlam.feature.update.ui
 
+import android.content.Intent
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -34,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,6 +52,8 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
+
+    BackHandler { component.onBack() }
 
     Column(
         modifier = modifier
@@ -111,6 +117,16 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
                 is UpdateStore.State.Phase.Downloading -> DownloadProgress(phase)
 
                 UpdateStore.State.Phase.Installing -> InstallingIndicator()
+
+                UpdateStore.State.Phase.NeedsInstallPermission -> InstallPermissionActions(
+                    onRetry = component::onInstall,
+                    onSkip = component::onSkip,
+                )
+
+                UpdateStore.State.Phase.SignatureMismatch -> BlockedActions(
+                    message = stringResource(R.string.update_error_signature),
+                    onSkip = component::onSkip,
+                )
 
                 is UpdateStore.State.Phase.Failed -> FailedActions(
                     message = phase.message,
@@ -220,6 +236,58 @@ private fun FailedActions(message: String, onRetry: () -> Unit, onSkip: () -> Un
             Text(stringResource(R.string.update_action_retry))
         }
         Spacer(Modifier.height(spacing.xSmall))
+        TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.update_action_skip))
+        }
+    }
+}
+
+@Composable
+private fun InstallPermissionActions(onRetry: () -> Unit, onSkip: () -> Unit) {
+    val spacing = MaterialTheme.spacing
+    val context = LocalContext.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = stringResource(R.string.update_error_install_permission),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(spacing.medium))
+        Button(
+            onClick = {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    "package:${context.packageName}".toUri(),
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                runCatching { context.startActivity(intent) }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.update_action_allow_installs))
+        }
+        Spacer(Modifier.height(spacing.xSmall))
+        TextButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.update_action_retry))
+        }
+        Spacer(Modifier.height(spacing.xSmall))
+        TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.update_action_skip))
+        }
+    }
+}
+
+@Composable
+private fun BlockedActions(message: String, onSkip: () -> Unit) {
+    val spacing = MaterialTheme.spacing
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(spacing.medium))
         TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.update_action_skip))
         }

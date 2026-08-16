@@ -60,7 +60,8 @@ interface HysteriaClient {
      * QUIC connection. [tun] establishes the new interface first — Android
      * atomically swaps it in on `establish()`, so no window exists where
      * traffic flows outside the VPN. In-flight tunneled connections are reset;
-     * the connection state stays [ConnectionState.Connected] throughout.
+     * the connection state stays [ConnectionState.Connected] throughout. A
+     * changed [TunConfig.dns] takes effect with the new interface.
      *
      * @throws IllegalStateException if no session is active.
      */
@@ -172,7 +173,10 @@ interface HysteriaClient {
      * returns the resulting TUN device. Ownership passes to the client; do
      * not close the returned descriptor yourself. The caller must wire the
      * Builder's `addAddress`/MTU using the values in [config] so the kernel
-     * TUN matches the gVisor stack the client will attach to it.
+     * TUN matches the gVisor stack the client will attach to it, and must
+     * advertise [TunConfig.IPV4_DNS_ADDRESS] (and [TunConfig.IPV6_DNS_ADDRESS]
+     * when IPv6 is enabled) via `addDnsServer` — the native layer answers DNS
+     * on those addresses according to [TunConfig.dns].
      */
     fun interface TunFactory {
         fun create(config: TunConfig): ParcelFileDescriptor

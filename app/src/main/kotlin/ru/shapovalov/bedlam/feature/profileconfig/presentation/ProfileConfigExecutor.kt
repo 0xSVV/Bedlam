@@ -24,6 +24,7 @@ internal class ProfileConfigExecutor(
             ProfileConfigStore.Intent.EnterEditMode -> dispatch(Msg.EditModeEntered)
             ProfileConfigStore.Intent.DiscardChanges -> dispatch(Msg.ChangesDiscarded)
             is ProfileConfigStore.Intent.UpdateDraft -> dispatch(Msg.DraftUpdated(intent.config))
+            is ProfileConfigStore.Intent.UpdateDraftName -> dispatch(Msg.DraftNameUpdated(intent.name))
             ProfileConfigStore.Intent.Save -> save()
             ProfileConfigStore.Intent.RequestDelete -> dispatch(Msg.DeleteRequested)
             ProfileConfigStore.Intent.CancelDelete -> dispatch(Msg.DeleteCancelled)
@@ -37,12 +38,17 @@ internal class ProfileConfigExecutor(
         val draft = s.draft ?: return
         val original = s.original ?: return
         if (s.isSaving) return
+        val name = s.draftName?.trim()
+        if (name.isNullOrEmpty()) {
+            dispatch(Msg.SaveFailed("name must not be empty"))
+            return
+        }
 
         client.validateConfig(draft).fold(
             onSuccess = {
                 dispatch(Msg.SaveStarted)
                 scope.launch {
-                    runCatching { saveProfile(original.copy(config = draft)) }
+                    runCatching { saveProfile(original.copy(name = name, config = draft)) }
                         .onSuccess { dispatch(Msg.SaveSucceeded(it)) }
                         .onFailure { dispatch(Msg.SaveFailed(it.message ?: "unknown error")) }
                 }

@@ -15,6 +15,23 @@ import ru.shapovalov.hysteria.config.defaultQuicOptions
 import ru.shapovalov.hysteria.config.defaultTransportOptions
 
 @Composable
+internal fun ProfileSection(
+    name: String,
+    editMode: Boolean,
+    onNameChanged: (String) -> Unit,
+) {
+    SectionCard(title = stringResource(R.string.profile_config_section_profile)) {
+        TextFieldRow(
+            label = "name",
+            value = name,
+            editMode = editMode,
+            showDivider = false,
+            onChange = onNameChanged,
+        )
+    }
+}
+
+@Composable
 internal fun ServerSection(
     draft: HysteriaConfig,
     editMode: Boolean,
@@ -33,6 +50,7 @@ internal fun ServerSection(
             editMode = editMode,
             caution = stringResource(R.string.profile_config_caution_auth),
             showDivider = false,
+            secret = true,
             onChange = { onDraftChanged(draft.copy(server = draft.server.copy(auth = it))) },
         )
     }

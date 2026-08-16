@@ -25,6 +25,7 @@ type Session struct {
 	tunIface  singtun.Tun
 	tunStack  singtun.Stack
 	tunCancel context.CancelFunc
+	tunDNS    *dnsUpstream
 
 	protector FdProtector
 

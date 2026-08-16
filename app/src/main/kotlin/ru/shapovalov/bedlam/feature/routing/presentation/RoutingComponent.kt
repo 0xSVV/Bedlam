@@ -8,6 +8,7 @@ import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 import ru.shapovalov.bedlam.core.util.componentScope
+import ru.shapovalov.hysteria.api.DnsTransport
 
 class RoutingComponent(
     componentContext: ComponentContext,
@@ -24,6 +25,7 @@ class RoutingComponent(
     fun onSetBypassLan(v: Boolean) = store.accept(RoutingStore.Intent.SetBypassLan(v))
     fun onSetIpv6Mode(m: Ipv6Mode) = store.accept(RoutingStore.Intent.SetIpv6Mode(m))
     fun onSetDnsMode(m: DnsMode) = store.accept(RoutingStore.Intent.SetDnsMode(m))
+    fun onSetDnsTransport(t: DnsTransport) = store.accept(RoutingStore.Intent.SetDnsTransport(t))
     fun onSetCustomDns(servers: List<String>) =
         store.accept(RoutingStore.Intent.SetCustomDns(servers))
 

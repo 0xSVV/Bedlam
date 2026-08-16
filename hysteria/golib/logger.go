@@ -46,6 +46,7 @@ type tunHandler struct {
 	session     *Session
 	client      client.Client
 	ipv6Enabled bool
+	dns         *dnsUpstream
 }
 
 var (

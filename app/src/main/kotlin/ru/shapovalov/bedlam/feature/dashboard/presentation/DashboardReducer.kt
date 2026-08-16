@@ -8,8 +8,12 @@ import ru.shapovalov.hysteria.ConnectionState
 internal sealed interface Msg {
     data class ProfilesLoaded(val profiles: List<Profile>, val activeId: String?) : Msg
     data class ConnectionChanged(val state: ConnectionState, val connectedSinceMillis: Long?) : Msg
+    data class ImportSheetOpened(val seed: DashboardStore.ImportSheetSeed) : Msg
+    data object ImportSheetClosed : Msg
     data object ImportStarted : Msg
-    data object ImportFinished : Msg
+    data object ImportSucceeded : Msg
+    data class ImportFailed(val message: String) : Msg
+    data class ImportRejectedAsDuplicate(val name: String) : Msg
     data class ErrorRaised(val reason: DashboardStore.ErrorReason) : Msg
     data object ErrorDismissed : Msg
     data class LatencyUpdated(val id: String, val result: LatencyResult) : Msg
@@ -23,8 +27,17 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             connectedSinceMillis = msg.connectedSinceMillis,
         )
 
-        Msg.ImportStarted -> copy(isImporting = true, error = null)
-        Msg.ImportFinished -> copy(isImporting = false)
+        is Msg.ImportSheetOpened -> copy(importSheet = msg.seed, importError = null)
+        Msg.ImportSheetClosed -> copy(importSheet = null, importError = null)
+        Msg.ImportStarted -> copy(isImporting = true, importError = null)
+        Msg.ImportSucceeded -> copy(isImporting = false, importSheet = null, importError = null)
+        is Msg.ImportFailed -> copy(isImporting = false, importError = msg.message)
+        is Msg.ImportRejectedAsDuplicate -> copy(
+            isImporting = false,
+            importSheet = null,
+            importError = null,
+            error = DashboardStore.ErrorReason.DuplicateProfile(msg.name),
+        )
         is Msg.ErrorRaised -> copy(error = msg.reason)
         Msg.ErrorDismissed -> copy(error = null)
         is Msg.LatencyUpdated -> copy(latencies = latencies + (msg.id to msg.result))
