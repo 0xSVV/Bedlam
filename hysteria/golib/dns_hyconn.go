@@ -117,6 +117,15 @@ func (p *hyPacketConn) closedError() error {
 	return net.ErrClosed
 }
 
+func (p *hyPacketConn) isClosed() bool {
+	select {
+	case <-p.closeCh:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *hyPacketConn) LocalAddr() net.Addr { return p.laddr }
 
 func (p *hyPacketConn) RemoteAddr() net.Addr { return p.raddr }

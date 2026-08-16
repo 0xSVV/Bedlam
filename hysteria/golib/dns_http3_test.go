@@ -179,6 +179,64 @@ func TestH3Resolver_redialsAfterSessionDies(t *testing.T) {
 	}
 }
 
+func TestH3Resolver_redialKeepsTheDrainingConnection(t *testing.T) {
+	d := newDoH3Server(t, [4]byte{3, 3, 3, 3})
+	fc, _ := d.client(t)
+	r, err := newH3Resolver(fc, d.url(), &tls.Config{RootCAs: d.pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("first exchange: %v", err)
+	}
+
+	r.mu.Lock()
+	first := r.conns[0]
+	r.mu.Unlock()
+
+	// Force a fresh dial while the first connection is still usable.
+	if _, err := r.dialQUIC(ctx, d.addr.String(), r.tlsCfg.Clone(), r.rt.QUICConfig); err != nil {
+		t.Fatalf("redial: %v", err)
+	}
+	if first.pkt.isClosed() {
+		t.Error("a live connection must be left to drain, not closed on redial")
+	}
+	r.mu.Lock()
+	kept := len(r.conns)
+	r.mu.Unlock()
+	if kept != 2 {
+		t.Errorf("kept %d connections, want 2", kept)
+	}
+}
+
+func TestH3Resolver_prunesDeadAndExcessConnections(t *testing.T) {
+	d := newDoH3Server(t, [4]byte{3, 3, 3, 3})
+	fc, _ := d.client(t)
+	r, err := newH3Resolver(fc, d.url(), &tls.Config{RootCAs: d.pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for i := 0; i < maxH3Conns+3; i++ {
+		if _, err := r.dialQUIC(ctx, d.addr.String(), r.tlsCfg.Clone(), r.rt.QUICConfig); err != nil {
+			t.Fatalf("dial %d: %v", i, err)
+		}
+	}
+	r.mu.Lock()
+	kept := len(r.conns)
+	r.mu.Unlock()
+	if kept > maxH3Conns {
+		t.Errorf("kept %d connections, want at most %d", kept, maxH3Conns)
+	}
+}
+
 func TestH3Resolver_udpDisabledFallsBackToHTTPS(t *testing.T) {
 	d := newDoHServer(t, [4]byte{4, 4, 4, 4}, http.StatusOK)
 	fc := d.client()

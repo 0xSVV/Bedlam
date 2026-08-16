@@ -35,9 +35,12 @@ type h3Resolver struct {
 	hc       *http.Client
 
 	mu      sync.Mutex
-	cur     *h3Conn
+	conns   []*h3Conn
 	udpDown bool
 }
+
+// maxH3Conns bounds the connections kept alive for draining after a redial.
+const maxH3Conns = 4
 
 func newH3Resolver(c client.Client, rawURL string, base *tls.Config) (*h3Resolver, error) {
 	host, dial, err := dohDialAddr(rawURL)
@@ -89,14 +92,36 @@ func (r *h3Resolver) dialQUIC(ctx context.Context, _ string, tlsCfg *tls.Config,
 		_ = pkt.Close()
 		return nil, err
 	}
+	// http3.Transport drops a client without closing its connection so
+	// already-issued requests can drain; tearing it down here would abort
+	// every query still in flight on it.
 	r.mu.Lock()
-	prev := r.cur
-	r.cur = &h3Conn{pkt: pkt, tr: tr}
+	r.conns = append(r.conns, &h3Conn{pkt: pkt, tr: tr})
+	stale := r.pruneLocked()
 	r.mu.Unlock()
-	if prev != nil {
-		prev.close()
+	for _, c := range stale {
+		c.close()
 	}
 	return qc, nil
+}
+
+// pruneLocked drops connections whose session already died, and the oldest
+// survivors once the list is over budget. Returns the ones to close.
+func (r *h3Resolver) pruneLocked() []*h3Conn {
+	var keep, stale []*h3Conn
+	for _, c := range r.conns {
+		if c.pkt.isClosed() {
+			stale = append(stale, c)
+			continue
+		}
+		keep = append(keep, c)
+	}
+	for len(keep) > maxH3Conns {
+		stale = append(stale, keep[0])
+		keep = keep[1:]
+	}
+	r.conns = keep
+	return stale
 }
 
 func (r *h3Resolver) exchange(ctx context.Context, query []byte) ([]byte, error) {
@@ -123,11 +148,11 @@ func (r *h3Resolver) id() string { return "http3|" + r.url }
 func (r *h3Resolver) close() {
 	_ = r.rt.Close()
 	r.mu.Lock()
-	cur := r.cur
-	r.cur = nil
+	conns := r.conns
+	r.conns = nil
 	r.mu.Unlock()
-	if cur != nil {
-		cur.close()
+	for _, c := range conns {
+		c.close()
 	}
 	r.fallback.close()
 }
