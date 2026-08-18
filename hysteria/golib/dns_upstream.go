@@ -25,6 +25,7 @@ const (
 	dnsTransportUDP   = "udp"
 	dnsTransportTCP   = "tcp"
 	dnsTransportTLS   = "tls"
+	dnsTransportQUIC  = "quic"
 	dnsTransportHTTPS = "https"
 	dnsTransportHTTP3 = "http3"
 )
@@ -95,6 +96,8 @@ func newDNSResolver(c client.Client, transport, server string) (dnsResolver, err
 		return newUDPResolver(c, server), nil
 	case dnsTransportTLS:
 		return newTLSResolver(c, server, nil), nil
+	case dnsTransportQUIC:
+		return newDoQResolver(c, server, nil), nil
 	case dnsTransportHTTPS:
 		return newHTTPSResolver(c, server, nil)
 	case dnsTransportHTTP3:
@@ -188,6 +191,8 @@ func normalizeDNSServer(transport, raw string) (string, error) {
 		return normalizeHostPort(raw, "53", false)
 	case dnsTransportTLS:
 		return normalizeHostPort(raw, "853", true)
+	case dnsTransportQUIC:
+		return normalizeHostPort(strings.TrimPrefix(raw, "quic://"), "853", true)
 	case dnsTransportHTTPS, dnsTransportHTTP3:
 		return normalizeDoHURL(raw)
 	default:
