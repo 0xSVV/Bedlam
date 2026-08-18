@@ -60,8 +60,11 @@ func newH3Resolver(c client.Client, rawURL string, base *tls.Config) (*h3Resolve
 	r.rt = &http3.Transport{
 		TLSClientConfig: r.tlsCfg,
 		QUICConfig: &quic.Config{
-			MaxIdleTimeout:          60 * time.Second,
-			KeepAlivePeriod:         25 * time.Second,
+			MaxIdleTimeout: 60 * time.Second,
+			// No keepalive: an idle resolver connection would otherwise wake
+			// the radio forever on top of the tunnel's own keepalive. The
+			// transport redials when a lookup finds the connection gone.
+			KeepAlivePeriod:         0,
 			HandshakeIdleTimeout:    5 * time.Second,
 			InitialPacketSize:       1200,
 			DisablePathMTUDiscovery: true,
