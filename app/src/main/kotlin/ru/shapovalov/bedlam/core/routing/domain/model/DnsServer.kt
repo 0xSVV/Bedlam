@@ -26,6 +26,8 @@ object DnsServer {
         return when (transport) {
             DnsTransport.Udp, DnsTransport.Tcp -> parseHostPort(value, defaultPort = 53, allowHost = false)
             DnsTransport.Tls -> parseHostPort(value, defaultPort = 853, allowHost = true)
+            DnsTransport.Doq ->
+                parseHostPort(value.removePrefix("quic://"), defaultPort = 853, allowHost = true)
             DnsTransport.Https, DnsTransport.Http3 -> parseDohUrl(value)
         }
     }

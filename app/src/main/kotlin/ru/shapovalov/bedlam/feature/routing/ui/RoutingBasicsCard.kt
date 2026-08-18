@@ -322,6 +322,7 @@ private fun DnsTransport.label(): String = stringResource(
         DnsTransport.Udp -> R.string.routing_dns_transport_udp
         DnsTransport.Tcp -> R.string.routing_dns_transport_tcp
         DnsTransport.Tls -> R.string.routing_dns_transport_tls
+        DnsTransport.Doq -> R.string.routing_dns_transport_doq
         DnsTransport.Https -> R.string.routing_dns_transport_https
         DnsTransport.Http3 -> R.string.routing_dns_transport_http3
     }
@@ -332,6 +333,7 @@ private fun DnsTransport.placeholder(): String = stringResource(
     when (this) {
         DnsTransport.Udp, DnsTransport.Tcp -> R.string.routing_dns_custom_placeholder_ip
         DnsTransport.Tls -> R.string.routing_dns_custom_placeholder_tls
+        DnsTransport.Doq -> R.string.routing_dns_custom_placeholder_doq
         DnsTransport.Https, DnsTransport.Http3 -> R.string.routing_dns_custom_placeholder_https
     }
 )
@@ -341,6 +343,7 @@ private fun DnsTransport.hint(): String = stringResource(
     when (this) {
         DnsTransport.Udp, DnsTransport.Tcp -> R.string.routing_dns_custom_hint_ip
         DnsTransport.Tls -> R.string.routing_dns_custom_hint_tls
+        DnsTransport.Doq -> R.string.routing_dns_custom_hint_doq
         DnsTransport.Https, DnsTransport.Http3 -> R.string.routing_dns_custom_hint_https
     }
 )

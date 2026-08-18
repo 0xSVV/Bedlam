@@ -24,17 +24,23 @@ object DnsPresets {
 
     fun supportedTransports(mode: DnsMode): List<DnsTransport> = when (mode) {
         DnsMode.System -> listOf(DnsTransport.Udp, DnsTransport.Tcp)
-        else -> DnsTransport.entries
+        // Neither preset publishes a DNS over QUIC endpoint, so it stays a
+        // Custom-mode choice rather than a preset that cannot answer.
+        DnsMode.Cloudflare, DnsMode.Google -> DnsTransport.entries - DnsTransport.Doq
+        DnsMode.Custom -> DnsTransport.entries
     }
 
-    fun effectiveTransport(mode: DnsMode, transport: DnsTransport): DnsTransport =
-        if (transport in supportedTransports(mode)) transport else DnsTransport.Tcp
+    fun effectiveTransport(mode: DnsMode, transport: DnsTransport): DnsTransport = when {
+        transport in supportedTransports(mode) -> transport
+        mode == DnsMode.System -> DnsTransport.Tcp
+        else -> DnsTransport.Tls
+    }
 
     private fun endpoint(ip: String, transport: DnsTransport): String {
         val host = if (':' in ip) "[$ip]" else ip
         return when (transport) {
             DnsTransport.Udp, DnsTransport.Tcp -> "$host:53"
-            DnsTransport.Tls -> "$host:853"
+            DnsTransport.Tls, DnsTransport.Doq -> "$host:853"
             DnsTransport.Https, DnsTransport.Http3 -> "https://$host/dns-query"
         }
     }

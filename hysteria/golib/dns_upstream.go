@@ -192,7 +192,11 @@ func normalizeDNSServer(transport, raw string) (string, error) {
 	case dnsTransportTLS:
 		return normalizeHostPort(raw, "853", true)
 	case dnsTransportQUIC:
-		return normalizeHostPort(strings.TrimPrefix(raw, "quic://"), "853", true)
+		endpoint := strings.TrimSpace(strings.TrimPrefix(raw, "quic://"))
+		if endpoint == "" {
+			return "", fmt.Errorf("dns server %q: missing host", raw)
+		}
+		return normalizeHostPort(endpoint, "853", true)
 	case dnsTransportHTTPS, dnsTransportHTTP3:
 		return normalizeDoHURL(raw)
 	default:

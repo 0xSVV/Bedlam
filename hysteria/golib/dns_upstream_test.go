@@ -49,6 +49,7 @@ func TestNormalizeDNSServer(t *testing.T) {
 		{"quic", "1.1.1.1", "1.1.1.1:853", false},
 		{"quic", "quic://[2606:4700:4700::1111]:8853", "[2606:4700:4700::1111]:8853", false},
 		{"quic", "quic://dns.adguard-dns.com:0", "", true},
+		{"quic", "quic://", "", true},
 		{"https", "1.1.1.1", "https://1.1.1.1/dns-query", false},
 		{"https", "dns.google", "https://dns.google/dns-query", false},
 		{"https", "2001:4860:4860::8888", "https://[2001:4860:4860::8888]/dns-query", false},
