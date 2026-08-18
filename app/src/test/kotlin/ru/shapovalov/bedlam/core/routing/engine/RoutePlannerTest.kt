@@ -503,4 +503,14 @@ class RoutePlannerTest {
         val plan = planner().plan(RoutingConfig(mtu = 1220), AppFilter())
         assertEquals(RoutingConfig.MIN_TUN_MTU, plan.mtu)
     }
+
+    @Test
+    fun `an unusable dns over quic entry falls back over TLS`() {
+        val plan = planner().plan(
+            RoutingConfig(dnsMode = DnsMode.Custom, dnsTransport = DnsTransport.Doq, customDns = listOf("nope!")),
+            AppFilter(),
+        )
+        assertEquals(DnsTransport.Tls, plan.dnsUpstream.transport)
+        assertEquals(DnsPresets.cloudflare(DnsTransport.Tls), plan.dnsUpstream.servers)
+    }
 }
