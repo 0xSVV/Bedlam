@@ -86,6 +86,16 @@ func (c *dnsCache) resolve(ctx context.Context, r dnsResolver, query []byte, onT
 	return out, nil
 }
 
+// A cache hit needs no network, so callers can answer it without spending one
+// of the in-flight query slots.
+func (c *dnsCache) tryCached(r dnsResolver, query []byte) []byte {
+	txID, qKey, ok := parseDNSQuery(query)
+	if !ok {
+		return nil
+	}
+	return c.lookup(r.id()+"\x00"+qKey, txID)
+}
+
 func (c *dnsCache) lookup(key string, txID uint16) []byte {
 	c.mu.Lock()
 	entry, ok := c.entries[key]
