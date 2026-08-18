@@ -21,6 +21,14 @@ import (
 
 const serverResolveTimeout = 3 * time.Second
 
+// The core defaults (30s idle, 10s keepalive) drop the tunnel after three lost
+// keepalives, which a handover or a DPI stall easily produces, and they wake
+// the radio every 10 seconds. A wider idle window survives both and costs less.
+const (
+	defaultMaxIdleTimeoutSec  = 60
+	defaultKeepAlivePeriodSec = 25
+)
+
 type clientConfig struct {
 	Server string `json:"server"`
 	Auth   string `json:"auth"`
@@ -194,21 +202,25 @@ func applyClientOptions(coreConfig *client.Config, cfg *clientConfig, defaultSNI
 		DisableChromeParrot:            cfg.DisableChromeParrot,
 		DisableGSO:                     cfg.DisableGSO,
 	}
-	if cfg.MaxIdleTimeoutSec > 0 {
-		coreConfig.QUICConfig.MaxIdleTimeout = time.Duration(cfg.MaxIdleTimeoutSec) * time.Second
+	idleSec := cfg.MaxIdleTimeoutSec
+	if idleSec <= 0 {
+		idleSec = defaultMaxIdleTimeoutSec
 	}
-	if cfg.KeepAlivePeriodSec > 0 {
-		coreConfig.QUICConfig.KeepAlivePeriod = time.Duration(cfg.KeepAlivePeriodSec) * time.Second
+	coreConfig.QUICConfig.MaxIdleTimeout = time.Duration(idleSec) * time.Second
+
+	keepAliveSec := cfg.KeepAlivePeriodSec
+	if keepAliveSec <= 0 {
+		keepAliveSec = defaultKeepAlivePeriodSec
 	}
-	if anyQUICTuned(cfg) {
-		log(LogLevelInfo, srcTransport,
-			"QUIC: stream-recv=[%d,%d] conn-recv=[%d,%d] idle=%ds keepalive=%ds "+
-				"pmtud-disabled=%v parrot-disabled=%v gso-disabled=%v",
-			cfg.InitStreamReceiveWindow, cfg.MaxStreamReceiveWindow,
-			cfg.InitConnReceiveWindow, cfg.MaxConnReceiveWindow,
-			cfg.MaxIdleTimeoutSec, cfg.KeepAlivePeriodSec,
-			cfg.DisablePathMTUDiscovery, cfg.DisableChromeParrot, cfg.DisableGSO)
-	}
+	coreConfig.QUICConfig.KeepAlivePeriod = time.Duration(keepAliveSec) * time.Second
+
+	log(LogLevelInfo, srcTransport,
+		"QUIC: stream-recv=[%d,%d] conn-recv=[%d,%d] idle=%ds keepalive=%ds "+
+			"pmtud-disabled=%v parrot-disabled=%v gso-disabled=%v",
+		cfg.InitStreamReceiveWindow, cfg.MaxStreamReceiveWindow,
+		cfg.InitConnReceiveWindow, cfg.MaxConnReceiveWindow,
+		idleSec, keepAliveSec,
+		cfg.DisablePathMTUDiscovery, cfg.DisableChromeParrot, cfg.DisableGSO)
 
 	if cfg.CongestionType != "" {
 		coreConfig.CongestionConfig.Type = cfg.CongestionType
@@ -230,13 +242,6 @@ func applyClientOptions(coreConfig *client.Config, cfg *clientConfig, defaultSNI
 	}
 
 	return nil
-}
-
-func anyQUICTuned(cfg *clientConfig) bool {
-	return cfg.InitStreamReceiveWindow != 0 || cfg.MaxStreamReceiveWindow != 0 ||
-		cfg.InitConnReceiveWindow != 0 || cfg.MaxConnReceiveWindow != 0 ||
-		cfg.MaxIdleTimeoutSec != 0 || cfg.KeepAlivePeriodSec != 0 ||
-		cfg.DisablePathMTUDiscovery || cfg.DisableChromeParrot || cfg.DisableGSO
 }
 
 func authSummary(auth string) string {
