@@ -109,11 +109,13 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                     dnsMode = state.config.dnsMode,
                     dnsTransport = state.config.dnsTransport,
                     customDns = state.config.customDns,
+                    mtu = state.config.mtu,
                     onSetBypassLan = component::onSetBypassLan,
                     onSetIpv6Mode = component::onSetIpv6Mode,
                     onSetDnsMode = component::onSetDnsMode,
                     onSetDnsTransport = component::onSetDnsTransport,
                     onSetCustomDns = component::onSetCustomDns,
+                    onSetMtu = component::onSetMtu,
                 )
             }
 

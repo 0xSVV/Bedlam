@@ -34,6 +34,7 @@ class RefreshRouteSourcesUseCaseTest {
         override suspend fun setDnsMode(mode: DnsMode) = Unit
         override suspend fun setDnsTransport(transport: DnsTransport) = Unit
         override suspend fun setCustomDns(servers: List<String>) = Unit
+        override suspend fun setMtu(mtu: Int) = Unit
         override suspend fun upsertSource(source: DirectRouteSource) = Unit
         override suspend fun removeSource(id: String) = Unit
         override suspend fun setSourceEnabled(id: String, enabled: Boolean) = Unit

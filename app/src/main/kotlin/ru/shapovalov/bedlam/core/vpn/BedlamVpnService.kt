@@ -302,7 +302,7 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun RoutePlan.toTunConfig(): TunConfig =
-        TunConfig(ipv6Enabled = ipv6Enabled, dns = dnsUpstream)
+        TunConfig(mtu = mtu, ipv6Enabled = ipv6Enabled, dns = dnsUpstream)
 
     private fun startProfileNameWatcher(profileId: String?) {
         profileNameWatcherJob?.cancel()

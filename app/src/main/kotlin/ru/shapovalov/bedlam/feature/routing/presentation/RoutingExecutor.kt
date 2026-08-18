@@ -38,6 +38,10 @@ internal class RoutingExecutor(
                 routingRepository.setDnsTransport(intent.transport)
             }
 
+            is RoutingStore.Intent.SetMtu -> scope.launch {
+                routingRepository.setMtu(intent.mtu)
+            }
+
             is RoutingStore.Intent.SetCustomDns -> scope.launch {
                 routingRepository.setCustomDns(intent.servers)
             }

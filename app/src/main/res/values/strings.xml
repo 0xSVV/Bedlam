@@ -207,6 +207,12 @@
     <string name="routing_ipv6_disabled">Disabled</string>
     <string name="routing_ipv6_bypass_only">Bypass-only</string>
 
+    <string name="routing_mtu_label">MTU</string>
+    <string name="routing_mtu_auto_placeholder">Auto (%1$d)</string>
+    <string name="routing_mtu_auto_hint">Auto uses %1$d bytes. Set a lower value if images stall until you reload the page</string>
+    <string name="routing_mtu_hint">The largest packet the tunnel interface accepts</string>
+    <string name="routing_mtu_range_error">The MTU must be between %1$d and %2$d</string>
+    <string name="routing_mtu_ipv6_conflict">IPv6 needs an MTU of %1$d or more. Turn IPv6 off to go lower</string>
     <string name="routing_dns_title">DNS</string>
     <string name="routing_dns_system">System</string>
     <string name="routing_dns_cloudflare">Cloudflare</string>
