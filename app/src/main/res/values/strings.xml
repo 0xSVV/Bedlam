@@ -207,6 +207,11 @@
     <string name="routing_ipv6_disabled">Disabled</string>
     <string name="routing_ipv6_bypass_only">Bypass-only</string>
 
+    <string name="routing_mtu_label">MTU</string>
+    <string name="routing_mtu_auto_placeholder">Auto (%1$d)</string>
+    <string name="routing_mtu_auto_hint">Auto uses %1$d bytes. IPv6 does not allow less</string>
+    <string name="routing_mtu_hint">The largest packet that the tunnel interface accepts</string>
+    <string name="routing_mtu_range_error">The MTU must be from %1$d to %2$d bytes</string>
     <string name="routing_dns_title">DNS</string>
     <string name="routing_dns_system">System</string>
     <string name="routing_dns_cloudflare">Cloudflare</string>
@@ -216,9 +221,11 @@
     <string name="routing_dns_custom_label">DNS servers</string>
     <string name="routing_dns_custom_placeholder_ip">9.9.9.9, [2620:fe::fe]:53</string>
     <string name="routing_dns_custom_placeholder_tls">dns.quad9.net, 9.9.9.9:853</string>
+    <string name="routing_dns_custom_placeholder_doq">dns.adguard-dns.com, quic://dns.nextdns.io</string>
     <string name="routing_dns_custom_placeholder_https">https://dns.quad9.net/dns-query, 9.9.9.9</string>
     <string name="routing_dns_custom_hint_ip">IPv4 or IPv6, optional :port (default 53); tried in order</string>
     <string name="routing_dns_custom_hint_tls">Host or IP, optional :port (default 853); tried in order</string>
+    <string name="routing_dns_custom_hint_doq">Host or IP with an optional quic:// prefix and :port (default 853); tried in order</string>
     <string name="routing_dns_custom_hint_https">https:// URL, or a host that expands to /dns-query; use a full URL for a port. Tried in order</string>
     <string name="routing_dns_custom_invalid">Ignored: %1$s</string>
     <string name="routing_dns_custom_none_usable">No server usable with this transport — falling back to Cloudflare</string>
@@ -226,6 +233,7 @@
     <string name="routing_dns_transport_udp">UDP</string>
     <string name="routing_dns_transport_tcp">TCP</string>
     <string name="routing_dns_transport_tls">DNS over TLS</string>
+    <string name="routing_dns_transport_doq">DNS over QUIC</string>
     <string name="routing_dns_transport_https">DNS over HTTPS</string>
     <string name="routing_dns_transport_http3">DNS over HTTP/3</string>
     <string name="routing_dns_transport_system_hint">System resolvers speak plain DNS — UDP or TCP only</string>

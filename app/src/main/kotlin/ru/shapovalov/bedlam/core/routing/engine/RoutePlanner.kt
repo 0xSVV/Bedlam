@@ -100,6 +100,7 @@ class RoutePlanner(
                 dnsUpstream = dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
+                mtu = RoutingConfig.resolveMtu(config.mtu),
             )
         } else {
             val claimedV4 = CidrMath
@@ -117,6 +118,7 @@ class RoutePlanner(
                 dnsUpstream = dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
+                mtu = RoutingConfig.resolveMtu(config.mtu),
             )
         }
     }
@@ -138,8 +140,13 @@ class RoutePlanner(
                 .filterNot { normalized ->
                     DnsServer.literalHostOf(normalized)?.let { it in lanDns } == true
                 }
-        }.ifEmpty { DnsPresets.cloudflare(transport) }
-        return DnsUpstream(transport, servers)
+        }
+        if (servers.isNotEmpty()) return DnsUpstream(transport, servers)
+        // No usable server. The preset has to answer, and Cloudflare publishes
+        // no DNS over QUIC endpoint, so that transport falls back over TLS on
+        // the same port rather than to an upstream that cannot reply at all.
+        val fallback = if (transport == DnsTransport.Doq) DnsTransport.Tls else transport
+        return DnsUpstream(fallback, DnsPresets.cloudflare(fallback))
     }
 
     private fun lanDnsServers(config: RoutingConfig, transport: DnsTransport): List<String> {

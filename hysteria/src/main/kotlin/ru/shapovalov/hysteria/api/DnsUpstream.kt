@@ -10,6 +10,7 @@ enum class DnsTransport(val wire: String) {
     Udp("udp"),
     Tcp("tcp"),
     Tls("tls"),
+    Doq("quic"),
     Https("https"),
     Http3("http3"),
 }
@@ -19,7 +20,8 @@ enum class DnsTransport(val wire: String) {
  *
  * Server syntax depends on [transport]: `ip[:port]` or `[v6][:port]` for
  * [DnsTransport.Udp]/[DnsTransport.Tcp] (default port 53), `host|ip[:port]`
- * for [DnsTransport.Tls] (default 853), and an `https://` URL or a bare host
+ * for [DnsTransport.Tls] and [DnsTransport.Doq] (default 853, with an optional
+ * `quic://` prefix on the latter), and an `https://` URL or a bare host
  * (expanded to `https://<host>/dns-query`) for [DnsTransport.Https] and
  * [DnsTransport.Http3].
  */

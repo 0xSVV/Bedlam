@@ -13,6 +13,8 @@ data class RoutingConfigEntity(
     val customDnsCsv: String = "",
     @ColumnInfo(defaultValue = "Tcp")
     val dnsTransport: String = "Tcp",
+    @ColumnInfo(defaultValue = "0")
+    val mtu: Int = 0,
 ) {
     companion object {
         const val SINGLETON_ID = 1

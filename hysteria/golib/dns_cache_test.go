@@ -440,3 +440,73 @@ func TestDNSCacheLookupRespectsExpiry(t *testing.T) {
 		t.Error("expected expired entry to miss")
 	}
 }
+
+func firstAnswerTTL(t *testing.T, resp []byte) uint32 {
+	t.Helper()
+	pos := 12
+	for i := uint16(0); i < binary.BigEndian.Uint16(resp[4:6]); i++ {
+		np := skipName(resp, pos)
+		if np < 0 {
+			t.Fatal("unparsable question section")
+		}
+		pos = np + 4
+	}
+	np := skipName(resp, pos)
+	if np < 0 || np+10 > len(resp) {
+		t.Fatal("unparsable answer section")
+	}
+	return binary.BigEndian.Uint32(resp[np+4 : np+8])
+}
+
+func TestDNSCache_lookupCountsDownTTL(t *testing.T) {
+	c := newDNSCache()
+	c.store("k", dnsResponse("example.com", 300, [4]byte{1, 1, 1, 1}), 300*time.Second)
+	c.entries["k"].storedAt = time.Now().Add(-100 * time.Second)
+
+	resp := c.lookup("k", 0x1234)
+	if resp == nil {
+		t.Fatal("expected a cache hit")
+	}
+	if ttl := firstAnswerTTL(t, resp); ttl != 200 {
+		t.Errorf("ttl = %d, want 200", ttl)
+	}
+}
+
+func TestDNSCache_lookupFloorsTTLAtOne(t *testing.T) {
+	c := newDNSCache()
+	c.store("k", dnsResponse("example.com", 300, [4]byte{1, 1, 1, 1}), 3600*time.Second)
+	c.entries["k"].storedAt = time.Now().Add(-400 * time.Second)
+
+	resp := c.lookup("k", 0x1234)
+	if resp == nil {
+		t.Fatal("expected a cache hit")
+	}
+	if ttl := firstAnswerTTL(t, resp); ttl != 1 {
+		t.Errorf("ttl = %d, want 1", ttl)
+	}
+}
+
+func TestDNSCache_lookupLeavesTheStoredEntryIntact(t *testing.T) {
+	c := newDNSCache()
+	c.store("k", dnsResponse("example.com", 300, [4]byte{1, 1, 1, 1}), 3600*time.Second)
+	c.entries["k"].storedAt = time.Now().Add(-100 * time.Second)
+
+	for i := 0; i < 3; i++ {
+		resp := c.lookup("k", 0x1234)
+		if ttl := firstAnswerTTL(t, resp); ttl != 200 {
+			t.Fatalf("lookup %d: ttl = %d, want 200 every time", i, ttl)
+		}
+	}
+}
+
+func TestDecrementTTLs_keepsTheOptRecordIntact(t *testing.T) {
+	resp := withEDNS(dnsResponse("example.com", 300, [4]byte{1, 1, 1, 1}), 4096, true)
+	decrementTTLs(resp, 100*time.Second)
+
+	if ttl := firstAnswerTTL(t, resp); ttl != 200 {
+		t.Errorf("answer ttl = %d, want 200", ttl)
+	}
+	if flags := binary.BigEndian.Uint32(resp[len(resp)-6 : len(resp)-2]); flags != 0x8000 {
+		t.Errorf("OPT flags = %#x, want 0x8000 (the TTL field is not a lifetime)", flags)
+	}
+}

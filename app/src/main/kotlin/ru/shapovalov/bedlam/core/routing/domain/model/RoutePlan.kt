@@ -12,4 +12,5 @@ data class RoutePlan(
     val dnsUpstream: DnsUpstream,
     val appFilter: AppFilter,
     val ipv6Enabled: Boolean,
+    val mtu: Int,
 )

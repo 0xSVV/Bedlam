@@ -26,6 +26,7 @@ class RoutingComponent(
     fun onSetIpv6Mode(m: Ipv6Mode) = store.accept(RoutingStore.Intent.SetIpv6Mode(m))
     fun onSetDnsMode(m: DnsMode) = store.accept(RoutingStore.Intent.SetDnsMode(m))
     fun onSetDnsTransport(t: DnsTransport) = store.accept(RoutingStore.Intent.SetDnsTransport(t))
+    fun onSetMtu(mtu: Int) = store.accept(RoutingStore.Intent.SetMtu(mtu))
     fun onSetCustomDns(servers: List<String>) =
         store.accept(RoutingStore.Intent.SetCustomDns(servers))
 

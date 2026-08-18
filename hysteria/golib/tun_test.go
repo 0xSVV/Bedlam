@@ -3,10 +3,12 @@ package golib
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -284,4 +286,53 @@ func TestNewConnection_resolverPorts(t *testing.T) {
 		t.Errorf("answer = %v", resp)
 	}
 	c2.Close()
+}
+
+func TestServeDNSPackets_cachedAnswerSkipsSaturatedSlots(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+
+	var served atomic.Int32
+	stub := &stubResolver{name: "stub", reply: func(q []byte) ([]byte, error) {
+		if served.Add(1) > 1 {
+			<-release
+		}
+		return dnsResponseFor(q, 60, [4]byte{9, 9, 9, 9}), nil
+	}}
+	h := testHandler(t, stub)
+	pc := newFakePacketConn()
+	defer pc.Close()
+	dest := M.SocksaddrFrom(netip.MustParseAddr("172.19.0.2"), 53)
+	go h.serveDNSPackets(context.Background(), pc, dest.String())
+
+	pc.in <- fakePacket{dnsQuery("cached.example"), dest}
+	select {
+	case <-pc.out:
+	case <-time.After(5 * time.Second):
+		t.Fatal("priming query was not answered")
+	}
+
+	for i := 0; i < maxConcurrentDNS; i++ {
+		pc.in <- fakePacket{dnsQuery(fmt.Sprintf("miss%d.example", i)), dest}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for stub.calls.Load() < int32(maxConcurrentDNS)+1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of %d slots taken", stub.calls.Load()-1, maxConcurrentDNS)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	pc.in <- fakePacket{dnsQuery("cached.example"), dest}
+	select {
+	case p := <-pc.out:
+		if p.data[len(p.data)-1] != 9 {
+			t.Errorf("answer = %v", p.data)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cached answer waited on the saturated in-flight slots")
+	}
+	if got := stub.calls.Load(); got != int32(maxConcurrentDNS)+1 {
+		t.Errorf("resolver calls = %d, want %d (cache hit must not reach the resolver)", got, maxConcurrentDNS+1)
+	}
 }

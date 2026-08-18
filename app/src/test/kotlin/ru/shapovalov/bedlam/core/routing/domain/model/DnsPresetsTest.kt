@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.core.routing.domain.model
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.shapovalov.hysteria.api.DnsTransport
 
@@ -49,5 +50,16 @@ class DnsPresetsTest {
         assertEquals(DnsTransport.Tcp, DnsPresets.effectiveTransport(DnsMode.System, DnsTransport.Https))
         assertEquals(DnsTransport.Udp, DnsPresets.effectiveTransport(DnsMode.System, DnsTransport.Udp))
         assertEquals(DnsTransport.Https, DnsPresets.effectiveTransport(DnsMode.Google, DnsTransport.Https))
+    }
+
+    @Test
+    fun `dns over quic is a custom-mode choice only`() {
+        for (mode in listOf(DnsMode.Cloudflare, DnsMode.Google)) {
+            assertTrue(DnsTransport.Doq !in DnsPresets.supportedTransports(mode), "$mode")
+            assertEquals(DnsTransport.Tls, DnsPresets.effectiveTransport(mode, DnsTransport.Doq), "$mode")
+        }
+        assertTrue(DnsTransport.Doq in DnsPresets.supportedTransports(DnsMode.Custom))
+        assertEquals(DnsTransport.Doq, DnsPresets.effectiveTransport(DnsMode.Custom, DnsTransport.Doq))
+        assertEquals(DnsTransport.Tcp, DnsPresets.effectiveTransport(DnsMode.System, DnsTransport.Doq))
     }
 }

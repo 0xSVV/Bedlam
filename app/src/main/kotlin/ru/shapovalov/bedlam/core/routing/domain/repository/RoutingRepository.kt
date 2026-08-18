@@ -17,6 +17,7 @@ interface RoutingRepository {
     suspend fun setDnsMode(mode: DnsMode)
     suspend fun setDnsTransport(transport: DnsTransport)
     suspend fun setCustomDns(servers: List<String>)
+    suspend fun setMtu(mtu: Int)
 
     suspend fun upsertSource(source: DirectRouteSource)
     suspend fun removeSource(id: String)

@@ -112,6 +112,9 @@ class TunConfigTest {
 
     @Test
     fun `transport wire names are lowercase and stable`() {
-        assertEquals(listOf("udp", "tcp", "tls", "https", "http3"), DnsTransport.entries.map { it.wire })
+        assertEquals(
+            listOf("udp", "tcp", "tls", "quic", "https", "http3"),
+            DnsTransport.entries.map { it.wire },
+        )
     }
 }

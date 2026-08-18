@@ -42,6 +42,7 @@ import ru.shapovalov.bedlam.core.routing.domain.model.DnsPresets
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsServer
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsServerParse
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
+import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.api.DnsTransport
 
@@ -54,11 +55,13 @@ internal fun BasicsCard(
     dnsMode: DnsMode,
     dnsTransport: DnsTransport,
     customDns: List<String>,
+    mtu: Int,
     onSetBypassLan: (Boolean) -> Unit,
     onSetIpv6Mode: (Ipv6Mode) -> Unit,
     onSetDnsMode: (DnsMode) -> Unit,
     onSetDnsTransport: (DnsTransport) -> Unit,
     onSetCustomDns: (List<String>) -> Unit,
+    onSetMtu: (Int) -> Unit,
 ) {
     val ipv6Options = remember { Ipv6Mode.entries.toList() }
     val dnsOptions = remember { DnsMode.entries.toList() }
@@ -87,6 +90,11 @@ internal fun BasicsCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            DividerRow()
+            MtuEditor(
+                mtu = mtu,
+                onChange = onSetMtu,
+            )
             DividerRow()
             DropdownRow(
                 title = stringResource(R.string.routing_dns_title),
@@ -244,6 +252,63 @@ private fun <T> DropdownRow(
 }
 
 @Composable
+private fun MtuEditor(
+    mtu: Int,
+    onChange: (Int) -> Unit,
+) {
+    val spacing = MaterialTheme.spacing
+    var text by remember { mutableStateOf(if (mtu == RoutingConfig.AUTO_MTU) "" else mtu.toString()) }
+    val range = RoutingConfig.MIN_TUN_MTU..RoutingConfig.MAX_TUN_MTU
+    val entered = remember(text) { text.trim().toIntOrNull() }
+    val blank = remember(text) { text.isBlank() }
+    val outOfRange = !blank && (entered == null || entered !in range)
+
+    Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { input ->
+                text = input
+                val parsed = input.trim().toIntOrNull()
+                when {
+                    input.isBlank() -> onChange(RoutingConfig.AUTO_MTU)
+                    parsed == null || parsed !in range -> Unit
+                    else -> onChange(parsed)
+                }
+            },
+            label = { Text(stringResource(R.string.routing_mtu_label)) },
+            placeholder = {
+                Text(stringResource(R.string.routing_mtu_auto_placeholder, RoutingConfig.MIN_TUN_MTU))
+            },
+            supportingText = {
+                Text(
+                    when {
+                        outOfRange -> stringResource(
+                            R.string.routing_mtu_range_error,
+                            RoutingConfig.MIN_TUN_MTU,
+                            RoutingConfig.MAX_TUN_MTU,
+                        )
+
+                        blank -> stringResource(
+                            R.string.routing_mtu_auto_hint,
+                            RoutingConfig.MIN_TUN_MTU,
+                        )
+
+                        else -> stringResource(R.string.routing_mtu_hint)
+                    }
+                )
+            },
+            isError = outOfRange,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                autoCorrectEnabled = false,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+    }
+}
+
+@Composable
 private fun CustomDnsEditor(
     initial: List<String>,
     transport: DnsTransport,
@@ -322,6 +387,7 @@ private fun DnsTransport.label(): String = stringResource(
         DnsTransport.Udp -> R.string.routing_dns_transport_udp
         DnsTransport.Tcp -> R.string.routing_dns_transport_tcp
         DnsTransport.Tls -> R.string.routing_dns_transport_tls
+        DnsTransport.Doq -> R.string.routing_dns_transport_doq
         DnsTransport.Https -> R.string.routing_dns_transport_https
         DnsTransport.Http3 -> R.string.routing_dns_transport_http3
     }
@@ -332,6 +398,7 @@ private fun DnsTransport.placeholder(): String = stringResource(
     when (this) {
         DnsTransport.Udp, DnsTransport.Tcp -> R.string.routing_dns_custom_placeholder_ip
         DnsTransport.Tls -> R.string.routing_dns_custom_placeholder_tls
+        DnsTransport.Doq -> R.string.routing_dns_custom_placeholder_doq
         DnsTransport.Https, DnsTransport.Http3 -> R.string.routing_dns_custom_placeholder_https
     }
 )
@@ -341,6 +408,7 @@ private fun DnsTransport.hint(): String = stringResource(
     when (this) {
         DnsTransport.Udp, DnsTransport.Tcp -> R.string.routing_dns_custom_hint_ip
         DnsTransport.Tls -> R.string.routing_dns_custom_hint_tls
+        DnsTransport.Doq -> R.string.routing_dns_custom_hint_doq
         DnsTransport.Https, DnsTransport.Http3 -> R.string.routing_dns_custom_hint_https
     }
 )

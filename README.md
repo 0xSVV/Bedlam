@@ -23,7 +23,9 @@ The UI is Jetpack Compose and Material 3 over a unidirectional architecture. It 
 
 Routing is rule based. Three kinds of source decide what bypasses the tunnel and what goes through it: CIDR ranges, autonomous systems (Bedlam expands an ASN to its announced prefixes, live from RIPEstat), and domains (Bedlam resolves them to addresses). The engine coalesces and subtracts those into a minimal route set, with LAN bypass. You can tunnel IPv6, block it, or leave it outside the VPN.
 
-DNS goes through the tunnel to Cloudflare, Google, your own servers, or your network's resolvers. Choose plain UDP or TCP, DNS over TLS, DNS over HTTPS, or DNS over HTTP/3. IPv4 and IPv6 resolvers both work.
+DNS goes through the tunnel to Cloudflare, Google, your own servers, or your network's resolvers. Choose plain UDP or TCP, DNS over TLS, DNS over QUIC, DNS over HTTPS, or DNS over HTTP/3. IPv4 and IPv6 resolvers both work.
+
+You can set the tunnel MTU from 1280 to 9000 bytes. Auto uses 1280. 1280 is the minimum link MTU of IPv6. The interface always holds an IPv6 address, so `VpnService.Builder.establish` refuses a smaller value.
 
 GeoIP is deliberately out of scope. Bedlam bundles no `geoip.dat` or `.mmdb`, and matches no country or category. That kind of routing belongs to a general-purpose engine like sing-box, which has a rule-matching layer and bundled geo databases. Bedlam is a focused tunnel, and keeps its routing explicit by design.
 

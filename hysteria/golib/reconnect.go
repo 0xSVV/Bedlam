@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	watchdogInterval = 60 * time.Second
+	watchdogInterval = 30 * time.Second
 	probeDNSServer   = "1.1.1.1:53"
 
 	dialBackoffBase = 1 * time.Second
@@ -377,15 +377,6 @@ func (rc *reconnectClient) tick() {
 			log(LogLevelDebug, srcWatchdog, "Idle re-dial failed: %s", err)
 		}
 		return
-	}
-
-	udp, err := c.UDP()
-	if isTunnelDead(err) {
-		rc.markDead(err, srcWatchdog)
-		return
-	}
-	if udp != nil {
-		_ = udp.Close()
 	}
 
 	if rc.statsFunc == nil {

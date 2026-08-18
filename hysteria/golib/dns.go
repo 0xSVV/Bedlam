@@ -32,17 +32,30 @@ type dnsResolver interface {
 }
 
 type tcpResolver struct {
-	client client.Client
 	server string
+	pool   *streamPool
+}
+
+func newTCPResolver(c client.Client, server string) *tcpResolver {
+	return &tcpResolver{
+		server: server,
+		pool: newStreamPool("DNS over TCP "+server, func(ctx context.Context) (net.Conn, error) {
+			conn, err := dialTunnelTCP(ctx, c, server)
+			if err != nil {
+				return nil, fmt.Errorf("dial DNS server %s: %w", server, err)
+			}
+			return conn, nil
+		}),
+	}
 }
 
 func (r *tcpResolver) exchange(ctx context.Context, query []byte) ([]byte, error) {
-	return dnsOverTCPContext(ctx, r.client, r.server, query)
+	return r.pool.exchange(ctx, query)
 }
 
 func (r *tcpResolver) id() string { return "tcp|" + r.server }
 
-func (r *tcpResolver) close() {}
+func (r *tcpResolver) close() { r.pool.close() }
 
 func writeDNSFrame(w io.Writer, msg []byte) error {
 	if len(msg) > 0xffff {

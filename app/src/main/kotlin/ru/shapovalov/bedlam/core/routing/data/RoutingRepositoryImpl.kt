@@ -62,6 +62,11 @@ class RoutingRepositoryImpl(
         dao.upsertConfig(current.copy(dnsTransport = transport.name))
     }
 
+    override suspend fun setMtu(mtu: Int) = mutex.withLock {
+        val current = dao.getConfig() ?: RoutingConfigEntity()
+        dao.upsertConfig(current.copy(mtu = mtu))
+    }
+
     override suspend fun setCustomDns(servers: List<String>) = mutex.withLock {
         val current = dao.getConfig() ?: RoutingConfigEntity()
         dao.upsertConfig(current.copy(customDnsCsv = servers.joinToString(",")))
@@ -120,6 +125,7 @@ class RoutingRepositoryImpl(
             dnsTransport = runCatching { DnsTransport.valueOf(configEntity.dnsTransport) }
                 .getOrDefault(DnsTransport.Tcp),
             customDns = configEntity.customDnsCsv.toCsvList(),
+            mtu = configEntity.mtu,
             sources = domain,
         )
     }

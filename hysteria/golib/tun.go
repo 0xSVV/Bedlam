@@ -223,7 +223,7 @@ func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn,
 }
 
 const (
-	maxConcurrentDNS     = 16
+	maxConcurrentDNS     = 64
 	dnsStreamIdleTimeout = 10 * time.Second
 )
 
@@ -249,18 +249,33 @@ func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, def
 
 		log(LogLevelDebug, srcDNS, "DNS query for %s via %s (%d bytes)", dnsAddr, resolver.id(), len(query))
 
-		sem <- struct{}{}
+		var src M.Socksaddr
+		if ap, perr := netip.ParseAddrPort(dnsAddr); perr == nil {
+			src = M.SocksaddrFromNetIP(ap)
+		}
+
+		if resp := h.session.dnsCache.tryCached(resolver, query); resp != nil {
+			log(LogLevelDebug, srcDNS, "DNS response: %d bytes from %s (cached)", len(resp), resolver.id())
+			if werr := conn.WritePacket(buf.As(resp), src); werr != nil {
+				log(LogLevelDebug, srcDNS, "DNS write to local error: %s", werr)
+			}
+			continue
+		}
+
 		go func() {
+			// Waiting for a slot here rather than in the read loop keeps the
+			// loop draining, so a cached name never queues behind a burst of
+			// misses.
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
 			defer func() { <-sem }()
 
 			qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
 			defer cancel()
 			resp, err := h.session.dnsCache.resolve(qctx, resolver, query, h.countDNS)
-
-			var src M.Socksaddr
-			if ap, perr := netip.ParseAddrPort(dnsAddr); perr == nil {
-				src = M.SocksaddrFromNetIP(ap)
-			}
 
 			if err != nil {
 				if dnsErrLimiter.allow(resolver.id()) {

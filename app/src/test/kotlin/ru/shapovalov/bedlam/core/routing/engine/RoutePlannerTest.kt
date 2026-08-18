@@ -482,4 +482,35 @@ class RoutePlannerTest {
             }
         }
     }
+
+    @Test
+    fun `auto mtu is the ipv6 minimum in every ipv6 mode`() {
+        // The TUN always carries an IPv6 address, so establish() rejects less.
+        for (mode in Ipv6Mode.entries) {
+            val plan = planner().plan(RoutingConfig(ipv6Mode = mode), AppFilter())
+            assertEquals(RoutingConfig.MIN_TUN_MTU, plan.mtu, "$mode")
+        }
+    }
+
+    @Test
+    fun `an explicit mtu wins over auto`() {
+        val plan = planner().plan(RoutingConfig(mtu = 1400), AppFilter())
+        assertEquals(1400, plan.mtu)
+    }
+
+    @Test
+    fun `a saved mtu below the ipv6 minimum is lifted back to it`() {
+        val plan = planner().plan(RoutingConfig(mtu = 1220), AppFilter())
+        assertEquals(RoutingConfig.MIN_TUN_MTU, plan.mtu)
+    }
+
+    @Test
+    fun `an unusable dns over quic entry falls back over TLS`() {
+        val plan = planner().plan(
+            RoutingConfig(dnsMode = DnsMode.Custom, dnsTransport = DnsTransport.Doq, customDns = listOf("nope!")),
+            AppFilter(),
+        )
+        assertEquals(DnsTransport.Tls, plan.dnsUpstream.transport)
+        assertEquals(DnsPresets.cloudflare(DnsTransport.Tls), plan.dnsUpstream.servers)
+    }
 }
