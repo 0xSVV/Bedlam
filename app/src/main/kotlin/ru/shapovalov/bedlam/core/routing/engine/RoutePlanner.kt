@@ -100,7 +100,7 @@ class RoutePlanner(
                 dnsUpstream = dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
-                mtu = RoutingConfig.resolveMtu(config.mtu, ipv6Enabled),
+                mtu = RoutingConfig.resolveMtu(config.mtu),
             )
         } else {
             val claimedV4 = CidrMath
@@ -118,7 +118,7 @@ class RoutePlanner(
                 dnsUpstream = dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
-                mtu = RoutingConfig.resolveMtu(config.mtu, ipv6Enabled),
+                mtu = RoutingConfig.resolveMtu(config.mtu),
             )
         }
     }

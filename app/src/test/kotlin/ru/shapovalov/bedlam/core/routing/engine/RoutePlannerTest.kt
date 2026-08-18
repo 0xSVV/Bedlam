@@ -484,31 +484,23 @@ class RoutePlannerTest {
     }
 
     @Test
-    fun `auto mtu drops below 1280 only when ipv6 is off`() {
-        val withV6 = planner().plan(RoutingConfig(ipv6Mode = Ipv6Mode.Enabled), AppFilter())
-        assertEquals(RoutingConfig.AUTO_MTU_WITH_IPV6, withV6.mtu)
-
-        for (mode in listOf(Ipv6Mode.Disabled, Ipv6Mode.BypassOnly)) {
+    fun `auto mtu is the ipv6 minimum in every ipv6 mode`() {
+        // The TUN always carries an IPv6 address, so establish() rejects less.
+        for (mode in Ipv6Mode.entries) {
             val plan = planner().plan(RoutingConfig(ipv6Mode = mode), AppFilter())
-            assertEquals(RoutingConfig.AUTO_MTU_V4_ONLY, plan.mtu, "$mode")
+            assertEquals(RoutingConfig.MIN_TUN_MTU, plan.mtu, "$mode")
         }
     }
 
     @Test
     fun `an explicit mtu wins over auto`() {
-        val plan = planner().plan(
-            RoutingConfig(ipv6Mode = Ipv6Mode.Disabled, mtu = 1400),
-            AppFilter(),
-        )
+        val plan = planner().plan(RoutingConfig(mtu = 1400), AppFilter())
         assertEquals(1400, plan.mtu)
     }
 
     @Test
-    fun `ipv6 lifts a saved mtu back to its minimum`() {
-        val plan = planner().plan(
-            RoutingConfig(ipv6Mode = Ipv6Mode.Enabled, mtu = 1220),
-            AppFilter(),
-        )
-        assertEquals(RoutingConfig.AUTO_MTU_WITH_IPV6, plan.mtu)
+    fun `a saved mtu below the ipv6 minimum is lifted back to it`() {
+        val plan = planner().plan(RoutingConfig(mtu = 1220), AppFilter())
+        assertEquals(RoutingConfig.MIN_TUN_MTU, plan.mtu)
     }
 }

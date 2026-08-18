@@ -25,7 +25,7 @@ Routing is rule based. Three kinds of source decide what bypasses the tunnel and
 
 DNS goes through the tunnel to Cloudflare, Google, your own servers, or your network's resolvers. Choose plain UDP or TCP, DNS over TLS, DNS over QUIC, DNS over HTTPS, or DNS over HTTP/3. IPv4 and IPv6 resolvers both work.
 
-The tunnel MTU is settable, and Auto picks it from the IPv6 mode: 1220 bytes without IPv6, 1280 with it. Hysteria carries a relayed UDP packet in one QUIC packet of at most 1200 bytes, so a wider interface splits every full packet in two unreliable halves.
+The tunnel MTU is settable, from 1280 to 9000 bytes, and Auto uses 1280. The floor is the IPv6 minimum link MTU: the interface always holds an IPv6 address, so `VpnService.Builder.establish` refuses anything smaller.
 
 GeoIP is deliberately out of scope. Bedlam bundles no `geoip.dat` or `.mmdb`, and matches no country or category. That kind of routing belongs to a general-purpose engine like sing-box, which has a rule-matching layer and bundled geo databases. Bedlam is a focused tunnel, and keeps its routing explicit by design.
 

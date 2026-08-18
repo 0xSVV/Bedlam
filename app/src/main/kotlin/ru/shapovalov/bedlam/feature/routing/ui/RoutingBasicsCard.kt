@@ -45,7 +45,6 @@ import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.api.DnsTransport
-import ru.shapovalov.hysteria.api.TunConfig
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -94,7 +93,6 @@ internal fun BasicsCard(
             DividerRow()
             MtuEditor(
                 mtu = mtu,
-                ipv6Enabled = ipv6Mode == Ipv6Mode.Enabled,
                 onChange = onSetMtu,
             )
             DividerRow()
@@ -256,17 +254,14 @@ private fun <T> DropdownRow(
 @Composable
 private fun MtuEditor(
     mtu: Int,
-    ipv6Enabled: Boolean,
     onChange: (Int) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     var text by remember { mutableStateOf(if (mtu == RoutingConfig.AUTO_MTU) "" else mtu.toString()) }
-    val auto = RoutingConfig.resolveMtu(RoutingConfig.AUTO_MTU, ipv6Enabled)
+    val range = RoutingConfig.MIN_TUN_MTU..RoutingConfig.MAX_TUN_MTU
     val entered = remember(text) { text.trim().toIntOrNull() }
     val blank = remember(text) { text.isBlank() }
-    val outOfRange = !blank && (entered == null || entered !in TunConfig.MIN_MTU..TunConfig.MAX_MTU)
-    val ipv6Conflict = entered != null && !outOfRange &&
-            ipv6Enabled && entered < RoutingConfig.AUTO_MTU_WITH_IPV6
+    val outOfRange = !blank && (entered == null || entered !in range)
 
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
@@ -276,33 +271,33 @@ private fun MtuEditor(
                 val parsed = input.trim().toIntOrNull()
                 when {
                     input.isBlank() -> onChange(RoutingConfig.AUTO_MTU)
-                    parsed == null || parsed !in TunConfig.MIN_MTU..TunConfig.MAX_MTU -> Unit
-                    ipv6Enabled && parsed < RoutingConfig.AUTO_MTU_WITH_IPV6 -> Unit
+                    parsed == null || parsed !in range -> Unit
                     else -> onChange(parsed)
                 }
             },
             label = { Text(stringResource(R.string.routing_mtu_label)) },
-            placeholder = { Text(stringResource(R.string.routing_mtu_auto_placeholder, auto)) },
+            placeholder = {
+                Text(stringResource(R.string.routing_mtu_auto_placeholder, RoutingConfig.MIN_TUN_MTU))
+            },
             supportingText = {
                 Text(
                     when {
                         outOfRange -> stringResource(
                             R.string.routing_mtu_range_error,
-                            TunConfig.MIN_MTU,
-                            TunConfig.MAX_MTU,
+                            RoutingConfig.MIN_TUN_MTU,
+                            RoutingConfig.MAX_TUN_MTU,
                         )
 
-                        ipv6Conflict -> stringResource(
-                            R.string.routing_mtu_ipv6_conflict,
-                            RoutingConfig.AUTO_MTU_WITH_IPV6,
+                        blank -> stringResource(
+                            R.string.routing_mtu_auto_hint,
+                            RoutingConfig.MIN_TUN_MTU,
                         )
 
-                        blank -> stringResource(R.string.routing_mtu_auto_hint, auto)
                         else -> stringResource(R.string.routing_mtu_hint)
                     }
                 )
             },
-            isError = outOfRange || ipv6Conflict,
+            isError = outOfRange,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Number,
                 autoCorrectEnabled = false,
