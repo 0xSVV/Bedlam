@@ -104,7 +104,7 @@ func TestDNSUpstream_failsOverPastARuntResponse(t *testing.T) {
 	}}
 	healthy := &stubResolver{name: "healthy", reply: echoAnswer([4]byte{7, 7, 7, 7})}
 	up := &dnsUpstream{
-		resolvers: []dnsResolver{&tcpResolver{client: runt, server: "1.1.1.1:53"}, healthy},
+		resolvers: []dnsResolver{newTCPResolver(runt, "1.1.1.1:53"), healthy},
 		ident:     "tcp|runt,healthy",
 	}
 

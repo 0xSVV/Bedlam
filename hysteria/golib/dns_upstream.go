@@ -90,7 +90,7 @@ func newDNSUpstream(c client.Client, cfg *dnsUpstreamConfig) (*dnsUpstream, erro
 func newDNSResolver(c client.Client, transport, server string) (dnsResolver, error) {
 	switch transport {
 	case dnsTransportTCP:
-		return &tcpResolver{client: c, server: server}, nil
+		return newTCPResolver(c, server), nil
 	case dnsTransportUDP:
 		return newUDPResolver(c, server), nil
 	case dnsTransportTLS:
