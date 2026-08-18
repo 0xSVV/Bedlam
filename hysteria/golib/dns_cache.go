@@ -20,6 +20,7 @@ const (
 type dnsCacheEntry struct {
 	key      string
 	response []byte
+	storedAt time.Time
 	expiry   time.Time
 	elem     *list.Element // position in LRU order
 }
@@ -106,7 +107,9 @@ func (c *dnsCache) lookup(key string, txID uint16) []byte {
 	c.lru.MoveToFront(entry.elem)
 	resp := make([]byte, len(entry.response))
 	copy(resp, entry.response)
+	age := time.Since(entry.storedAt)
 	c.mu.Unlock()
+	decrementTTLs(resp, age)
 	if len(resp) >= 2 {
 		binary.BigEndian.PutUint16(resp[:2], txID)
 	}
@@ -133,6 +136,7 @@ func (c *dnsCache) store(key string, response []byte, ttl time.Duration) {
 
 	if existing, ok := c.entries[key]; ok {
 		existing.response = respCopy
+		existing.storedAt = time.Now()
 		existing.expiry = time.Now().Add(ttl)
 		c.lru.MoveToFront(existing.elem)
 		return
@@ -149,6 +153,7 @@ func (c *dnsCache) store(key string, response []byte, ttl time.Duration) {
 	entry := &dnsCacheEntry{
 		key:      key,
 		response: respCopy,
+		storedAt: time.Now(),
 		expiry:   time.Now().Add(ttl),
 	}
 	entry.elem = c.lru.PushFront(entry)
@@ -322,6 +327,52 @@ func cacheableTTL(response []byte) time.Duration {
 		d = dnsCacheMaxTTL
 	}
 	return d
+}
+
+// A cached answer has to age. Replaying the stored TTL would give the client a
+// full fresh lifetime on every hit, so the record could never expire.
+func decrementTTLs(response []byte, age time.Duration) {
+	if len(response) < 12 || age <= 0 {
+		return
+	}
+	secs := uint32(age / time.Second)
+	if secs == 0 {
+		return
+	}
+	qdCount := binary.BigEndian.Uint16(response[4:6])
+	records := int(binary.BigEndian.Uint16(response[6:8])) +
+		int(binary.BigEndian.Uint16(response[8:10])) +
+		int(binary.BigEndian.Uint16(response[10:12]))
+
+	pos := 12
+	for i := uint16(0); i < qdCount; i++ {
+		np := skipName(response, pos)
+		if np < 0 || np+4 > len(response) {
+			return
+		}
+		pos = np + 4
+	}
+	for i := 0; i < records; i++ {
+		np := skipName(response, pos)
+		if np < 0 || np+10 > len(response) {
+			return
+		}
+		// An OPT record keeps flags and the extended rcode in the TTL field.
+		if binary.BigEndian.Uint16(response[np:np+2]) != 41 {
+			ttl := binary.BigEndian.Uint32(response[np+4 : np+8])
+			if ttl > secs {
+				ttl -= secs
+			} else {
+				ttl = 1
+			}
+			binary.BigEndian.PutUint32(response[np+4:np+8], ttl)
+		}
+		rdLen := binary.BigEndian.Uint16(response[np+8 : np+10])
+		pos = np + 10 + int(rdLen)
+		if pos > len(response) {
+			return
+		}
+	}
 }
 
 func skipName(data []byte, pos int) int {
