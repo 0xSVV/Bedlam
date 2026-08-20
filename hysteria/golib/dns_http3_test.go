@@ -259,3 +259,39 @@ func TestH3Resolver_udpDisabledFallsBackToHTTPS(t *testing.T) {
 		t.Errorf("HTTPS fallback saw %d requests, want 2", d.requests.Load())
 	}
 }
+
+func TestH3Resolver_blackholeSwitchesToHTTPS(t *testing.T) {
+	d := newDoHServer(t, [4]byte{4, 4, 4, 4}, http.StatusOK)
+	fc := d.client()
+	fc.udp = func() (client.HyUDPConn, error) { return newFakeUDPConn(nil), nil }
+	r, err := newH3Resolver(fc, d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	r.rt.QUICConfig.HandshakeIdleTimeout = 200 * time.Millisecond
+
+	for i := 0; i < fallbackGateThreshold; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, err := r.exchange(ctx, dnsQuery("example.com"))
+		cancel()
+		if err == nil {
+			t.Fatalf("exchange %d should fail against a blackholed relay", i)
+		}
+	}
+	if r.isUDPDown() {
+		t.Fatal("resolver must not switch before the fallback answers")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := r.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("exchange after the gate tripped: %v", err)
+	}
+	if resp[len(resp)-1] != 4 {
+		t.Errorf("answer = %v", resp)
+	}
+	if !r.isUDPDown() {
+		t.Error("resolver should stay on the HTTPS fallback")
+	}
+}
