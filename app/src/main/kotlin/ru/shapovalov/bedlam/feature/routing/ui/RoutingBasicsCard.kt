@@ -78,7 +78,6 @@ internal fun BasicsCard(
                 checked = bypassLan,
                 onCheckedChange = onSetBypassLan,
             )
-            DividerRow()
             ToggleGroupRow(
                 title = stringResource(R.string.routing_ipv6_title),
                 selected = ipv6Mode,
@@ -92,12 +91,10 @@ internal fun BasicsCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            DividerRow()
             MtuEditor(
                 mtu = mtu,
                 onChange = onSetMtu,
             )
-            DividerRow()
             DropdownRow(
                 title = stringResource(R.string.routing_dns_title),
                 value = dnsMode.label(),
@@ -106,7 +103,6 @@ internal fun BasicsCard(
                 renderLabel = { it.label() },
                 onPick = onSetDnsMode,
             )
-            DividerRow()
             DropdownRow(
                 title = stringResource(R.string.routing_dns_transport_title),
                 value = effectiveTransport.label(),
@@ -120,7 +116,6 @@ internal fun BasicsCard(
                 onPick = onSetDnsTransport,
             )
             if (dnsMode == DnsMode.Custom) {
-                DividerRow()
                 CustomDnsEditor(
                     initial = customDns,
                     transport = effectiveTransport,
@@ -290,24 +285,6 @@ private fun MtuEditor(
             placeholder = {
                 Text(stringResource(R.string.routing_mtu_auto_placeholder, RoutingConfig.MIN_TUN_MTU))
             },
-            supportingText = {
-                Text(
-                    when {
-                        outOfRange -> stringResource(
-                            R.string.routing_mtu_range_error,
-                            RoutingConfig.MIN_TUN_MTU,
-                            RoutingConfig.MAX_TUN_MTU,
-                        )
-
-                        blank -> stringResource(
-                            R.string.routing_mtu_auto_hint,
-                            RoutingConfig.MIN_TUN_MTU,
-                        )
-
-                        else -> stringResource(R.string.routing_mtu_hint)
-                    }
-                )
-            },
             isError = outOfRange,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Number,
@@ -317,6 +294,29 @@ private fun MtuEditor(
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused },
             singleLine = true,
+        )
+        Text(
+            text = when {
+                outOfRange -> stringResource(
+                    R.string.routing_mtu_range_error,
+                    RoutingConfig.MIN_TUN_MTU,
+                    RoutingConfig.MAX_TUN_MTU,
+                )
+
+                blank -> stringResource(
+                    R.string.routing_mtu_auto_hint,
+                    RoutingConfig.MIN_TUN_MTU,
+                )
+
+                else -> stringResource(R.string.routing_mtu_hint)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (outOfRange) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.padding(start = spacing.large, top = spacing.small),
         )
     }
 }
@@ -349,27 +349,34 @@ private fun CustomDnsEditor(
             },
             label = { Text(stringResource(R.string.routing_dns_custom_label)) },
             placeholder = { Text(transport.placeholder()) },
-            supportingText = {
-                Text(
-                    when {
-                        invalid.isEmpty() -> transport.hint()
-                        invalid.size == entries.size ->
-                            stringResource(R.string.routing_dns_custom_none_usable)
-
-                        else -> stringResource(
-                            R.string.routing_dns_custom_invalid,
-                            invalid.joinToString(", "),
-                        )
-                    }
-                )
-            },
             isError = invalid.isNotEmpty(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
                 autoCorrectEnabled = false,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focused = it.isFocused },
             singleLine = false,
+        )
+        Text(
+            text = when {
+                invalid.isEmpty() -> transport.hint()
+                invalid.size == entries.size ->
+                    stringResource(R.string.routing_dns_custom_none_usable)
+
+                else -> stringResource(
+                    R.string.routing_dns_custom_invalid,
+                    invalid.joinToString(", "),
+                )
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (invalid.isNotEmpty()) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.padding(start = spacing.large, top = spacing.small),
         )
     }
 }
