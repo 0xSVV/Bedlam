@@ -24,12 +24,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -258,10 +260,19 @@ private fun MtuEditor(
 ) {
     val spacing = MaterialTheme.spacing
     var text by remember { mutableStateOf(if (mtu == RoutingConfig.AUTO_MTU) "" else mtu.toString()) }
+    var focused by remember { mutableStateOf(false) }
     val range = RoutingConfig.MIN_TUN_MTU..RoutingConfig.MAX_TUN_MTU
     val entered = remember(text) { text.trim().toIntOrNull() }
     val blank = remember(text) { text.isBlank() }
     val outOfRange = !blank && (entered == null || entered !in range)
+
+    // The store loads the saved config after first composition, and later
+    // writes echo back through Room; sync only while the user is not typing.
+    LaunchedEffect(mtu, focused) {
+        if (!focused && mtu != (text.trim().toIntOrNull() ?: RoutingConfig.AUTO_MTU)) {
+            text = if (mtu == RoutingConfig.AUTO_MTU) "" else mtu.toString()
+        }
+    }
 
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
@@ -302,7 +313,9 @@ private fun MtuEditor(
                 keyboardType = KeyboardType.Number,
                 autoCorrectEnabled = false,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focused = it.isFocused },
             singleLine = true,
         )
     }
@@ -316,9 +329,16 @@ private fun CustomDnsEditor(
 ) {
     val spacing = MaterialTheme.spacing
     var text by remember { mutableStateOf(initial.joinToString(", ")) }
+    var focused by remember { mutableStateOf(false) }
     val entries = remember(text) { text.split(',', '\n').map(String::trim).filter(String::isNotEmpty) }
     val invalid = remember(entries, transport) {
         entries.filter { DnsServer.parse(it, transport) is DnsServerParse.Invalid }
+    }
+
+    LaunchedEffect(initial, focused) {
+        if (!focused && initial != entries) {
+            text = initial.joinToString(", ")
+        }
     }
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
