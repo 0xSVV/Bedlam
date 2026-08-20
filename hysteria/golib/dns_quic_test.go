@@ -196,3 +196,74 @@ func TestDoQResolver_udpDisabledFallsBackToDoT(t *testing.T) {
 		t.Error("resolver should remember that the UDP relay is unavailable")
 	}
 }
+
+func TestDoQResolver_blackholeSwitchesToDoT(t *testing.T) {
+	cert, pool := testCert(t)
+	dial := loopbackDoTServer(t, cert, func(_ int, q []byte) []byte {
+		return dnsResponseFor(q, 60, [4]byte{6, 6, 6, 6})
+	})
+	fc := &fakeClient{
+		tcp: func(string) (net.Conn, error) { return dial() },
+		udp: func() (client.HyUDPConn, error) { return newFakeUDPConn(nil), nil },
+	}
+	r := newDoQResolver(fc, "dns.test:853", &tls.Config{RootCAs: pool})
+	defer r.close()
+	r.qcfg.HandshakeIdleTimeout = 200 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	for i := 0; i < fallbackGateThreshold; i++ {
+		if _, err := r.exchange(ctx, dnsQuery("example.com")); err == nil {
+			t.Fatalf("exchange %d should fail against a blackholed relay", i)
+		}
+	}
+	if r.isUDPDown() {
+		t.Fatal("resolver must not switch before the fallback answers")
+	}
+	resp, err := r.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("exchange after the gate tripped: %v", err)
+	}
+	if resp[len(resp)-1] != 6 {
+		t.Errorf("answer = %v", resp)
+	}
+	if !r.isUDPDown() {
+		t.Error("resolver should stay on DoT after the fallback answered")
+	}
+}
+
+func TestDoQResolver_newSessionRetriesDoQ(t *testing.T) {
+	cert, pool := testCert(t)
+	dial := loopbackDoTServer(t, cert, func(_ int, q []byte) []byte {
+		return dnsResponseFor(q, 60, [4]byte{6, 6, 6, 6})
+	})
+	udpCalls := 0
+	sc := &seqClient{fakeClient: &fakeClient{
+		tcp: func(string) (net.Conn, error) { return dial() },
+		udp: func() (client.HyUDPConn, error) {
+			udpCalls++
+			return newFakeUDPConn(nil), nil
+		},
+	}}
+	r := newDoQResolver(sc, "dns.test:853", &tls.Config{RootCAs: pool})
+	defer r.close()
+	r.qcfg.HandshakeIdleTimeout = 200 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	for i := 0; i < fallbackGateThreshold; i++ {
+		_, _ = r.exchange(ctx, dnsQuery("example.com"))
+	}
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("fallback exchange: %v", err)
+	}
+	if !r.isUDPDown() {
+		t.Fatal("gate switch expected")
+	}
+	before := udpCalls
+	sc.seq.Add(1)
+	_, _ = r.exchange(ctx, dnsQuery("example.org"))
+	if udpCalls <= before {
+		t.Error("a new session should retry DoQ")
+	}
+}

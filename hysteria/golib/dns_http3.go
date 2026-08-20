@@ -33,10 +33,13 @@ type h3Resolver struct {
 	fallback *httpsResolver
 	rt       *http3.Transport
 	hc       *http.Client
+	gate     fallbackGate
 
 	mu      sync.Mutex
 	conns   []*h3Conn
 	udpDown bool
+	byGate  bool
+	lastSeq uint64
 }
 
 const maxH3Conns = 4
@@ -56,6 +59,7 @@ func newH3Resolver(c client.Client, rawURL string, base *tls.Config) (*h3Resolve
 		dial:     dial,
 		tlsCfg:   dnsTLSConfig(base, host, []string{http3.NextProtoH3}),
 		fallback: fallback,
+		lastSeq:  sessionSeq(c),
 	}
 	r.rt = &http3.Transport{
 		TLSClientConfig: r.tlsCfg,
@@ -124,12 +128,43 @@ func (r *h3Resolver) pruneLocked() []*h3Conn {
 	return stale
 }
 
+func (r *h3Resolver) syncSession() {
+	seq := sessionSeq(r.client)
+	r.mu.Lock()
+	changed := seq != r.lastSeq
+	if changed {
+		r.lastSeq = seq
+		if r.byGate {
+			r.udpDown = false
+			r.byGate = false
+		}
+	}
+	r.mu.Unlock()
+	if changed {
+		r.gate.reset()
+	}
+}
+
 func (r *h3Resolver) exchange(ctx context.Context, query []byte) ([]byte, error) {
+	r.syncSession()
 	if r.isUDPDown() {
 		return r.fallback.exchange(ctx, query)
 	}
+	if r.gate.tripped() {
+		resp, err := r.fallback.exchange(ctx, query)
+		if err == nil {
+			r.markUDPDownGate()
+			if udpDisabledLimiter.allow(r.url) {
+				log(LogLevelWarn, srcDNS, "DoH3 to %s times out but DoH over TCP answers; staying on it", r.url)
+			}
+			return resp, nil
+		}
+		r.gate.reset()
+		return nil, err
+	}
 	resp, err := dohExchange(ctx, r.hc, r.url, query)
 	if err == nil {
+		r.gate.reset()
 		return resp, nil
 	}
 	var dialErr coreErrs.DialError
@@ -139,6 +174,9 @@ func (r *h3Resolver) exchange(ctx context.Context, query []byte) ([]byte, error)
 			log(LogLevelWarn, srcDNS, "UDP relay unavailable (%s); using DoH over TCP for %s", dialErr, r.url)
 		}
 		return r.fallback.exchange(ctx, query)
+	}
+	if isTimeoutClass(err) {
+		r.gate.noteTimeout()
 	}
 	return nil, err
 }
@@ -166,5 +204,12 @@ func (r *h3Resolver) isUDPDown() bool {
 func (r *h3Resolver) markUDPDown() {
 	r.mu.Lock()
 	r.udpDown = true
+	r.mu.Unlock()
+}
+
+func (r *h3Resolver) markUDPDownGate() {
+	r.mu.Lock()
+	r.udpDown = true
+	r.byGate = true
 	r.mu.Unlock()
 }

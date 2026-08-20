@@ -24,12 +24,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -76,7 +78,6 @@ internal fun BasicsCard(
                 checked = bypassLan,
                 onCheckedChange = onSetBypassLan,
             )
-            DividerRow()
             ToggleGroupRow(
                 title = stringResource(R.string.routing_ipv6_title),
                 selected = ipv6Mode,
@@ -90,12 +91,10 @@ internal fun BasicsCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            DividerRow()
             MtuEditor(
                 mtu = mtu,
                 onChange = onSetMtu,
             )
-            DividerRow()
             DropdownRow(
                 title = stringResource(R.string.routing_dns_title),
                 value = dnsMode.label(),
@@ -104,7 +103,6 @@ internal fun BasicsCard(
                 renderLabel = { it.label() },
                 onPick = onSetDnsMode,
             )
-            DividerRow()
             DropdownRow(
                 title = stringResource(R.string.routing_dns_transport_title),
                 value = effectiveTransport.label(),
@@ -118,7 +116,6 @@ internal fun BasicsCard(
                 onPick = onSetDnsTransport,
             )
             if (dnsMode == DnsMode.Custom) {
-                DividerRow()
                 CustomDnsEditor(
                     initial = customDns,
                     transport = effectiveTransport,
@@ -258,10 +255,19 @@ private fun MtuEditor(
 ) {
     val spacing = MaterialTheme.spacing
     var text by remember { mutableStateOf(if (mtu == RoutingConfig.AUTO_MTU) "" else mtu.toString()) }
+    var focused by remember { mutableStateOf(false) }
     val range = RoutingConfig.MIN_TUN_MTU..RoutingConfig.MAX_TUN_MTU
     val entered = remember(text) { text.trim().toIntOrNull() }
     val blank = remember(text) { text.isBlank() }
     val outOfRange = !blank && (entered == null || entered !in range)
+
+    // The store loads the saved config after first composition, and later
+    // writes echo back through Room; sync only while the user is not typing.
+    LaunchedEffect(mtu, focused) {
+        if (!focused && mtu != (text.trim().toIntOrNull() ?: RoutingConfig.AUTO_MTU)) {
+            text = if (mtu == RoutingConfig.AUTO_MTU) "" else mtu.toString()
+        }
+    }
 
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
@@ -279,31 +285,38 @@ private fun MtuEditor(
             placeholder = {
                 Text(stringResource(R.string.routing_mtu_auto_placeholder, RoutingConfig.MIN_TUN_MTU))
             },
-            supportingText = {
-                Text(
-                    when {
-                        outOfRange -> stringResource(
-                            R.string.routing_mtu_range_error,
-                            RoutingConfig.MIN_TUN_MTU,
-                            RoutingConfig.MAX_TUN_MTU,
-                        )
-
-                        blank -> stringResource(
-                            R.string.routing_mtu_auto_hint,
-                            RoutingConfig.MIN_TUN_MTU,
-                        )
-
-                        else -> stringResource(R.string.routing_mtu_hint)
-                    }
-                )
-            },
             isError = outOfRange,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Number,
                 autoCorrectEnabled = false,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focused = it.isFocused },
             singleLine = true,
+        )
+        Text(
+            text = when {
+                outOfRange -> stringResource(
+                    R.string.routing_mtu_range_error,
+                    RoutingConfig.MIN_TUN_MTU,
+                    RoutingConfig.MAX_TUN_MTU,
+                )
+
+                blank -> stringResource(
+                    R.string.routing_mtu_auto_hint,
+                    RoutingConfig.MIN_TUN_MTU,
+                )
+
+                else -> stringResource(R.string.routing_mtu_hint)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (outOfRange) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.padding(start = spacing.large, top = spacing.small),
         )
     }
 }
@@ -316,9 +329,16 @@ private fun CustomDnsEditor(
 ) {
     val spacing = MaterialTheme.spacing
     var text by remember { mutableStateOf(initial.joinToString(", ")) }
+    var focused by remember { mutableStateOf(false) }
     val entries = remember(text) { text.split(',', '\n').map(String::trim).filter(String::isNotEmpty) }
     val invalid = remember(entries, transport) {
         entries.filter { DnsServer.parse(it, transport) is DnsServerParse.Invalid }
+    }
+
+    LaunchedEffect(initial, focused) {
+        if (!focused && initial != entries) {
+            text = initial.joinToString(", ")
+        }
     }
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
@@ -329,27 +349,34 @@ private fun CustomDnsEditor(
             },
             label = { Text(stringResource(R.string.routing_dns_custom_label)) },
             placeholder = { Text(transport.placeholder()) },
-            supportingText = {
-                Text(
-                    when {
-                        invalid.isEmpty() -> transport.hint()
-                        invalid.size == entries.size ->
-                            stringResource(R.string.routing_dns_custom_none_usable)
-
-                        else -> stringResource(
-                            R.string.routing_dns_custom_invalid,
-                            invalid.joinToString(", "),
-                        )
-                    }
-                )
-            },
             isError = invalid.isNotEmpty(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
                 autoCorrectEnabled = false,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focused = it.isFocused },
             singleLine = false,
+        )
+        Text(
+            text = when {
+                invalid.isEmpty() -> transport.hint()
+                invalid.size == entries.size ->
+                    stringResource(R.string.routing_dns_custom_none_usable)
+
+                else -> stringResource(
+                    R.string.routing_dns_custom_invalid,
+                    invalid.joinToString(", "),
+                )
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (invalid.isNotEmpty()) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.padding(start = spacing.large, top = spacing.small),
         )
     }
 }

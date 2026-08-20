@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/apernet/hysteria/core/v2/client"
 )
 
 func TestIsPortHopping(t *testing.T) {
@@ -281,5 +283,33 @@ func TestValidateConfig_acceptsInRangeQUIC(t *testing.T) {
 	js := `{"server":"host.example:443","max_stream_receive_window":16384,"max_idle_timeout":30,"keep_alive_period":10}`
 	if err := ValidateConfig(js); err != nil {
 		t.Errorf("expected in-range QUIC params to pass, got %v", err)
+	}
+}
+
+func TestApplyClientOptions_quicTimerDefaults(t *testing.T) {
+	var core client.Config
+	cfg := clientConfig{Server: "host.example:443"}
+	if err := applyClientOptions(&core, &cfg, ""); err != nil {
+		t.Fatalf("applyClientOptions: %v", err)
+	}
+	if got := core.QUICConfig.MaxIdleTimeout; got != 30*time.Second {
+		t.Errorf("default MaxIdleTimeout = %v, want 30s", got)
+	}
+	if got := core.QUICConfig.KeepAlivePeriod; got != 15*time.Second {
+		t.Errorf("default KeepAlivePeriod = %v, want 15s", got)
+	}
+}
+
+func TestApplyClientOptions_quicTimersExplicit(t *testing.T) {
+	var core client.Config
+	cfg := clientConfig{Server: "host.example:443", MaxIdleTimeoutSec: 90, KeepAlivePeriodSec: 40}
+	if err := applyClientOptions(&core, &cfg, ""); err != nil {
+		t.Fatalf("applyClientOptions: %v", err)
+	}
+	if got := core.QUICConfig.MaxIdleTimeout; got != 90*time.Second {
+		t.Errorf("explicit MaxIdleTimeout = %v, want 90s", got)
+	}
+	if got := core.QUICConfig.KeepAlivePeriod; got != 40*time.Second {
+		t.Errorf("explicit KeepAlivePeriod = %v, want 40s", got)
 	}
 }

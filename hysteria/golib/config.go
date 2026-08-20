@@ -21,12 +21,14 @@ import (
 
 const serverResolveTimeout = 3 * time.Second
 
-// The core defaults (30s idle, 10s keepalive) drop the tunnel after three lost
-// keepalives, which a handover or a DPI stall easily produces, and they wake
-// the radio every 10 seconds. A wider idle window survives both and costs less.
+// The idle timeout matches the Hysteria server default: QUIC negotiates the
+// minimum of both ends, so a larger client value changes nothing against a
+// stock server. quic-go clamps the keepalive interval to half the negotiated
+// idle timeout; 15s states that clamp explicitly and wakes the radio less
+// often than the 10s core default. Explicit profile values override both.
 const (
-	defaultMaxIdleTimeoutSec  = 60
-	defaultKeepAlivePeriodSec = 25
+	defaultMaxIdleTimeoutSec  = 30
+	defaultKeepAlivePeriodSec = 15
 )
 
 type clientConfig struct {
