@@ -40,6 +40,7 @@ type reconnectClient struct {
 	fatal      atomic.Bool
 	attempt    atomic.Int32
 	generation uint64 // guarded by mu; bumped on every state transition
+	sessionSeq atomic.Uint64
 
 	eventMu        sync.Mutex
 	lastEmittedGen uint64 // guarded by eventMu
@@ -171,6 +172,7 @@ func (rc *reconnectClient) dial(force bool) error {
 		return coreErrs.ClosedError{}
 	}
 	rc.inner = cli
+	rc.sessionSeq.Add(1)
 	prevAttempt := rc.attempt.Swap(0)
 	rc.generation++
 	gen := rc.generation
@@ -259,6 +261,13 @@ func (rc *reconnectClient) currentClient(callerSource string) (client.Client, er
 		return nil, coreErrs.ClosedError{}
 	}
 	return c, nil
+}
+
+// SessionSeq identifies the current Hysteria session: it increments every
+// time a new inner client connects. DNS resolvers use it to retire sticky
+// per-session state, such as a UDP relay judged unusable.
+func (rc *reconnectClient) SessionSeq() uint64 {
+	return rc.sessionSeq.Load()
 }
 
 func (rc *reconnectClient) TCP(addr string) (net.Conn, error) {
