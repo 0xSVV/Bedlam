@@ -44,12 +44,16 @@ type udpWaiter struct {
 type udpResolver struct {
 	client client.Client
 	server string
+	tcp    *tcpResolver
+	gate   fallbackGate
 
 	mu       sync.Mutex
 	session  *udpSession
 	inflight map[uint16]*udpWaiter
 	closed   bool
 	tcpOnly  bool
+	byGate   bool
+	lastSeq  uint64
 
 	sendMu sync.Mutex
 }
@@ -58,7 +62,9 @@ func newUDPResolver(c client.Client, server string) *udpResolver {
 	return &udpResolver{
 		client:   c,
 		server:   server,
+		tcp:      newTCPResolver(c, server),
 		inflight: map[uint16]*udpWaiter{},
+		lastSeq:  sessionSeq(c),
 	}
 }
 
@@ -74,19 +80,54 @@ func (r *udpResolver) close() {
 	if s != nil {
 		s.kill()
 	}
+	r.tcp.close()
+}
+
+// syncSession retires gate-derived state when a new Hysteria session replaces
+// the one the verdict was formed on: the relay's health is per-session, and a
+// wrong retirement costs only the three timeouts needed to re-trip the gate.
+func (r *udpResolver) syncSession() {
+	seq := sessionSeq(r.client)
+	r.mu.Lock()
+	changed := seq != r.lastSeq
+	if changed {
+		r.lastSeq = seq
+		if r.byGate {
+			r.tcpOnly = false
+			r.byGate = false
+		}
+	}
+	r.mu.Unlock()
+	if changed {
+		r.gate.reset()
+	}
 }
 
 func (r *udpResolver) exchange(ctx context.Context, query []byte) ([]byte, error) {
 	if len(query) < 12 {
 		return nil, fmt.Errorf("%w: query too short", errDNSMalformed)
 	}
+	r.syncSession()
 	if r.isTCPOnly() {
-		return dnsOverTCPContext(ctx, r.client, r.server, query)
+		return r.tcp.exchange(ctx, query)
+	}
+	if r.gate.tripped() {
+		resp, err := r.tcp.exchange(ctx, query)
+		if err == nil {
+			r.markTCPOnlyGate()
+			if udpDisabledLimiter.allow(r.server) {
+				log(LogLevelWarn, srcDNS, "UDP DNS to %s times out but TCP answers; staying on TCP", r.server)
+			}
+			return resp, nil
+		}
+		r.gate.reset()
+		return nil, err
 	}
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		resp, retry, err := r.exchangeOnce(ctx, query)
 		if err == nil {
+			r.gate.reset()
 			return resp, nil
 		}
 		var dialErr coreErrs.DialError
@@ -95,12 +136,15 @@ func (r *udpResolver) exchange(ctx context.Context, query []byte) ([]byte, error
 			if udpDisabledLimiter.allow(r.server) {
 				log(LogLevelWarn, srcDNS, "UDP relay unavailable (%s); using TCP for %s", err, r.server)
 			}
-			return dnsOverTCPContext(ctx, r.client, r.server, query)
+			return r.tcp.exchange(ctx, query)
 		}
 		lastErr = err
 		if !retry || ctx.Err() != nil {
 			break
 		}
+	}
+	if isTimeoutClass(lastErr) {
+		r.gate.noteTimeout()
 	}
 	return nil, lastErr
 }
@@ -139,7 +183,7 @@ func (r *udpResolver) exchangeOnce(ctx context.Context, query []byte) ([]byte, b
 			copy(out, resp)
 			binary.BigEndian.PutUint16(out[:2], origID)
 			if out[2]&0x02 != 0 {
-				full, terr := dnsOverTCPContext(ctx, r.client, r.server, query)
+				full, terr := r.tcp.exchange(ctx, query)
 				if terr != nil {
 					return out, false, nil
 				}
@@ -295,6 +339,13 @@ func (r *udpResolver) isTCPOnly() bool {
 func (r *udpResolver) markTCPOnly() {
 	r.mu.Lock()
 	r.tcpOnly = true
+	r.mu.Unlock()
+}
+
+func (r *udpResolver) markTCPOnlyGate() {
+	r.mu.Lock()
+	r.tcpOnly = true
+	r.byGate = true
 	r.mu.Unlock()
 }
 

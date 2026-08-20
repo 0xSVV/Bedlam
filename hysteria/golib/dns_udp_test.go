@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
 
 func udpEcho(ip [4]byte) func(data []byte, addr string) [][]byte {
@@ -239,8 +241,8 @@ func TestUDPResolver_udpDisabledFallsBackToTCP(t *testing.T) {
 			t.Errorf("answer = %v", resp)
 		}
 	}
-	if tcpCalls != 2 {
-		t.Errorf("tcp calls = %d, want 2", tcpCalls)
+	if tcpCalls != 1 {
+		t.Errorf("tcp calls = %d, want 1 (pooled fallback reuses the stream)", tcpCalls)
 	}
 	if !r.isTCPOnly() {
 		t.Error("resolver should remember that UDP is unavailable")
@@ -399,5 +401,199 @@ func TestUDPResolver_contextTimeout(t *testing.T) {
 	r.mu.Unlock()
 	if pending != 0 {
 		t.Errorf("%d queries left registered", pending)
+	}
+}
+
+func TestUDPResolver_blackholeSwitchesToTCP(t *testing.T) {
+	fake := newFakeUDPConn(nil)
+	tcpCalls := 0
+	fc := &fakeClient{
+		udp: func() (client.HyUDPConn, error) { return fake, nil },
+		tcp: func(string) (net.Conn, error) {
+			tcpCalls++
+			return pipeDNSServer(t, func(q []byte) []byte {
+				return dnsResponseFor(q, 60, [4]byte{7, 7, 7, 7})
+			}), nil
+		},
+	}
+	r := newUDPResolver(fc, "1.1.1.1:53")
+	defer r.close()
+
+	for i := 0; i < fallbackGateThreshold; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		_, err := r.exchange(ctx, dnsQuery("example.com"))
+		cancel()
+		if err == nil {
+			t.Fatalf("exchange %d should time out", i)
+		}
+	}
+	if r.isTCPOnly() {
+		t.Fatal("resolver must not switch before the fallback answers")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := r.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("exchange after the gate tripped: %v", err)
+	}
+	if resp[len(resp)-1] != 7 {
+		t.Errorf("answer = %v", resp)
+	}
+	if !r.isTCPOnly() {
+		t.Error("resolver should stay on TCP after the fallback answered")
+	}
+	sentBefore := fake.sentCount()
+	if _, err := r.exchange(ctx, dnsQuery("example.org")); err != nil {
+		t.Fatalf("exchange on TCP: %v", err)
+	}
+	if fake.sentCount() != sentBefore {
+		t.Error("switched resolver must not send UDP queries")
+	}
+	if tcpCalls != 1 {
+		t.Errorf("tcp dials = %d, want 1 (pooled)", tcpCalls)
+	}
+}
+
+func TestUDPResolver_gateHoldsWhenTCPAlsoFails(t *testing.T) {
+	fake := newFakeUDPConn(nil)
+	fc := &fakeClient{
+		udp: func() (client.HyUDPConn, error) { return fake, nil },
+		tcp: func(string) (net.Conn, error) { return nil, errors.New("tunnel down") },
+	}
+	r := newUDPResolver(fc, "1.1.1.1:53")
+	defer r.close()
+
+	for i := 0; i < fallbackGateThreshold; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		_, _ = r.exchange(ctx, dnsQuery("example.com"))
+		cancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); err == nil {
+		t.Fatal("exchange should fail when the fallback fails too")
+	}
+	if r.isTCPOnly() {
+		t.Error("failed fallback must not switch the resolver")
+	}
+	sentBefore := fake.sentCount()
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	_, _ = r.exchange(ctx2, dnsQuery("example.com"))
+	cancel2()
+	if fake.sentCount() <= sentBefore {
+		t.Error("resolver should return to UDP after a failed fallback")
+	}
+}
+
+func TestUDPResolver_successResetsGate(t *testing.T) {
+	var blackhole atomic.Bool
+	blackhole.Store(true)
+	fake := newFakeUDPConn(func(data []byte, _ string) [][]byte {
+		if blackhole.Load() {
+			return nil
+		}
+		return [][]byte{dnsResponseFor(data, 60, [4]byte{9, 9, 9, 9})}
+	})
+	fc := &fakeClient{udp: func() (client.HyUDPConn, error) { return fake, nil }}
+	r := newUDPResolver(fc, "1.1.1.1:53")
+	defer r.close()
+
+	for i := 0; i < fallbackGateThreshold-1; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		_, _ = r.exchange(ctx, dnsQuery("example.com"))
+		cancel()
+	}
+	blackhole.Store(false)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	r.gate.mu.Lock()
+	fails := r.gate.fails
+	r.gate.mu.Unlock()
+	if fails != 0 {
+		t.Errorf("gate fails = %d, want 0 after a UDP success", fails)
+	}
+}
+
+func TestUDPResolver_newSessionRetiresGateSwitch(t *testing.T) {
+	var blackhole atomic.Bool
+	blackhole.Store(true)
+	fake := newFakeUDPConn(func(data []byte, _ string) [][]byte {
+		if blackhole.Load() {
+			return nil
+		}
+		return [][]byte{dnsResponseFor(data, 60, [4]byte{9, 9, 9, 9})}
+	})
+	sc := &seqClient{fakeClient: &fakeClient{
+		udp: func() (client.HyUDPConn, error) { return fake, nil },
+		tcp: func(string) (net.Conn, error) {
+			return pipeDNSServer(t, func(q []byte) []byte {
+				return dnsResponseFor(q, 60, [4]byte{3, 3, 3, 3})
+			}), nil
+		},
+	}}
+	r := newUDPResolver(sc, "1.1.1.1:53")
+	defer r.close()
+
+	for i := 0; i < fallbackGateThreshold; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		_, _ = r.exchange(ctx, dnsQuery("example.com"))
+		cancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("exchange via fallback: %v", err)
+	}
+	if !r.isTCPOnly() {
+		t.Fatal("gate switch expected")
+	}
+
+	blackhole.Store(false)
+	sc.seq.Add(1)
+	resp, err := r.exchange(ctx, dnsQuery("example.org"))
+	if err != nil {
+		t.Fatalf("exchange after new session: %v", err)
+	}
+	if resp[len(resp)-1] != 9 {
+		t.Errorf("answer = %v, want the UDP answer", resp)
+	}
+	if r.isTCPOnly() {
+		t.Error("a new session should retire the gate switch")
+	}
+}
+
+func TestUDPResolver_dialErrorSwitchSurvivesNewSession(t *testing.T) {
+	udpCalls := 0
+	sc := &seqClient{fakeClient: &fakeClient{
+		udp: func() (client.HyUDPConn, error) {
+			udpCalls++
+			return nil, coreErrs.DialError{Message: "UDP disabled"}
+		},
+		tcp: func(string) (net.Conn, error) {
+			return pipeDNSServer(t, func(q []byte) []byte {
+				return dnsResponseFor(q, 60, [4]byte{3, 3, 3, 3})
+			}), nil
+		},
+	}}
+	r := newUDPResolver(sc, "1.1.1.1:53")
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	if !r.isTCPOnly() {
+		t.Fatal("DialError should switch to TCP")
+	}
+	sc.seq.Add(1)
+	if _, err := r.exchange(ctx, dnsQuery("example.org")); err != nil {
+		t.Fatalf("exchange after new session: %v", err)
+	}
+	if udpCalls != 1 {
+		t.Errorf("udp dials = %d, want 1 (server policy switch persists)", udpCalls)
 	}
 }
