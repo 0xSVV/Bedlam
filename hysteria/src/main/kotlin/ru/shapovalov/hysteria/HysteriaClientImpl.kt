@@ -323,6 +323,7 @@ private object LogSink {
     private val subscriberFloors = mutableMapOf<LogLevel, Int>()
     private val lock = Any()
     private val attached = AtomicBoolean(false)
+    private val nextSeq = AtomicLong(0L)
 
     fun attach() {
         if (!attached.compareAndSet(false, true)) return
@@ -333,6 +334,7 @@ private object LogSink {
                     source = source ?: "",
                     message = message,
                     timestampMillis = System.currentTimeMillis(),
+                    seq = nextSeq.incrementAndGet(),
                 )
             )
         })

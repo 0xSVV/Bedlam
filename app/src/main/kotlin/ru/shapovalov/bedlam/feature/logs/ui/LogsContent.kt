@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -258,8 +259,8 @@ private fun LogList(entries: List<LogEntry>, isPaused: Boolean) {
         ),
         verticalArrangement = Arrangement.spacedBy(LogRowSpacing),
     ) {
-        items(entries.size, key = { it }) { index ->
-            LogRow(entries[index])
+        items(entries, key = { it.seq }) { entry ->
+            LogRow(entry)
         }
     }
 }
