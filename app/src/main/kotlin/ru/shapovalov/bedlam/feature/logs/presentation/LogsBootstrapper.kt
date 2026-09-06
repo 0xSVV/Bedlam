@@ -6,7 +6,10 @@ import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
 import ru.shapovalov.hysteria.api.HysteriaClient
 
 internal sealed interface Action {
-    data class LiveUpdated(val entries: List<HysteriaClient.LogEntry>) : Action
+    data class LiveUpdated(
+        val entries: List<HysteriaClient.LogEntry>,
+        val droppedCount: Long,
+    ) : Action
 }
 
 internal class LogsBootstrapper(
@@ -15,7 +18,9 @@ internal class LogsBootstrapper(
 
     override fun invoke() {
         scope.launch {
-            buffer.entries.collect { entries -> dispatch(Action.LiveUpdated(entries)) }
+            buffer.snapshot.collect { snapshot ->
+                dispatch(Action.LiveUpdated(snapshot.entries, snapshot.droppedCount))
+            }
         }
     }
 }

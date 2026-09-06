@@ -16,6 +16,7 @@ interface LogsStore : Store<LogsStore.Intent, LogsStore.State, Nothing> {
         val pausedSnapshot: List<HysteriaClient.LogEntry>? = null,
         val minLevel: HysteriaClient.LogLevel = HysteriaClient.LogLevel.INFO,
         val visibleEntries: List<HysteriaClient.LogEntry> = emptyList(),
+        val droppedCount: Long = 0L,
     ) {
         val isPaused: Boolean get() = pausedSnapshot != null
     }

@@ -318,6 +318,7 @@
     <string name="logs_action_menu_close_cd">Close log actions</string>
     <string name="logs_action_pause_cd">Pause logs</string>
     <string name="logs_action_resume_cd">Resume logs</string>
+    <string name="logs_dropped_notice">%1$d earlier lines dropped</string>
     <string name="logs_action_clear_cd">Delete logs</string>
     <string name="logs_empty_idle">Waiting for log output…</string>
     <string name="logs_empty_paused">Paused. New entries are suppressed.</string>

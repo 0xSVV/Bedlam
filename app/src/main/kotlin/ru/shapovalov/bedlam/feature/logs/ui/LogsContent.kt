@@ -99,6 +99,7 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
                     LogList(
                         entries = visible,
                         isPaused = state.isPaused,
+                        droppedCount = state.droppedCount,
                     )
                 }
             }
@@ -236,7 +237,7 @@ private fun EmptyState(isPaused: Boolean) {
 }
 
 @Composable
-private fun LogList(entries: List<LogEntry>, isPaused: Boolean) {
+private fun LogList(entries: List<LogEntry>, isPaused: Boolean, droppedCount: Long) {
     val listState = rememberLazyListState()
     val lastIndex = entries.lastIndex
 
@@ -257,6 +258,9 @@ private fun LogList(entries: List<LogEntry>, isPaused: Boolean) {
         ),
         verticalArrangement = Arrangement.spacedBy(LogRowSpacing),
     ) {
+        if (droppedCount > 0L) {
+            item(key = DroppedNoticeKey) { DroppedNotice(droppedCount) }
+        }
         items(entries, key = { it.seq }) { entry ->
             LogRow(entry)
         }
@@ -388,3 +392,17 @@ private val PauseBarSpacing = 3.dp
 private val PauseBarWidth = 4.dp
 private val PauseBarHeight = 14.dp
 private val PauseBarCorner = 1.dp
+
+private const val DroppedNoticeKey = "dropped-notice"
+
+@Composable
+private fun DroppedNotice(droppedCount: Long) {
+    Text(
+        text = stringResource(R.string.logs_dropped_notice, droppedCount),
+        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+    )
+}

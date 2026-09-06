@@ -9,7 +9,8 @@ internal class LogsExecutor(
 
     override fun executeAction(action: Action) {
         when (action) {
-            is Action.LiveUpdated -> dispatch(Msg.LiveUpdated(action.entries))
+            is Action.LiveUpdated ->
+                dispatch(Msg.LiveUpdated(action.entries, action.droppedCount))
         }
     }
 

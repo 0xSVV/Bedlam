@@ -17,25 +17,32 @@ import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
 @Inject
 class LogBuffer(client: HysteriaClient) {
 
+    data class Snapshot(
+        val entries: List<LogEntry> = emptyList(),
+        val droppedCount: Long = 0L,
+    )
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lock = Any()
     private val ring = LogRing(CAPACITY)
-    private val _entries = MutableStateFlow<List<LogEntry>>(emptyList())
-    val entries: StateFlow<List<LogEntry>> = _entries.asStateFlow()
+    private val _snapshot = MutableStateFlow(Snapshot())
+    val snapshot: StateFlow<Snapshot> = _snapshot.asStateFlow()
 
     init {
         scope.launch {
             client.logs(LogLevel.DEBUG).collect { entry ->
-                _entries.value = synchronized(lock) { ring.add(entry) }
+                _snapshot.value = synchronized(lock) {
+                    Snapshot(ring.add(entry), ring.droppedCount)
+                }
             }
         }
     }
 
     fun clear() {
-        _entries.value = synchronized(lock) { ring.clear() }
+        _snapshot.value = synchronized(lock) { Snapshot(ring.clear(), ring.droppedCount) }
     }
 
     companion object {
-        const val CAPACITY = 1000
+        const val CAPACITY = 5000
     }
 }
