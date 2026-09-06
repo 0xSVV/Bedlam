@@ -18,8 +18,19 @@ sealed interface ConnectionState {
     /** Initial dial in progress. */
     data object Connecting : ConnectionState
 
-    /** Tunnel is live and traffic flows through it. */
-    data class Connected(val info: ConnectionInfo, val connectedSinceMillis: Long) : ConnectionState
+    /**
+     * Tunnel is live and traffic flows through it.
+     *
+     * [connectedSinceMillis] is wall clock, for anything that has to survive
+     * the process or be handed to the system. [connectedSinceElapsedRealtime]
+     * is monotonic and is what a displayed duration must be measured against,
+     * since the wall clock moves under NTP and manual changes.
+     */
+    data class Connected(
+        val info: ConnectionInfo,
+        val connectedSinceMillis: Long,
+        val connectedSinceElapsedRealtime: Long,
+    ) : ConnectionState
 
     /** A live connection was lost; reconnect is in progress. */
     data class Reconnecting(val attempt: Int, val reason: String) : ConnectionState

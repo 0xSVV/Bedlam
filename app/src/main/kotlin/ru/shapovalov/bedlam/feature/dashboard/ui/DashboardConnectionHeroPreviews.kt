@@ -74,6 +74,7 @@ private fun ConnectionHeroConnectedPreview() {
                 attempt = 0,
             ),
             connectedSinceMillis = connectedSince,
+            connectedSinceElapsedRealtime = connectedSince,
         ),
         connectedSinceMillis = connectedSince,
     )

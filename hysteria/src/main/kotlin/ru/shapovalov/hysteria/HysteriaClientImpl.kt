@@ -1,6 +1,7 @@
 package ru.shapovalov.hysteria
 
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.util.Log
 import golib.EventHandler
 import golib.Golib
@@ -59,6 +60,8 @@ class HysteriaClientImpl : HysteriaClient {
     private var tunReady: Boolean = false
     @Volatile
     private var sessionStartMillis: Long = 0L
+    @Volatile
+    private var sessionStartElapsedRealtime: Long = 0L
 
     private val pendingConnect = AtomicReference<ConnectionInfo?>(null)
     private val lastConnectInfo = AtomicReference<ConnectionInfo?>(null)
@@ -112,6 +115,7 @@ class HysteriaClientImpl : HysteriaClient {
         serverAddress = config.server.address
         tunReady = false
         sessionStartMillis = 0L
+        sessionStartElapsedRealtime = 0L
         pendingConnect.set(null)
     }
 
@@ -132,8 +136,15 @@ class HysteriaClientImpl : HysteriaClient {
                 val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
                 lastConnectInfo.set(info)
                 if (tunReady) {
-                    if (sessionStartMillis == 0L) sessionStartMillis = System.currentTimeMillis()
-                    _state.value = ConnectionState.Connected(info, sessionStartMillis)
+                    if (sessionStartMillis == 0L) {
+                        sessionStartMillis = System.currentTimeMillis()
+                        sessionStartElapsedRealtime = SystemClock.elapsedRealtime()
+                    }
+                    _state.value = ConnectionState.Connected(
+                        info,
+                        sessionStartMillis,
+                        sessionStartElapsedRealtime,
+                    )
                 } else {
                     pendingConnect.set(info)
                 }
@@ -203,8 +214,15 @@ class HysteriaClientImpl : HysteriaClient {
             if (liveGeneration.get() != generation) return
             tunReady = true
             pendingConnect.getAndSet(null)?.let {
-                if (sessionStartMillis == 0L) sessionStartMillis = System.currentTimeMillis()
-                _state.value = ConnectionState.Connected(it, sessionStartMillis)
+                if (sessionStartMillis == 0L) {
+                    sessionStartMillis = System.currentTimeMillis()
+                    sessionStartElapsedRealtime = SystemClock.elapsedRealtime()
+                }
+                _state.value = ConnectionState.Connected(
+                    it,
+                    sessionStartMillis,
+                    sessionStartElapsedRealtime,
+                )
             }
         }
     }
@@ -221,6 +239,7 @@ class HysteriaClientImpl : HysteriaClient {
             withContext(NonCancellable + Dispatchers.IO) { closeSessionLocked() }
             tunReady = false
             sessionStartMillis = 0L
+        sessionStartElapsedRealtime = 0L
             pendingConnect.set(null)
             lastConnectInfo.set(null)
             _state.value = ConnectionState.Disconnected(reason)
@@ -232,6 +251,7 @@ class HysteriaClientImpl : HysteriaClient {
         withContext(NonCancellable + Dispatchers.IO) { closeSessionLocked() }
         tunReady = false
         sessionStartMillis = 0L
+        sessionStartElapsedRealtime = 0L
         pendingConnect.set(null)
         lastConnectInfo.set(null)
         _state.value = ConnectionState.Disconnected(DisconnectReason.USER)
@@ -241,6 +261,7 @@ class HysteriaClientImpl : HysteriaClient {
         val s = invalidateSession()
         tunReady = false
         sessionStartMillis = 0L
+        sessionStartElapsedRealtime = 0L
         pendingConnect.set(null)
         lastConnectInfo.set(null)
         _state.value = ConnectionState.Disconnected(reason)

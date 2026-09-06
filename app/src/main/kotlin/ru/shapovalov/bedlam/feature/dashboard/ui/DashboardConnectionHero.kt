@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.feature.dashboard.ui
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -141,7 +142,7 @@ internal fun ConnectionHero(
         } else {
             while (true) {
                 elapsedSeconds.longValue =
-                    (System.currentTimeMillis() - connectedSinceMillis) / 1000
+                    (SystemClock.elapsedRealtime() - connectedSinceMillis) / 1000
                 delay(1000)
             }
         }
