@@ -18,7 +18,7 @@ import (
 
 const (
 	watchdogInterval = 30 * time.Second
-	idleProbeTicks   = 4
+	idleProbeTicks   = 2
 	probeDNSServer   = "1.1.1.1:53"
 
 	dialBackoffBase = 1 * time.Second
