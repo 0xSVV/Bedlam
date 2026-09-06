@@ -187,7 +187,10 @@ class BedlamVpnService : VpnService() {
 
         if (!startAsForeground()) {
             scope.launch {
-                runtimeStateRepository.markFailed("Android refused to start the VPN service")
+                runtimeStateRepository.markInterrupted(
+                    serviceEpoch,
+                    "Android refused to start the VPN service",
+                )
                 releaseAndStopSelf(startId)
             }
             return START_NOT_STICKY
@@ -393,6 +396,23 @@ class BedlamVpnService : VpnService() {
         }
     }
 
+    // The tunnel is unusable but nothing about the failure is permanent, so the
+    // record has to keep asking for a tunnel; markStopped would read as a user
+    // disconnect and no reconcile would ever start it again.
+    private fun stopAfterInterruption(reason: String) {
+        stopWasRequested = true
+        currentConfig = null
+        startJob?.cancel()
+        startJob = null
+        scope.launch(Dispatchers.Main.immediate) {
+            releaseForegroundResources()
+            runtimeStateRepository.markInterrupted(serviceEpoch, reason)
+            runCatching { client.closeSession() }
+                .onFailure { Log.w(TAG, "client.closeSession failed", it) }
+            stopSelf()
+        }
+    }
+
     private fun stopAfterTerminalFailure(reason: String) {
         stopWasRequested = true
         currentConfig = null
@@ -490,7 +510,7 @@ class BedlamVpnService : VpnService() {
                     delay(TUN_REAPPLY_RETRY_DELAY_MS)
                 } else {
                     Log.e(TAG, "DNS reapply after network change failed; no interface left", e)
-                    stop()
+                    stopAfterInterruption("DNS reapply after network change failed")
                 }
             }
         }
