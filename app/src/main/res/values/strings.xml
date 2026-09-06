@@ -365,6 +365,8 @@
     <string name="profile_config_caution_obfs">Type (plain, salamander, gecko) and password must match the server</string>
     <string name="profile_config_caution_realm">Used only when the server address is a realm:// URI</string>
     <string name="profile_config_caution_quic">Tuning these can break the connection</string>
+    <string name="profile_config_value_unset">unset</string>
+    <string name="profile_config_value_default_seconds">default %1$ds</string>
     <string name="profile_config_hint_quic_idle">0 uses the default of %1$d seconds. The tunnel uses the smaller of this value and the server value</string>
     <string name="profile_config_hint_quic_keepalive">0 uses the default of %1$d seconds</string>
     <string name="profile_config_caution_congestion">Unsupported algorithm or BBR profile may be rejected</string>

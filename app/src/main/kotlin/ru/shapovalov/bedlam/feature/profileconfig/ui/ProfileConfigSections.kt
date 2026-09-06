@@ -261,6 +261,10 @@ internal fun QuicSection(
                 R.string.profile_config_hint_quic_idle,
                 QuicTimerDefaults.MAX_IDLE_TIMEOUT_SEC,
             ),
+            zeroLabel = stringResource(
+                R.string.profile_config_value_default_seconds,
+                QuicTimerDefaults.MAX_IDLE_TIMEOUT_SEC,
+            ),
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(maxIdleTimeoutSec = it))) },
         )
         IntFieldRow(
@@ -269,6 +273,10 @@ internal fun QuicSection(
             editMode = editMode,
             caution = stringResource(
                 R.string.profile_config_hint_quic_keepalive,
+                QuicTimerDefaults.KEEP_ALIVE_PERIOD_SEC,
+            ),
+            zeroLabel = stringResource(
+                R.string.profile_config_value_default_seconds,
                 QuicTimerDefaults.KEEP_ALIVE_PERIOD_SEC,
             ),
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(keepAlivePeriodSec = it))) },

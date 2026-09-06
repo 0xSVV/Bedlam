@@ -135,10 +135,12 @@ internal fun IntFieldRow(
     onChange: (Int) -> Unit,
     caution: String? = null,
     showDivider: Boolean = true,
+    zeroLabel: String? = null,
 ) {
     NumericFieldRow(
         label = label,
         text = value.toString(),
+        zeroLabel = zeroLabel,
         editMode = editMode,
         caution = caution,
         showDivider = showDivider,
@@ -155,10 +157,12 @@ internal fun LongFieldRow(
     onChange: (Long) -> Unit,
     caution: String? = null,
     showDivider: Boolean = true,
+    zeroLabel: String? = null,
 ) {
     NumericFieldRow(
         label = label,
         text = value.toString(),
+        zeroLabel = zeroLabel,
         editMode = editMode,
         caution = caution,
         showDivider = showDivider,
@@ -171,6 +175,7 @@ internal fun LongFieldRow(
 private fun <T> NumericFieldRow(
     label: String,
     text: String,
+    zeroLabel: String?,
     editMode: Boolean,
     caution: String?,
     showDivider: Boolean,
@@ -196,7 +201,10 @@ private fun <T> NumericFieldRow(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
             } else {
-                ReadOnlyValue(value = text)
+                val unset = stringResource(R.string.profile_config_value_unset)
+                ReadOnlyValue(
+                    value = if (text == "0") "0 · ${zeroLabel ?: unset}" else text,
+                )
             }
         }
     }
