@@ -88,6 +88,7 @@ class BedlamVpnService : VpnService() {
     private var notificationJob: Job? = null
     private var runtimeHeartbeatJob: Job? = null
     private var livenessKickJob: Job? = null
+    private var connectHapticJob: Job? = null
 
     @Volatile
     private var startJob: Job? = null
@@ -142,6 +143,7 @@ class BedlamVpnService : VpnService() {
         settingsWatcherJob?.cancel()
         profileNameWatcherJob?.cancel()
         livenessKickJob?.cancel()
+        connectHapticJob?.cancel()
         networkObserver?.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
         notifications.cancelReconnectWarning()
@@ -209,6 +211,7 @@ class BedlamVpnService : VpnService() {
         startRuntimeHeartbeat()
         startReconnectWatchdog()
         startLivenessKick()
+        startConnectHaptic()
 
         scheduleAlwaysOnVpnStateUpdate()
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -439,6 +442,8 @@ class BedlamVpnService : VpnService() {
         reconnectWatchdogJob = null
         livenessKickJob?.cancel()
         livenessKickJob = null
+        connectHapticJob?.cancel()
+        connectHapticJob = null
         networkObserver?.stop()
         networkObserver = null
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -592,6 +597,16 @@ class BedlamVpnService : VpnService() {
                 screenOnFlow().distinctUntilChanged().filter { it }.map { },
                 deviceIdleExitFlow(),
             ).collect { checkTunnelLiveness("wake") }
+        }
+    }
+
+    // Only the first Connected of a tunnel: an auto-reconnect can fire at any
+    // hour from a pocket, and buzzing for one is noise rather than feedback.
+    private fun startConnectHaptic() {
+        if (connectHapticJob != null) return
+        connectHapticJob = scope.launch {
+            client.state.first { it is ConnectionState.Connected }
+            vibrateConnected()
         }
     }
 
