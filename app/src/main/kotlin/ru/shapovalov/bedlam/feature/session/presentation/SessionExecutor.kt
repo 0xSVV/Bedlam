@@ -36,9 +36,6 @@ internal class SessionExecutor(
         }
     }
 
-    // The lookup leaves through whatever route is up. Off-tunnel it would
-    // report the device's own address, which on this screen reads as the
-    // tunnel's — the one error a privacy tool must never make.
     private fun load() {
         if (state().isLoading || !state().tunnelUp) return
         dispatch(Msg.LoadingStarted)

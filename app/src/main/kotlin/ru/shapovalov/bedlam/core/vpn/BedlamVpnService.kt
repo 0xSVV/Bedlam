@@ -396,9 +396,6 @@ class BedlamVpnService : VpnService() {
         }
     }
 
-    // The tunnel is unusable but nothing about the failure is permanent, so the
-    // record has to keep asking for a tunnel; markStopped would read as a user
-    // disconnect and no reconcile would ever start it again.
     private fun stopAfterInterruption(reason: String) {
         stopWasRequested = true
         currentConfig = null
@@ -603,10 +600,6 @@ class BedlamVpnService : VpnService() {
             .onFailure { Log.w(TAG, "Liveness check after $source failed", it) }
     }
 
-    // elapsedRealtime counts deep sleep and uptimeMillis does not, so the gap
-    // between them is how long the SoC was suspended. Go's timers are frozen
-    // for that whole stretch, which is exactly when the server has already
-    // idled the session out and the client cannot know it.
     private fun deviceSleepMillis(): Long =
         SystemClock.elapsedRealtime() - SystemClock.uptimeMillis()
 

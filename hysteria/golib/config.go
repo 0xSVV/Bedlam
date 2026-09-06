@@ -21,13 +21,11 @@ import (
 
 const serverResolveTimeout = 3 * time.Second
 
-// QUIC negotiates the minimum of both ends, so these are a ceiling the server
-// can lower, never a floor it must accept. A 30s client ceiling also caps what
-// a tuned server may enforce, leaving a suspended phone no way to survive more
-// than 30s of sleep; 120s lets an operator who raises the server value benefit
-// from it, and stays inert against a stock 30s server. quic-go clamps the
-// keepalive to half the negotiated idle timeout, so 30s becomes 15s there.
-// Explicit profile values override both.
+// QUIC negotiates the minimum of both ends, so a client ceiling also caps what
+// a tuned server may enforce: at 30s no server setting could keep a suspended
+// phone connected past 30s of sleep. 120s stays inert against a stock server
+// and lets a raised one take effect. quic-go clamps the keepalive to half the
+// negotiated idle timeout, so 30s becomes 15s there.
 const (
 	defaultMaxIdleTimeoutSec  = 120
 	defaultKeepAlivePeriodSec = 30

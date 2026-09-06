@@ -107,9 +107,6 @@ internal fun ConnectionHero(
 
         if (isConnecting) {
             showButtonIcon = false
-            // Reconnecting can last as long as the outage does, and this runs
-            // in a foreground service people leave on all day. Say "working"
-            // for a few cycles, then settle rather than animating forever.
             repeat(MaxLoadingMorphCycles) {
                 loadingButtonShapes.forEach { morphTo(it) }
             }

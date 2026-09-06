@@ -21,10 +21,9 @@ sealed interface ConnectionState {
     /**
      * Tunnel is live and traffic flows through it.
      *
-     * [connectedSinceMillis] is wall clock, for anything that has to survive
-     * the process or be handed to the system. [connectedSinceElapsedRealtime]
-     * is monotonic and is what a displayed duration must be measured against,
-     * since the wall clock moves under NTP and manual changes.
+     * Measure a displayed duration against [connectedSinceElapsedRealtime];
+     * [connectedSinceMillis] is for what must survive the process or be handed
+     * to the system, and moves under NTP and manual clock changes.
      */
     data class Connected(
         val info: ConnectionInfo,

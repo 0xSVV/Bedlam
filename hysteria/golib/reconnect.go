@@ -437,11 +437,10 @@ func (rc *reconnectClient) nextProbe(tx, rx int64) probeDecision {
 }
 
 // Outbound traffic with no return traffic for a full watchdog interval
-// suggests a black-holed path that QUIC hasn't noticed yet. A tunnel with no
-// traffic at all is the other blind spot: the counters below carry payload
-// bytes, not keepalives, so a session the server has already dropped looks
-// identical to a quiet one until something tries to use it. A round trip
-// through the tunnel settles both.
+// suggests a black-holed path that QUIC hasn't noticed yet. Silence is the
+// other blind spot: these counters carry payload bytes, not keepalives, so a
+// session the server has already dropped looks identical to a quiet one. A
+// round trip through the tunnel settles both.
 func (rc *reconnectClient) probe(c client.Client, reason string) {
 	log(LogLevelDebug, srcWatchdog, "%s; probing tunnel", reason)
 	_, err := dnsOverTCP(c, probeDNSServer, buildDNSQuery())
