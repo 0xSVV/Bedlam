@@ -239,7 +239,7 @@ class HysteriaClientImpl : HysteriaClient {
             withContext(NonCancellable + Dispatchers.IO) { closeSessionLocked() }
             tunReady = false
             sessionStartMillis = 0L
-        sessionStartElapsedRealtime = 0L
+            sessionStartElapsedRealtime = 0L
             pendingConnect.set(null)
             lastConnectInfo.set(null)
             _state.value = ConnectionState.Disconnected(reason)

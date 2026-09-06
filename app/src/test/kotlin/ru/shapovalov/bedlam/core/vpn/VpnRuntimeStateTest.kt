@@ -16,6 +16,7 @@ class VpnRuntimeStateTest {
     private val connected = ConnectionState.Connected(
         info = ConnectionInfo("host.example:443", udpEnabled = true, attempt = 0),
         connectedSinceMillis = now,
+        connectedSinceElapsedRealtime = now,
     )
 
     @Nested
