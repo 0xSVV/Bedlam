@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
@@ -48,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -105,10 +107,14 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
             }
         }
 
+        val context = LocalContext.current
         LogsActionsMenu(
             isPaused = state.isPaused,
             onTogglePause = component::onTogglePause,
             onClear = component::onClear,
+            onShare = {
+                context.shareLog(state.visibleEntries, state.minLevel, state.droppedCount)
+            },
             modifier = Modifier.align(Alignment.BottomEnd),
         )
     }
@@ -120,6 +126,7 @@ private fun LogsActionsMenu(
     isPaused: Boolean,
     onTogglePause: () -> Unit,
     onClear: () -> Unit,
+    onShare: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -172,6 +179,14 @@ private fun LogsActionsMenu(
                 }
             },
             text = { Text(pauseLabel) },
+        )
+        FloatingActionButtonMenuItem(
+            onClick = {
+                expanded = false
+                onShare()
+            },
+            icon = { Icon(Icons.Default.Share, contentDescription = null) },
+            text = { Text(stringResource(R.string.logs_action_share_cd)) },
         )
         FloatingActionButtonMenuItem(
             onClick = {
