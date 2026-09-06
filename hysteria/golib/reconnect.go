@@ -367,8 +367,12 @@ func (rc *reconnectClient) checkNow() {
 	if isProbeTimeout(err) {
 		_, err = dnsOverTCP(c, probeDNSServer, buildDNSQuery())
 	}
-	if probeIndicatesDead(err) {
-		rc.markDead(fmt.Errorf("liveness probe failed: %w", err), srcWatchdog)
+	if !probeIndicatesDead(err) {
+		return
+	}
+	rc.markDead(fmt.Errorf("liveness probe failed: %w", err), srcWatchdog)
+	if _, err := rc.currentClient(srcWatchdog); err != nil {
+		log(LogLevelDebug, srcWatchdog, "Re-dial after probe failure failed: %s", err)
 	}
 }
 
