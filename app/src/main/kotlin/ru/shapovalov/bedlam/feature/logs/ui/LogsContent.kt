@@ -2,7 +2,6 @@ package ru.shapovalov.bedlam.feature.logs.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,13 +16,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -100,15 +101,20 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
                     LogList(
                         entries = visible,
                         isPaused = state.isPaused,
+                        droppedCount = state.droppedCount,
                     )
                 }
             }
         }
 
+        val context = LocalContext.current
         LogsActionsMenu(
             isPaused = state.isPaused,
             onTogglePause = component::onTogglePause,
             onClear = component::onClear,
+            onShare = {
+                context.shareLog(state.visibleEntries, state.minLevel, state.droppedCount)
+            },
             modifier = Modifier.align(Alignment.BottomEnd),
         )
     }
@@ -120,6 +126,7 @@ private fun LogsActionsMenu(
     isPaused: Boolean,
     onTogglePause: () -> Unit,
     onClear: () -> Unit,
+    onShare: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -172,6 +179,14 @@ private fun LogsActionsMenu(
                 }
             },
             text = { Text(pauseLabel) },
+        )
+        FloatingActionButtonMenuItem(
+            onClick = {
+                expanded = false
+                onShare()
+            },
+            icon = { Icon(Icons.Default.Share, contentDescription = null) },
+            text = { Text(stringResource(R.string.logs_action_share_cd)) },
         )
         FloatingActionButtonMenuItem(
             onClick = {
@@ -237,7 +252,7 @@ private fun EmptyState(isPaused: Boolean) {
 }
 
 @Composable
-private fun LogList(entries: List<LogEntry>, isPaused: Boolean) {
+private fun LogList(entries: List<LogEntry>, isPaused: Boolean, droppedCount: Long) {
     val listState = rememberLazyListState()
     val lastIndex = entries.lastIndex
 
@@ -258,8 +273,11 @@ private fun LogList(entries: List<LogEntry>, isPaused: Boolean) {
         ),
         verticalArrangement = Arrangement.spacedBy(LogRowSpacing),
     ) {
-        items(entries.size, key = { it }) { index ->
-            LogRow(entries[index])
+        if (droppedCount > 0L) {
+            item(key = DroppedNoticeKey) { DroppedNotice(droppedCount) }
+        }
+        items(entries, key = { it.seq }) { entry ->
+            LogRow(entry)
         }
     }
 }
@@ -312,17 +330,12 @@ private fun LogRow(entry: LogEntry) {
                     )
                 }
             }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-            ) {
-                Text(
-                    text = entry.message,
-                    style = monoSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            Text(
+                text = entry.message,
+                style = monoSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
@@ -394,3 +407,17 @@ private val PauseBarSpacing = 3.dp
 private val PauseBarWidth = 4.dp
 private val PauseBarHeight = 14.dp
 private val PauseBarCorner = 1.dp
+
+private const val DroppedNoticeKey = "dropped-notice"
+
+@Composable
+private fun DroppedNotice(droppedCount: Long) {
+    Text(
+        text = stringResource(R.string.logs_dropped_notice, droppedCount),
+        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+    )
+}

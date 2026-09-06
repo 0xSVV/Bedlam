@@ -1,6 +1,8 @@
 package ru.shapovalov.bedlam.feature.settings.ui
 
 import android.app.StatusBarManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -34,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.arkivanov.decompose.ExperimentalDecomposeApi
 import com.arkivanov.decompose.extensions.compose.stack.Children
 import com.arkivanov.decompose.extensions.compose.stack.animation.fade
@@ -149,6 +152,20 @@ private fun SettingsRoot(
                 onClick = { requestQuickSettingsTile(context, onQuickSettingsTileAdded) },
             )
         }
+        SettingsDivider()
+        SettingsRow(
+            title = stringResource(R.string.settings_about_title),
+            subtitle = stringResource(R.string.settings_about_subtitle, context.appVersionName()),
+            showNavigationIcon = false,
+            onClick = { context.copyVersion() },
+        )
+        SettingsDivider()
+        SettingsRow(
+            title = stringResource(R.string.settings_about_source_title),
+            subtitle = stringResource(R.string.settings_about_source_subtitle),
+            showNavigationIcon = false,
+            onClick = { context.openSource() },
+        )
     }
 }
 
@@ -239,3 +256,23 @@ private fun SettingsDivider() {
 }
 
 private val SettingsItemMinHeight = 84.dp
+
+private const val SOURCE_URL = "https://github.com/0xSVV/Bedlam"
+
+private fun Context.appVersionName(): String = runCatching {
+    packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+}.getOrDefault("")
+
+private fun Context.copyVersion() {
+    val clipboard = getSystemService(ClipboardManager::class.java) ?: return
+    clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.app_name), appVersionName()))
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        Toast.makeText(this, R.string.settings_about_copied, Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun Context.openSource() {
+    val intent = Intent(Intent.ACTION_VIEW, SOURCE_URL.toUri())
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { startActivity(intent) }
+}

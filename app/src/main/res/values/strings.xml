@@ -63,6 +63,11 @@
     <string name="import_action_import">Import</string>
     <string name="import_error_failed">Failed to import profile</string>
 
+    <string name="settings_about_title">About</string>
+    <string name="settings_about_subtitle">Version %1$s · GPL-3.0 · tap to copy</string>
+    <string name="settings_about_copied">Version copied</string>
+    <string name="settings_about_source_title">Source code</string>
+    <string name="settings_about_source_subtitle">github.com/0xSVV/Bedlam</string>
     <string name="settings_apps_title">Apps to proxy</string>
     <string name="settings_apps_subtitle">Choose which apps route through the tunnel</string>
 
@@ -209,6 +214,7 @@
 
     <string name="routing_mtu_label">MTU</string>
     <string name="routing_mtu_auto_placeholder">Auto (%1$d)</string>
+    <string name="routing_mtu_auto_suffix">auto</string>
     <string name="routing_mtu_auto_hint">Auto uses %1$d bytes. IPv6 does not allow less</string>
     <string name="routing_mtu_hint">The largest packet that the tunnel interface accepts</string>
     <string name="routing_mtu_range_error">The MTU must be from %1$d to %2$d bytes</string>
@@ -292,6 +298,9 @@
     <string name="session_speed_test_error">The speed test could not load. Check that the tunnel is connected, then try again.</string>
     <string name="session_error_title">Could not load session</string>
     <string name="session_error_unknown">Session lookup failed. Check the tunnel and try again.</string>
+    <string name="session_disconnected_title">No tunnel</string>
+    <string name="session_disconnected_body">Connect first. These addresses are looked up through the tunnel, so there is nothing to report while it is down.</string>
+    <string name="session_stale_explainer">Last reading through the tunnel. The tunnel is reconnecting, so this may be out of date.</string>
     <string name="session_ip_explainer">Reported by public lookup services through the active tunnel. IPv6 appears only when this route supports it.</string>
     <string name="session_section_addresses">Addresses</string>
     <string name="session_section_network">Network</string>
@@ -318,6 +327,8 @@
     <string name="logs_action_menu_close_cd">Close log actions</string>
     <string name="logs_action_pause_cd">Pause logs</string>
     <string name="logs_action_resume_cd">Resume logs</string>
+    <string name="logs_dropped_notice">%1$d earlier lines dropped</string>
+    <string name="logs_action_share_cd">Share log</string>
     <string name="logs_action_clear_cd">Delete logs</string>
     <string name="logs_empty_idle">Waiting for log output…</string>
     <string name="logs_empty_paused">Paused. New entries are suppressed.</string>
@@ -363,8 +374,10 @@
     <string name="profile_config_caution_obfs">Type (plain, salamander, gecko) and password must match the server</string>
     <string name="profile_config_caution_realm">Used only when the server address is a realm:// URI</string>
     <string name="profile_config_caution_quic">Tuning these can break the connection</string>
-    <string name="profile_config_hint_quic_idle">0 uses the default of 30 seconds. The tunnel uses the smaller of this value and the server value</string>
-    <string name="profile_config_hint_quic_keepalive">0 uses the default of 15 seconds</string>
+    <string name="profile_config_value_unset">unset</string>
+    <string name="profile_config_value_default_seconds">default %1$ds</string>
+    <string name="profile_config_hint_quic_idle">0 uses the default of %1$d seconds. The tunnel uses the smaller of this value and the server value</string>
+    <string name="profile_config_hint_quic_keepalive">0 uses the default of %1$d seconds</string>
     <string name="profile_config_caution_congestion">Unsupported algorithm or BBR profile may be rejected</string>
     <string name="profile_config_caution_bandwidth">Misreporting causes congestion-control issues</string>
     <string name="profile_config_caution_hop">Hop intervals must agree with the server</string>

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,10 +18,19 @@ import (
 
 const (
 	watchdogInterval = 30 * time.Second
+	idleProbeTicks   = 2
 	probeDNSServer   = "1.1.1.1:53"
 
 	dialBackoffBase = 1 * time.Second
 	dialBackoffMax  = 30 * time.Second
+)
+
+type probeDecision int
+
+const (
+	probeNone probeDecision = iota
+	probeStalled
+	probeIdle
 )
 
 var (
@@ -53,6 +63,8 @@ type reconnectClient struct {
 	backoffMu  sync.Mutex
 	nextDialAt time.Time
 	backoffCur time.Duration
+
+	idleTicks int32
 
 	lastTx int64
 	lastRx int64
@@ -355,8 +367,12 @@ func (rc *reconnectClient) checkNow() {
 	if isProbeTimeout(err) {
 		_, err = dnsOverTCP(c, probeDNSServer, buildDNSQuery())
 	}
-	if probeIndicatesDead(err) {
-		rc.markDead(fmt.Errorf("liveness probe failed: %w", err), srcWatchdog)
+	if !probeIndicatesDead(err) {
+		return
+	}
+	rc.markDead(fmt.Errorf("liveness probe failed: %w", err), srcWatchdog)
+	if _, err := rc.currentClient(srcWatchdog); err != nil {
+		log(LogLevelDebug, srcWatchdog, "Re-dial after probe failure failed: %s", err)
 	}
 }
 
@@ -392,21 +408,44 @@ func (rc *reconnectClient) tick() {
 		return
 	}
 	tx, rx := rc.statsFunc()
-	stalled := tx > rc.lastTx && rx == rc.lastRx
-	rc.lastTx, rc.lastRx = tx, rx
-	if stalled {
-		rc.probe(c)
+	switch rc.nextProbe(tx, rx) {
+	case probeStalled:
+		rc.probe(c, "Traffic stalled")
+	case probeIdle:
+		rc.probe(c, "Idle")
 	}
 }
 
+func (rc *reconnectClient) nextProbe(tx, rx int64) probeDecision {
+	stalled := tx > rc.lastTx && rx == rc.lastRx
+	idle := tx == rc.lastTx && rx == rc.lastRx
+	rc.lastTx, rc.lastRx = tx, rx
+	switch {
+	case stalled:
+		rc.idleTicks = 0
+		return probeStalled
+	case !idle:
+		rc.idleTicks = 0
+		return probeNone
+	}
+	rc.idleTicks++
+	if rc.idleTicks >= idleProbeTicks {
+		rc.idleTicks = 0
+		return probeIdle
+	}
+	return probeNone
+}
+
 // Outbound traffic with no return traffic for a full watchdog interval
-// suggests a black-holed path that QUIC hasn't noticed yet. A round trip
-// through the tunnel settles it.
-func (rc *reconnectClient) probe(c client.Client) {
-	log(LogLevelDebug, srcWatchdog, "Traffic stalled; probing tunnel")
+// suggests a black-holed path that QUIC hasn't noticed yet. Silence is the
+// other blind spot: these counters carry payload bytes, not keepalives, so a
+// session the server has already dropped looks identical to a quiet one. A
+// round trip through the tunnel settles both.
+func (rc *reconnectClient) probe(c client.Client, reason string) {
+	log(LogLevelDebug, srcWatchdog, "%s; probing tunnel", reason)
 	_, err := dnsOverTCP(c, probeDNSServer, buildDNSQuery())
 	if probeIndicatesDead(err) {
-		rc.markDead(fmt.Errorf("stall probe failed: %w", err), srcWatchdog)
+		rc.markDead(fmt.Errorf("%s probe failed: %w", strings.ToLower(reason), err), srcWatchdog)
 	}
 }
 

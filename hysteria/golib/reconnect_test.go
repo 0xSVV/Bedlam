@@ -305,3 +305,45 @@ func TestProbeIndicatesDead(t *testing.T) {
 		})
 	}
 }
+
+func TestNextProbe_stalledTrafficProbesImmediately(t *testing.T) {
+	rc := &reconnectClient{}
+	if got := rc.nextProbe(100, 0); got != probeStalled {
+		t.Errorf("first stalled tick = %v, want probeStalled", got)
+	}
+	if got := rc.nextProbe(200, 0); got != probeStalled {
+		t.Errorf("second stalled tick = %v, want probeStalled", got)
+	}
+}
+
+func TestNextProbe_idleTunnelProbesAfterRun(t *testing.T) {
+	rc := &reconnectClient{}
+	for i := 1; i < idleProbeTicks; i++ {
+		if got := rc.nextProbe(0, 0); got != probeNone {
+			t.Fatalf("idle tick %d = %v, want probeNone", i, got)
+		}
+	}
+	if got := rc.nextProbe(0, 0); got != probeIdle {
+		t.Errorf("tick %d = %v, want probeIdle", idleProbeTicks, got)
+	}
+	if got := rc.nextProbe(0, 0); got != probeNone {
+		t.Errorf("tick after idle probe = %v, want probeNone", got)
+	}
+}
+
+func TestNextProbe_healthyTrafficResetsIdleRun(t *testing.T) {
+	rc := &reconnectClient{}
+	rc.nextProbe(0, 0)
+	rc.nextProbe(0, 0)
+	if got := rc.nextProbe(10, 10); got != probeNone {
+		t.Fatalf("two-way traffic = %v, want probeNone", got)
+	}
+	for i := 0; i < idleProbeTicks-1; i++ {
+		if got := rc.nextProbe(10, 10); got != probeNone {
+			t.Fatalf("idle tick %d after reset = %v, want probeNone", i, got)
+		}
+	}
+	if got := rc.nextProbe(10, 10); got != probeIdle {
+		t.Errorf("idle run did not restart from zero, got %v", got)
+	}
+}

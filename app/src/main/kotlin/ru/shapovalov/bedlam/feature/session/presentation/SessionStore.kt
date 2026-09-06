@@ -13,5 +13,7 @@ interface SessionStore : Store<SessionStore.Intent, SessionStore.State, Nothing>
         val info: SessionInfo? = null,
         val isLoading: Boolean = false,
         val errorMessage: String? = null,
+        val tunnelUp: Boolean = false,
+        val isStale: Boolean = false,
     )
 }

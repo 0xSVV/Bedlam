@@ -29,11 +29,14 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -85,6 +88,7 @@ class BedlamVpnService : VpnService() {
     private var notificationJob: Job? = null
     private var runtimeHeartbeatJob: Job? = null
     private var livenessKickJob: Job? = null
+    private var connectHapticJob: Job? = null
 
     @Volatile
     private var startJob: Job? = null
@@ -139,6 +143,7 @@ class BedlamVpnService : VpnService() {
         settingsWatcherJob?.cancel()
         profileNameWatcherJob?.cancel()
         livenessKickJob?.cancel()
+        connectHapticJob?.cancel()
         networkObserver?.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
         notifications.cancelReconnectWarning()
@@ -184,7 +189,10 @@ class BedlamVpnService : VpnService() {
 
         if (!startAsForeground()) {
             scope.launch {
-                runtimeStateRepository.markFailed("Android refused to start the VPN service")
+                runtimeStateRepository.markInterrupted(
+                    serviceEpoch,
+                    "Android refused to start the VPN service",
+                )
                 releaseAndStopSelf(startId)
             }
             return START_NOT_STICKY
@@ -203,6 +211,7 @@ class BedlamVpnService : VpnService() {
         startRuntimeHeartbeat()
         startReconnectWatchdog()
         startLivenessKick()
+        startConnectHaptic()
 
         scheduleAlwaysOnVpnStateUpdate()
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -390,6 +399,20 @@ class BedlamVpnService : VpnService() {
         }
     }
 
+    private fun stopAfterInterruption(reason: String) {
+        stopWasRequested = true
+        currentConfig = null
+        startJob?.cancel()
+        startJob = null
+        scope.launch(Dispatchers.Main.immediate) {
+            releaseForegroundResources()
+            runtimeStateRepository.markInterrupted(serviceEpoch, reason)
+            runCatching { client.closeSession() }
+                .onFailure { Log.w(TAG, "client.closeSession failed", it) }
+            stopSelf()
+        }
+    }
+
     private fun stopAfterTerminalFailure(reason: String) {
         stopWasRequested = true
         currentConfig = null
@@ -419,6 +442,8 @@ class BedlamVpnService : VpnService() {
         reconnectWatchdogJob = null
         livenessKickJob?.cancel()
         livenessKickJob = null
+        connectHapticJob?.cancel()
+        connectHapticJob = null
         networkObserver?.stop()
         networkObserver = null
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -487,7 +512,7 @@ class BedlamVpnService : VpnService() {
                     delay(TUN_REAPPLY_RETRY_DELAY_MS)
                 } else {
                     Log.e(TAG, "DNS reapply after network change failed; no interface left", e)
-                    stop()
+                    stopAfterInterruption("DNS reapply after network change failed")
                 }
             }
         }
@@ -568,20 +593,35 @@ class BedlamVpnService : VpnService() {
     private fun startLivenessKick() {
         if (livenessKickJob != null) return
         livenessKickJob = scope.launch {
-            screenOnFlow()
-                .distinctUntilChanged()
-                .collect { interactive ->
-                    if (interactive) {
-                        runCatching { client.checkConnection() }
-                            .onFailure { Log.w(TAG, "Liveness check failed", it) }
-                    }
-                }
+            merge(
+                screenOnFlow().distinctUntilChanged().filter { it }.map { },
+                deviceIdleExitFlow(),
+            ).collect { checkTunnelLiveness("wake") }
         }
     }
+
+    // Only the first Connected of a tunnel: an auto-reconnect can fire at any
+    // hour from a pocket, and buzzing for one is noise rather than feedback.
+    private fun startConnectHaptic() {
+        if (connectHapticJob != null) return
+        connectHapticJob = scope.launch {
+            client.state.first { it is ConnectionState.Connected }
+            vibrateConnected()
+        }
+    }
+
+    private suspend fun checkTunnelLiveness(source: String) {
+        runCatching { client.checkConnection() }
+            .onFailure { Log.w(TAG, "Liveness check after $source failed", it) }
+    }
+
+    private fun deviceSleepMillis(): Long =
+        SystemClock.elapsedRealtime() - SystemClock.uptimeMillis()
 
     private fun startRuntimeHeartbeat() {
         if (runtimeHeartbeatJob != null) return
         runtimeHeartbeatJob = scope.launch {
+            var lastSleepMillis = deviceSleepMillis()
             while (isActive) {
                 runCatching {
                     runtimeStateRepository.heartbeat(serviceEpoch, client.state.value)
@@ -589,8 +629,29 @@ class BedlamVpnService : VpnService() {
                     Log.w(TAG, "Failed to persist VPN runtime heartbeat", it)
                 }
                 delay(RUNTIME_HEARTBEAT_MS)
+                val sleepMillis = deviceSleepMillis()
+                val slept = sleepMillis - lastSleepMillis
+                lastSleepMillis = sleepMillis
+                if (slept >= SLEEP_GAP_CHECK_MS) {
+                    Log.i(TAG, "Device slept ${slept}ms; re-checking the tunnel")
+                    checkTunnelLiveness("sleep")
+                }
             }
         }
+    }
+
+    private fun deviceIdleExitFlow(): Flow<Unit> = callbackFlow {
+        val power = getSystemService(PowerManager::class.java)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (power?.isDeviceIdleMode == false) trySend(Unit)
+            }
+        }
+        registerReceiver(
+            receiver,
+            IntentFilter(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED),
+        )
+        awaitClose { unregisterReceiver(receiver) }
     }
 
     private fun screenOnFlow(): Flow<Boolean> = callbackFlow {
@@ -619,6 +680,7 @@ class BedlamVpnService : VpnService() {
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
         private const val ALWAYS_ON_STATE_REFRESH_MS = 60_000L
         private const val DESTROY_PERSIST_TIMEOUT_MS = 500L
+        private const val SLEEP_GAP_CHECK_MS = 20_000L
         private const val TUN_REAPPLY_ATTEMPTS = 2
         private const val TUN_REAPPLY_RETRY_DELAY_MS = 500L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"

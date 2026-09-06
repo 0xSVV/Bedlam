@@ -49,7 +49,7 @@ internal class DashboardBootstrapper(
                 dispatch(
                     Action.ConnectionStateChanged(
                         state,
-                        (state as? ConnectionState.Connected)?.connectedSinceMillis
+                        (state as? ConnectionState.Connected)?.connectedSinceElapsedRealtime
                     )
                 )
                 if (isConnected && !wasConnected) dispatch(Action.TunnelConnected)

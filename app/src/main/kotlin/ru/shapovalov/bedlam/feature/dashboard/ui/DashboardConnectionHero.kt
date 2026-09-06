@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.feature.dashboard.ui
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -106,9 +107,12 @@ internal fun ConnectionHero(
 
         if (isConnecting) {
             showButtonIcon = false
-            while (true) {
+            repeat(MaxLoadingMorphCycles) {
                 loadingButtonShapes.forEach { morphTo(it) }
             }
+            returnToCurrentShape()
+            morphTo(restingButtonShape)
+            showButtonIcon = true
         } else {
             showButtonIcon = true
             returnToCurrentShape()
@@ -141,7 +145,7 @@ internal fun ConnectionHero(
         } else {
             while (true) {
                 elapsedSeconds.longValue =
-                    (System.currentTimeMillis() - connectedSinceMillis) / 1000
+                    (SystemClock.elapsedRealtime() - connectedSinceMillis) / 1000
                 delay(1000)
             }
         }
@@ -300,6 +304,8 @@ private fun ConnectionState.displayText(): String = when (this) {
 
     is ConnectionState.Error -> stringResource(R.string.dashboard_state_error)
 }
+
+private const val MaxLoadingMorphCycles = 5
 
 private val ConnectionMorphAnimationSpec = spring<Float>(
     dampingRatio = Spring.DampingRatioMediumBouncy,

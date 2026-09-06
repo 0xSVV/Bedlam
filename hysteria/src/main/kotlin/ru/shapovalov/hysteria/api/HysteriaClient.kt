@@ -149,6 +149,7 @@ interface HysteriaClient {
         val source: String,
         val message: String,
         val timestampMillis: Long,
+        val seq: Long = 0L,
     )
 
     /**

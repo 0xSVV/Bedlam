@@ -15,10 +15,9 @@ interface LogsStore : Store<LogsStore.Intent, LogsStore.State, Nothing> {
         val liveEntries: List<HysteriaClient.LogEntry> = emptyList(),
         val pausedSnapshot: List<HysteriaClient.LogEntry>? = null,
         val minLevel: HysteriaClient.LogLevel = HysteriaClient.LogLevel.INFO,
+        val visibleEntries: List<HysteriaClient.LogEntry> = emptyList(),
+        val droppedCount: Long = 0L,
     ) {
         val isPaused: Boolean get() = pausedSnapshot != null
-
-        val visibleEntries: List<HysteriaClient.LogEntry>
-            get() = (pausedSnapshot ?: liveEntries).filter { it.level.ordinal >= minLevel.ordinal }
     }
 }

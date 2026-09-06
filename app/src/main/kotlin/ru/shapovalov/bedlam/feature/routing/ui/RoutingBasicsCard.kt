@@ -263,15 +263,19 @@ private fun MtuEditor(
 
     // The store loads the saved config after first composition, and later
     // writes echo back through Room; sync only while the user is not typing.
-    LaunchedEffect(mtu, focused) {
-        if (!focused && mtu != (text.trim().toIntOrNull() ?: RoutingConfig.AUTO_MTU)) {
+    LaunchedEffect(mtu, focused, outOfRange) {
+        if (!focused && !outOfRange &&
+            mtu != (text.trim().toIntOrNull() ?: RoutingConfig.AUTO_MTU)
+        ) {
             text = if (mtu == RoutingConfig.AUTO_MTU) "" else mtu.toString()
         }
     }
 
+    val showingAuto = !focused && blank
+
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
-            value = text,
+            value = if (showingAuto) RoutingConfig.MIN_TUN_MTU.toString() else text,
             onValueChange = { input ->
                 text = input
                 val parsed = input.trim().toIntOrNull()
@@ -282,6 +286,11 @@ private fun MtuEditor(
                 }
             },
             label = { Text(stringResource(R.string.routing_mtu_label)) },
+            suffix = if (showingAuto) {
+                { Text(stringResource(R.string.routing_mtu_auto_suffix)) }
+            } else {
+                null
+            },
             placeholder = {
                 Text(stringResource(R.string.routing_mtu_auto_placeholder, RoutingConfig.MIN_TUN_MTU))
             },

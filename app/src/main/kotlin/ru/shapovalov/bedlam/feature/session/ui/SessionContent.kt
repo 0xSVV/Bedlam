@@ -108,6 +108,7 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
             val errorMessage = state.errorMessage
             val info = state.info
             val cardState: CardState = when {
+                !state.tunnelUp && info == null -> CardState.Disconnected
                 state.isLoading -> CardState.Loading
                 errorMessage != null -> CardState.Error(
                     errorMessage.takeIf { it.isNotBlank() }
@@ -141,6 +142,7 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
             ) { target ->
                 when (target) {
                     CardState.Loading -> SkeletonInfoCard()
+                    CardState.Disconnected -> DisconnectedCard()
                     is CardState.Error -> ErrorCard(
                         message = target.message,
                         onRetry = component::onRefresh
@@ -150,12 +152,20 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                 }
             }
 
-            Text(
-                text = stringResource(R.string.session_ip_explainer),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = spacing.small),
-            )
+            if (cardState !is CardState.Disconnected) {
+                Text(
+                    text = stringResource(
+                        if (state.isStale) {
+                            R.string.session_stale_explainer
+                        } else {
+                            R.string.session_ip_explainer
+                        }
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = spacing.small),
+                )
+            }
 
             SpeedTestCard(onOpen = { showSpeedTest = true })
 
