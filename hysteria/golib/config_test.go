@@ -292,11 +292,11 @@ func TestApplyClientOptions_quicTimerDefaults(t *testing.T) {
 	if err := applyClientOptions(&core, &cfg, ""); err != nil {
 		t.Fatalf("applyClientOptions: %v", err)
 	}
-	if got := core.QUICConfig.MaxIdleTimeout; got != 30*time.Second {
-		t.Errorf("default MaxIdleTimeout = %v, want 30s", got)
+	if got := core.QUICConfig.MaxIdleTimeout; got != 120*time.Second {
+		t.Errorf("default MaxIdleTimeout = %v, want 120s", got)
 	}
-	if got := core.QUICConfig.KeepAlivePeriod; got != 15*time.Second {
-		t.Errorf("default KeepAlivePeriod = %v, want 15s", got)
+	if got := core.QUICConfig.KeepAlivePeriod; got != 30*time.Second {
+		t.Errorf("default KeepAlivePeriod = %v, want 30s", got)
 	}
 }
 

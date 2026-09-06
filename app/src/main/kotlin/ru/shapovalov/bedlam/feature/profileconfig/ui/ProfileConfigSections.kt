@@ -7,6 +7,7 @@ import androidx.compose.ui.res.stringResource
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.ObfuscationOptions
+import ru.shapovalov.hysteria.config.QuicTimerDefaults
 import ru.shapovalov.hysteria.config.RealmOptions
 import ru.shapovalov.hysteria.config.defaultBandwidthOptions
 import ru.shapovalov.hysteria.config.defaultBehaviorOptions
@@ -256,14 +257,20 @@ internal fun QuicSection(
             label = "maxIdleTimeoutSec",
             value = quic.maxIdleTimeoutSec,
             editMode = editMode,
-            caution = stringResource(R.string.profile_config_hint_quic_idle),
+            caution = stringResource(
+                R.string.profile_config_hint_quic_idle,
+                QuicTimerDefaults.MAX_IDLE_TIMEOUT_SEC,
+            ),
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(maxIdleTimeoutSec = it))) },
         )
         IntFieldRow(
             label = "keepAlivePeriodSec",
             value = quic.keepAlivePeriodSec,
             editMode = editMode,
-            caution = stringResource(R.string.profile_config_hint_quic_keepalive),
+            caution = stringResource(
+                R.string.profile_config_hint_quic_keepalive,
+                QuicTimerDefaults.KEEP_ALIVE_PERIOD_SEC,
+            ),
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(keepAlivePeriodSec = it))) },
         )
         SwitchRow(

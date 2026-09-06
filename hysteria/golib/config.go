@@ -21,14 +21,16 @@ import (
 
 const serverResolveTimeout = 3 * time.Second
 
-// The idle timeout matches the Hysteria server default: QUIC negotiates the
-// minimum of both ends, so a larger client value changes nothing against a
-// stock server. quic-go clamps the keepalive interval to half the negotiated
-// idle timeout; 15s states that clamp explicitly and wakes the radio less
-// often than the 10s core default. Explicit profile values override both.
+// QUIC negotiates the minimum of both ends, so these are a ceiling the server
+// can lower, never a floor it must accept. A 30s client ceiling also caps what
+// a tuned server may enforce, leaving a suspended phone no way to survive more
+// than 30s of sleep; 120s lets an operator who raises the server value benefit
+// from it, and stays inert against a stock 30s server. quic-go clamps the
+// keepalive to half the negotiated idle timeout, so 30s becomes 15s there.
+// Explicit profile values override both.
 const (
-	defaultMaxIdleTimeoutSec  = 30
-	defaultKeepAlivePeriodSec = 15
+	defaultMaxIdleTimeoutSec  = 120
+	defaultKeepAlivePeriodSec = 30
 )
 
 type clientConfig struct {
