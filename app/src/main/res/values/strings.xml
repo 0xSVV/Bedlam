@@ -293,6 +293,9 @@
     <string name="session_speed_test_error">The speed test could not load. Check that the tunnel is connected, then try again.</string>
     <string name="session_error_title">Could not load session</string>
     <string name="session_error_unknown">Session lookup failed. Check the tunnel and try again.</string>
+    <string name="session_disconnected_title">No tunnel</string>
+    <string name="session_disconnected_body">Connect first. These addresses are looked up through the tunnel, so there is nothing to report while it is down.</string>
+    <string name="session_stale_explainer">Last reading through the tunnel. The tunnel is reconnecting, so this may be out of date.</string>
     <string name="session_ip_explainer">Reported by public lookup services through the active tunnel. IPv6 appears only when this route supports it.</string>
     <string name="session_section_addresses">Addresses</string>
     <string name="session_section_network">Network</string>

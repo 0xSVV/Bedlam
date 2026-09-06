@@ -43,6 +43,7 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 
 internal sealed interface CardState {
     data object Loading : CardState
+    data object Disconnected : CardState
     data class Error(val message: String) : CardState
     data class Success(val info: SessionInfo) : CardState
 }
@@ -284,6 +285,34 @@ internal fun SpeedTestCard(onOpen: () -> Unit) {
             Text(
                 text = stringResource(R.string.session_speed_test_subtitle),
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun DisconnectedCard() {
+    val spacing = MaterialTheme.spacing
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(spacing.large),
+            verticalArrangement = Arrangement.spacedBy(spacing.small),
+        ) {
+            Text(
+                text = stringResource(R.string.session_disconnected_title),
+                style = MaterialTheme.typography.titleMediumEmphasized,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.session_disconnected_body),
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
