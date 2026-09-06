@@ -107,9 +107,15 @@ internal fun ConnectionHero(
 
         if (isConnecting) {
             showButtonIcon = false
-            while (true) {
+            // Reconnecting can last as long as the outage does, and this runs
+            // in a foreground service people leave on all day. Say "working"
+            // for a few cycles, then settle rather than animating forever.
+            repeat(MaxLoadingMorphCycles) {
                 loadingButtonShapes.forEach { morphTo(it) }
             }
+            returnToCurrentShape()
+            morphTo(restingButtonShape)
+            showButtonIcon = true
         } else {
             showButtonIcon = true
             returnToCurrentShape()
@@ -301,6 +307,8 @@ private fun ConnectionState.displayText(): String = when (this) {
 
     is ConnectionState.Error -> stringResource(R.string.dashboard_state_error)
 }
+
+private const val MaxLoadingMorphCycles = 5
 
 private val ConnectionMorphAnimationSpec = spring<Float>(
     dampingRatio = Spring.DampingRatioMediumBouncy,
