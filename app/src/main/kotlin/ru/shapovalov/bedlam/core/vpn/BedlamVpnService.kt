@@ -29,11 +29,14 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -568,20 +571,29 @@ class BedlamVpnService : VpnService() {
     private fun startLivenessKick() {
         if (livenessKickJob != null) return
         livenessKickJob = scope.launch {
-            screenOnFlow()
-                .distinctUntilChanged()
-                .collect { interactive ->
-                    if (interactive) {
-                        runCatching { client.checkConnection() }
-                            .onFailure { Log.w(TAG, "Liveness check failed", it) }
-                    }
-                }
+            merge(
+                screenOnFlow().distinctUntilChanged().filter { it }.map { },
+                deviceIdleExitFlow(),
+            ).collect { checkTunnelLiveness("wake") }
         }
     }
+
+    private suspend fun checkTunnelLiveness(source: String) {
+        runCatching { client.checkConnection() }
+            .onFailure { Log.w(TAG, "Liveness check after $source failed", it) }
+    }
+
+    // elapsedRealtime counts deep sleep and uptimeMillis does not, so the gap
+    // between them is how long the SoC was suspended. Go's timers are frozen
+    // for that whole stretch, which is exactly when the server has already
+    // idled the session out and the client cannot know it.
+    private fun deviceSleepMillis(): Long =
+        SystemClock.elapsedRealtime() - SystemClock.uptimeMillis()
 
     private fun startRuntimeHeartbeat() {
         if (runtimeHeartbeatJob != null) return
         runtimeHeartbeatJob = scope.launch {
+            var lastSleepMillis = deviceSleepMillis()
             while (isActive) {
                 runCatching {
                     runtimeStateRepository.heartbeat(serviceEpoch, client.state.value)
@@ -589,8 +601,29 @@ class BedlamVpnService : VpnService() {
                     Log.w(TAG, "Failed to persist VPN runtime heartbeat", it)
                 }
                 delay(RUNTIME_HEARTBEAT_MS)
+                val sleepMillis = deviceSleepMillis()
+                val slept = sleepMillis - lastSleepMillis
+                lastSleepMillis = sleepMillis
+                if (slept >= SLEEP_GAP_CHECK_MS) {
+                    Log.i(TAG, "Device slept ${slept}ms; re-checking the tunnel")
+                    checkTunnelLiveness("sleep")
+                }
             }
         }
+    }
+
+    private fun deviceIdleExitFlow(): Flow<Unit> = callbackFlow {
+        val power = getSystemService(PowerManager::class.java)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (power?.isDeviceIdleMode == false) trySend(Unit)
+            }
+        }
+        registerReceiver(
+            receiver,
+            IntentFilter(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED),
+        )
+        awaitClose { unregisterReceiver(receiver) }
     }
 
     private fun screenOnFlow(): Flow<Boolean> = callbackFlow {
@@ -619,6 +652,7 @@ class BedlamVpnService : VpnService() {
         private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
         private const val ALWAYS_ON_STATE_REFRESH_MS = 60_000L
         private const val DESTROY_PERSIST_TIMEOUT_MS = 500L
+        private const val SLEEP_GAP_CHECK_MS = 20_000L
         private const val TUN_REAPPLY_ATTEMPTS = 2
         private const val TUN_REAPPLY_RETRY_DELAY_MS = 500L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
