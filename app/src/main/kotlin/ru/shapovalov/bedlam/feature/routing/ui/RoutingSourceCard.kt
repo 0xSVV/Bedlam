@@ -51,7 +51,11 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -127,6 +131,10 @@ internal fun SwipeableSourceCard(
                     isRefreshing = isRefreshing,
                     expanded = expanded,
                     onToggleExpanded = { expanded = !expanded },
+                    onToggleEnabled = {
+                        latestOnToggle(latestResolved.source.id, !latestResolved.source.enabled)
+                    },
+                    onDelete = { latestOnDelete(latestResolved.source.id) },
                 )
             },
         )
@@ -188,9 +196,16 @@ private fun SourceRowContent(
     isRefreshing: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
+    onToggleEnabled: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     val dimmed = !resolved.source.enabled
+    val toggleActionLabel = stringResource(
+        if (dimmed) R.string.routing_swipe_enable else R.string.routing_swipe_disable
+    )
+    val deleteActionLabel = stringResource(R.string.routing_sources_delete_cd)
+    val disabledStateText = stringResource(R.string.routing_source_state_disabled)
     val baseColor = MaterialTheme.colorScheme.surfaceContainerLow
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
@@ -206,6 +221,19 @@ private fun SourceRowContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(role = Role.Button, onClick = onToggleExpanded)
+                .semantics {
+                    customActions = listOf(
+                        CustomAccessibilityAction(toggleActionLabel) {
+                            onToggleEnabled()
+                            true
+                        },
+                        CustomAccessibilityAction(deleteActionLabel) {
+                            onDelete()
+                            true
+                        },
+                    )
+                    if (dimmed) stateDescription = disabledStateText
+                }
                 .padding(horizontal = spacing.large, vertical = spacing.medium),
             verticalAlignment = Alignment.CenterVertically,
         ) {

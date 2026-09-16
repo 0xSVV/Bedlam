@@ -431,4 +431,5 @@
         <item quantity="one">%1$d d ago</item>
         <item quantity="other">%1$d d ago</item>
     </plurals>
+    <string name="routing_source_state_disabled">Disabled</string>
 </resources>
