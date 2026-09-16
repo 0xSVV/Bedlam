@@ -70,6 +70,13 @@ func rejectUnparsableDoH(w http.ResponseWriter, q []byte) bool {
 
 func newDoHServer(t *testing.T, ip [4]byte, status int) *dohServer {
 	t.Helper()
+	d := newUnstartedDoHServer(t, ip, status)
+	d.srv.StartTLS()
+	return d
+}
+
+func newUnstartedDoHServer(t *testing.T, ip [4]byte, status int) *dohServer {
+	t.Helper()
 	d := &dohServer{}
 	d.srv = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		d.requests.Add(1)
@@ -113,7 +120,6 @@ func newDoHServer(t *testing.T, ip [4]byte, status int) *dohServer {
 		_, _ = w.Write(resp)
 	}))
 	d.srv.EnableHTTP2 = true
-	d.srv.StartTLS()
 	t.Cleanup(d.srv.Close)
 	return d
 }
