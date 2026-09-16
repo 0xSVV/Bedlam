@@ -4,9 +4,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -100,8 +97,8 @@ private fun Tab.labelRes(): Int = when (this) {
 @Composable
 private fun TabIcon(tab: Tab) {
     when (tab) {
-        Tab.Dashboard -> Icon(Icons.Default.Home, contentDescription = null)
-        Tab.Settings -> Icon(Icons.Default.Settings, contentDescription = null)
-        Tab.Logs -> Icon(painterResource(R.drawable.ic_logs), contentDescription = null)
+        Tab.Dashboard -> Icon(painterResource(R.drawable.ic_home), contentDescription = null)
+        Tab.Settings -> Icon(painterResource(R.drawable.ic_settings), contentDescription = null)
+        Tab.Logs -> Icon(painterResource(R.drawable.ic_notes), contentDescription = null)
     }
 }
