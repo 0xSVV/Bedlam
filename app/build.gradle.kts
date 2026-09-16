@@ -184,4 +184,7 @@ tasks.withType<Test>().configureEach {
     inputs.file(readmeFile)
         .withPropertyName("readme")
         .withPathSensitivity(PathSensitivity.NONE)
+    inputs.dir(rootProject.layout.projectDirectory.dir("release-notes"))
+        .withPropertyName("releaseNotes")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
