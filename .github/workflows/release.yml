@@ -47,6 +47,16 @@ jobs:
 
       - uses: ./.github/actions/setup-build
 
+      - name: Go tests
+        working-directory: hysteria/golib
+        run: go test ./...
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Lint
+        run: ./gradlew :app:lintRelease --stacktrace
+
       - name: Decode keystore
         env:
           KS: ${{ secrets.BEDLAM_STORE_BASE64 }}
