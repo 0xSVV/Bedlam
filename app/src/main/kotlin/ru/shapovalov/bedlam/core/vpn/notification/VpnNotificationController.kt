@@ -88,7 +88,7 @@ class VpnNotificationController(private val context: Context) {
                 Notification.BigTextStyle()
                     .bigText(context.getString(R.string.notification_reconnect_timeout))
             )
-            .setContentIntent(openAppIntent())
+            .setContentIntent(openAppIntent)
             .setAutoCancel(true)
             .build()
         notificationManager.notify(WARNING_NOTIFICATION_ID, notification)
@@ -106,7 +106,7 @@ class VpnNotificationController(private val context: Context) {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setContentIntent(openAppIntent())
+            .setContentIntent(openAppIntent)
 
         applyState(builder, state, stats, txRate, rxRate)
         return builder.build()
@@ -123,7 +123,7 @@ class VpnNotificationController(private val context: Context) {
             is ConnectionState.Connecting -> {
                 clearSparkline()
                 builder.setContentText(context.getString(R.string.notification_state_connecting))
-                builder.addAction(stopAction())
+                builder.addAction(stopAction)
             }
 
             is ConnectionState.Connected -> {
@@ -162,8 +162,8 @@ class VpnNotificationController(private val context: Context) {
                 builder.setWhen(state.connectedSinceMillis)
                 builder.setShowWhen(true)
                 builder.setUsesChronometer(true)
-                builder.addAction(reconnectAction())
-                builder.addAction(stopAction())
+                builder.addAction(reconnectAction)
+                builder.addAction(stopAction)
             }
 
             is ConnectionState.Reconnecting -> {
@@ -172,8 +172,8 @@ class VpnNotificationController(private val context: Context) {
                     context.getString(R.string.notification_state_reconnecting, state.attempt)
                 )
                 builder.setSubText(state.reason)
-                builder.addAction(reconnectAction())
-                builder.addAction(stopAction())
+                builder.addAction(reconnectAction)
+                builder.addAction(stopAction)
             }
 
             is ConnectionState.Error -> {
@@ -181,14 +181,14 @@ class VpnNotificationController(private val context: Context) {
                 builder.setContentText(
                     context.getString(R.string.notification_state_error, state.message)
                 )
-                builder.addAction(reconnectAction())
-                builder.addAction(stopAction())
+                builder.addAction(reconnectAction)
+                builder.addAction(stopAction)
             }
 
             is ConnectionState.Disconnected -> {
                 clearSparkline()
                 builder.setContentText(context.getString(R.string.notification_state_disconnected))
-                builder.addAction(stopAction())
+                builder.addAction(stopAction)
             }
         }
     }
@@ -209,7 +209,7 @@ class VpnNotificationController(private val context: Context) {
             context.getString(R.string.notification_title)
         }
 
-    private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
+    private val openAppIntent: PendingIntent = PendingIntent.getActivity(
         context,
         0,
         Intent(context, MainActivity::class.java).apply {
@@ -218,14 +218,14 @@ class VpnNotificationController(private val context: Context) {
         PendingIntent.FLAG_IMMUTABLE,
     )
 
-    private fun stopAction(): Notification.Action = actionFor(
+    private val stopAction: Notification.Action = actionFor(
         requestCode = REQ_STOP,
         action = BedlamVpnService.ACTION_STOP,
         iconRes = R.drawable.ic_stop,
         labelRes = R.string.action_disconnect,
     )
 
-    private fun reconnectAction(): Notification.Action = actionFor(
+    private val reconnectAction: Notification.Action = actionFor(
         requestCode = REQ_RECONNECT,
         action = BedlamVpnService.ACTION_RECONNECT,
         iconRes = R.drawable.ic_refresh,
