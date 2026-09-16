@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.feature.profileconfig.ui
 
+import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
@@ -205,9 +206,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                         clipboardLabel,
                         current.toClipboardText(state.original?.name.orEmpty()),
                     )
-                    clip.description.extras = PersistableBundle().apply {
-                        putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-                    }
+                    clip.description.extras = sensitiveClipExtras()
                     clipboardManager.setPrimaryClip(clip)
                     scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
                 },
@@ -236,6 +235,11 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
 
 private fun SnackbarHostState.dismissShowing(message: String) {
     currentSnackbarData?.takeIf { it.visuals.message == message }?.dismiss()
+}
+
+@SuppressLint("InlinedApi")
+private fun sensitiveClipExtras() = PersistableBundle().apply {
+    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
 }
 
 @Composable
