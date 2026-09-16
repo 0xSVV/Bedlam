@@ -98,7 +98,7 @@ fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun SettingsRoot(
+internal fun SettingsRoot(
     onOpenAppSelection: () -> Unit,
     onOpenRouting: () -> Unit,
     onOpenBatteryReliability: () -> Unit,
