@@ -304,7 +304,7 @@ private fun LogList(entries: List<LogEntry>, droppedCount: Long) {
             start = MaterialTheme.spacing.large,
             top = MaterialTheme.spacing.small,
             end = MaterialTheme.spacing.large,
-            bottom = MaterialTheme.spacing.large,
+            bottom = LogListBottomPadding,
         ),
         verticalArrangement = Arrangement.spacedBy(LogRowSpacing),
     ) {
@@ -436,6 +436,7 @@ private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier) {
 
 private val TIMESTAMP_FORMAT = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
+private val LogListBottomPadding = 88.dp
 private val LogRowSpacing = 2.dp
 private val LogAccentBarWidth = 3.dp
 private val LogAccentBarHeight = 32.dp
