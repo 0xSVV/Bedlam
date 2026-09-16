@@ -2,6 +2,7 @@ package golib
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -278,9 +279,7 @@ func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, def
 			resp, err := h.session.dnsCache.resolve(qctx, resolver, query, h.countDNS)
 
 			if err != nil {
-				if dnsErrLimiter.allow(resolver.id()) {
-					log(LogLevelWarn, srcDNS, "DNS error: %s: %s", resolver.id(), err)
-				}
+				logDNSError(resolver.id(), err)
 				if sf := buildServFail(query); sf != nil {
 					if werr := conn.WritePacket(buf.As(sf), src); werr != nil {
 						log(LogLevelDebug, srcDNS, "DNS servfail write error: %s", werr)
@@ -309,9 +308,7 @@ func (h *tunHandler) serveDNSStream(ctx context.Context, conn net.Conn) error {
 		resp, err := h.session.dnsCache.resolve(qctx, h.dns, query, h.countDNS)
 		cancel()
 		if err != nil {
-			if dnsErrLimiter.allow(h.dns.id()) {
-				log(LogLevelWarn, srcDNS, "DNS error: %s: %s", h.dns.id(), err)
-			}
+			logDNSError(h.dns.id(), err)
 			resp = buildServFail(query)
 			if resp == nil {
 				return err
@@ -321,6 +318,16 @@ func (h *tunHandler) serveDNSStream(ctx context.Context, conn net.Conn) error {
 		if err := writeDNSFrame(conn, resp); err != nil {
 			return err
 		}
+	}
+}
+
+func logDNSError(upstreamID string, err error) {
+	key := upstreamID
+	if errors.Is(err, errDNSQueryInvalid) {
+		key = "invalid|" + upstreamID
+	}
+	if dnsErrLimiter.allow(key) {
+		log(LogLevelWarn, srcDNS, "DNS error: %s: %s", upstreamID, err)
 	}
 }
 

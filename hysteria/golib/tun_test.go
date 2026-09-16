@@ -5,11 +5,14 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/netip"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -475,6 +478,88 @@ func TestServeDNSStream_nonDNSFrameNeverReachesTheUpstream(t *testing.T) {
 	}
 	if resp[len(resp)-1] != 7 {
 		t.Errorf("answer = %v", resp)
+	}
+}
+
+type captureLog struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (c *captureLog) OnLog(level, source, message string) {
+	c.mu.Lock()
+	c.lines = append(c.lines, level+" "+source+" "+message)
+	c.mu.Unlock()
+}
+
+func (c *captureLog) linesMentioning(s string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []string
+	for _, line := range c.lines {
+		if strings.Contains(line, s) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func captureLogs(t *testing.T) *captureLog {
+	t.Helper()
+	c := &captureLog{}
+	SetLogHandler(c)
+	t.Cleanup(func() { SetLogHandler(nil) })
+	return c
+}
+
+var upstreamIDSeq atomic.Int64
+
+func uniqueUpstreamID(t *testing.T, transport string) string {
+	return transport + "|" + t.Name() + "-" + strconv.FormatInt(upstreamIDSeq.Add(1), 10)
+}
+
+func TestServeDNSPackets_nonDNSPayloadLogsItsSizeOnly(t *testing.T) {
+	logs := captureLogs(t)
+	stub := &stubResolver{name: "stub", reply: echoAnswer([4]byte{7, 7, 7, 7})}
+	h := testHandler(t, stub)
+	h.dns.ident = uniqueUpstreamID(t, "udp")
+	pc := newFakePacketConn()
+	defer pc.Close()
+	dest := M.SocksaddrFrom(netip.MustParseAddr("172.19.0.2"), 53)
+	go h.serveDNSPackets(context.Background(), pc, dest.String())
+
+	pc.in <- fakePacket{nonDNSPayload(1400), dest}
+	select {
+	case <-pc.out:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no SERVFAIL")
+	}
+	want := "WARN dns DNS error: " + h.dns.ident + ": not a DNS query with one question (1400 bytes)"
+	if got := logs.linesMentioning(h.dns.ident); len(got) != 1 || got[0] != want {
+		t.Errorf("logged %q, want exactly %q", got, want)
+	}
+	if stub.calls.Load() != 0 {
+		t.Errorf("resolver calls = %d", stub.calls.Load())
+	}
+}
+
+func TestLogDNSError_invalidPayloadsDoNotMuteUpstreamErrors(t *testing.T) {
+	logs := captureLogs(t)
+	id := uniqueUpstreamID(t, "tls")
+	invalid := fmt.Errorf("%w (1400 bytes)", errDNSQueryInvalid)
+	upstream := errors.New("read response length: i/o timeout")
+
+	logDNSError(id, invalid)
+	logDNSError(id, upstream)
+	logDNSError(id, invalid)
+	logDNSError(id, upstream)
+
+	got := logs.linesMentioning(id)
+	if len(got) != 2 {
+		t.Fatalf("logged %q, want one line per kind within the rate limit", got)
+	}
+	if !strings.Contains(got[0], errDNSQueryInvalid.Error()) || !strings.Contains(got[1], upstream.Error()) {
+		t.Errorf("logged %q, want the refusal and then the upstream error", got)
 	}
 }
 
