@@ -418,4 +418,17 @@
     <string name="routing_source_kind_cidr">CIDR</string>
     <string name="routing_source_kind_asn">ASN</string>
     <string name="routing_source_kind_domain">DOMAIN</string>
+    <string name="routing_source_updated_just_now">just now</string>
+    <plurals name="routing_source_updated_minutes">
+        <item quantity="one">%1$d min ago</item>
+        <item quantity="other">%1$d min ago</item>
+    </plurals>
+    <plurals name="routing_source_updated_hours">
+        <item quantity="one">%1$d h ago</item>
+        <item quantity="other">%1$d h ago</item>
+    </plurals>
+    <plurals name="routing_source_updated_days">
+        <item quantity="one">%1$d d ago</item>
+        <item quantity="other">%1$d d ago</item>
+    </plurals>
 </resources>

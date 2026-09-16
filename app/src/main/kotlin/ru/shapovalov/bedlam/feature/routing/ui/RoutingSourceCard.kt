@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,6 +58,8 @@ import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
 import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
+import ru.shapovalov.bedlam.core.util.RelativeAge
+import ru.shapovalov.bedlam.core.util.relativeAge
 import ru.shapovalov.bedlam.ui.theme.spacing
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -403,16 +406,17 @@ private fun resolutionSummary(resolved: ResolvedSource, isRefreshing: Boolean): 
     else stringResource(R.string.routing_source_count, count)
 }
 
-private fun formatRelative(millis: Long): String {
-    val delta = System.currentTimeMillis() - millis
-    val minutes = delta / 60_000
-    return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> "$minutes min ago"
-        minutes < 24 * 60 -> "${minutes / 60} h ago"
-        else -> "${minutes / 60 / 24} d ago"
+@Composable
+private fun formatRelative(millis: Long): String =
+    when (val age = relativeAge(System.currentTimeMillis() - millis)) {
+        RelativeAge.JustNow -> stringResource(R.string.routing_source_updated_just_now)
+        is RelativeAge.Minutes ->
+            pluralStringResource(R.plurals.routing_source_updated_minutes, age.value, age.value)
+        is RelativeAge.Hours ->
+            pluralStringResource(R.plurals.routing_source_updated_hours, age.value, age.value)
+        is RelativeAge.Days ->
+            pluralStringResource(R.plurals.routing_source_updated_days, age.value, age.value)
     }
-}
 
 private const val MaxVisibleCidrs = 200
 
