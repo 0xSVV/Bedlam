@@ -43,8 +43,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -203,7 +206,13 @@ internal fun ConnectionHero(
                 labelColor = chipLabelColor,
                 trailingIconContentColor = chipLabelColor,
             ),
-            modifier = Modifier.semantics { contentDescription = openSessionCd },
+            modifier = Modifier.semantics {
+                onClick(label = openSessionCd) {
+                    onOpenSession()
+                    true
+                }
+                liveRegion = LiveRegionMode.Polite
+            },
         )
         if (!hasActiveProfile && connectionState is ConnectionState.Disconnected) {
             Spacer(Modifier.height(spacing.small))
