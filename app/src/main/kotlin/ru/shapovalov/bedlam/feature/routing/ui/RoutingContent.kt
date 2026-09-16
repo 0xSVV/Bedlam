@@ -197,7 +197,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SourcesHeaderCard(
+internal fun SourcesHeaderCard(
     modifier: Modifier = Modifier,
     onAdd: () -> Unit,
     onPresets: () -> Unit,
@@ -244,7 +244,7 @@ private fun SourcesHeaderCard(
 }
 
 @Composable
-private fun EmptySourcesRow(modifier: Modifier = Modifier) {
+internal fun EmptySourcesRow(modifier: Modifier = Modifier) {
     ElevatedCard(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
         Text(
             text = stringResource(R.string.routing_sources_empty),

@@ -191,7 +191,7 @@ private data class SwipeBgSpec(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SourceRowContent(
+internal fun SourceRowContent(
     resolved: ResolvedSource,
     isRefreshing: Boolean,
     expanded: Boolean,
