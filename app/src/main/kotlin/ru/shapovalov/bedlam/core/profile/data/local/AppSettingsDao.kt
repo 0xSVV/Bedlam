@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.core.profile.data.local
 
 import androidx.room.Dao
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -21,28 +22,36 @@ interface AppSettingsDao {
 
     @Query(
         """
-        INSERT INTO app_settings (id, activeProfileId, appFilterMode, appFilterPackages)
-        VALUES (0, :id, 'ALL', '')
-        ON CONFLICT(id) DO UPDATE SET activeProfileId = :id
+        INSERT INTO app_settings (id)
+        SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE id = 0)
         """,
     )
-    suspend fun setActiveProfileId(id: String?)
+    suspend fun insertDefaultsIfAbsent()
 
-    @Query(
-        """
-        INSERT INTO app_settings (id, activeProfileId, appFilterMode, appFilterPackages)
-        VALUES (0, NULL, :mode, '')
-        ON CONFLICT(id) DO UPDATE SET appFilterMode = :mode
-        """,
-    )
-    suspend fun setAppFilterMode(mode: String)
+    @Query("UPDATE app_settings SET activeProfileId = :id WHERE id = 0")
+    suspend fun updateActiveProfileId(id: String?)
 
-    @Query(
-        """
-        INSERT INTO app_settings (id, activeProfileId, appFilterMode, appFilterPackages)
-        VALUES (0, NULL, 'ALL', :packages)
-        ON CONFLICT(id) DO UPDATE SET appFilterPackages = :packages
-        """,
-    )
-    suspend fun setAppFilterPackages(packages: String)
+    @Query("UPDATE app_settings SET appFilterMode = :mode WHERE id = 0")
+    suspend fun updateAppFilterMode(mode: String)
+
+    @Query("UPDATE app_settings SET appFilterPackages = :packages WHERE id = 0")
+    suspend fun updateAppFilterPackages(packages: String)
+
+    @Transaction
+    suspend fun setActiveProfileId(id: String?) {
+        insertDefaultsIfAbsent()
+        updateActiveProfileId(id)
+    }
+
+    @Transaction
+    suspend fun setAppFilterMode(mode: String) {
+        insertDefaultsIfAbsent()
+        updateAppFilterMode(mode)
+    }
+
+    @Transaction
+    suspend fun setAppFilterPackages(packages: String) {
+        insertDefaultsIfAbsent()
+        updateAppFilterPackages(packages)
+    }
 }
