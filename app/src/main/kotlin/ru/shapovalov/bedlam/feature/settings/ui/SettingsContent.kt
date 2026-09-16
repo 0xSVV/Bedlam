@@ -189,7 +189,7 @@ private fun requestQuickSettingsTile(context: Context, onAddedChanged: (Boolean)
         manager.requestAddTileService(
             ComponentName(context, BedlamTileService::class.java),
             context.getString(R.string.qs_tile_label),
-            Icon.createWithResource(context, R.drawable.ic_qs_tunnel),
+            Icon.createWithResource(context, R.drawable.ic_power_settings_new),
             context.mainExecutor,
         ) { result ->
             val added = result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
