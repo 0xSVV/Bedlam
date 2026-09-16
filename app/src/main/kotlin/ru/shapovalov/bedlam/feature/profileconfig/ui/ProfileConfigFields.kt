@@ -121,7 +121,7 @@ internal fun TextFieldRow(
                     },
                 )
             } else {
-                ReadOnlyValue(value = if (masked) MASKED_VALUE else value)
+                ReadOnlyValue(value = readOnlyFieldText(value, masked))
             }
         }
     }
@@ -222,6 +222,9 @@ internal fun <T> numericFieldText(
     focused: Boolean,
     parse: (String) -> T?,
 ): String = if (focused || parse(local.ifEmpty { "0" }) == parse(stored)) local else stored
+
+internal fun readOnlyFieldText(value: String, masked: Boolean): String =
+    if (masked && value.isNotBlank()) MASKED_VALUE else value
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

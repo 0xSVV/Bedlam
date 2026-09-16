@@ -107,6 +107,7 @@ internal fun TlsSection(
             editMode = editMode,
             singleLine = false,
             caution = stringResource(R.string.profile_config_caution_tls_client),
+            secret = true,
             onChange = { onDraftChanged(draft.copy(tls = tls.copy(tlsClientKey = it))) },
         )
         TextFieldRow(
@@ -144,6 +145,7 @@ internal fun ObfuscationSection(
             editMode = editMode,
             caution = caution,
             showDivider = isGecko,
+            secret = true,
             onChange = { onDraftChanged(draft.copy(obfuscation = obfs.copy(obfuscationPassword = it))) },
         )
         AnimatedVisibility(visible = isGecko) {
