@@ -75,7 +75,6 @@
     <string name="settings_routing_subtitle">LAN bypass, IPv6, DNS, direct routes by IP/ASN/domain</string>
 
     <string name="settings_quick_tile_title">Quick settings tile</string>
-    <string name="settings_quick_tile_subtitle_enabled">Added</string>
     <string name="settings_quick_tile_subtitle_disabled">Tap to add a system shade toggle</string>
     <string name="settings_quick_tile_subtitle_manual">Open quick settings edit mode to add Bedlam</string>
     <string name="settings_quick_tile_manual_hint">Open quick settings edit mode and add Bedlam</string>
@@ -194,7 +193,6 @@
         <item>Enable Always-on VPN if you want automatic restart after boot</item>
         <item>Keep Bedlam notifications allowed while the tunnel is active</item>
     </string-array>
-    <string name="action_got_it">Got it</string>
 
     <string name="action_back">Back</string>
     <string name="action_save">Save</string>
@@ -302,12 +300,8 @@
     <string name="session_disconnected_body">Connect first. These addresses are looked up through the tunnel, so there is nothing to report while it is down.</string>
     <string name="session_stale_explainer">Last reading through the tunnel. The tunnel is reconnecting, so this may be out of date.</string>
     <string name="session_ip_explainer">Reported by public lookup services through the active tunnel. IPv6 appears only when this route supports it.</string>
-    <string name="session_section_addresses">Addresses</string>
-    <string name="session_section_network">Network</string>
-    <string name="session_section_location">Location</string>
     <string name="session_value_unavailable">Unavailable</string>
     <string name="session_value_unknown">Unknown</string>
-    <string name="session_ipv6_unavailable">No IPv6 response from this route.</string>
 
     <string name="session_field_ipv4">IPv4</string>
     <string name="session_field_ipv6">IPv6</string>
@@ -318,7 +312,6 @@
     <string name="session_field_region">Region</string>
     <string name="session_field_latitude">Latitude</string>
     <string name="session_field_longitude">Longitude</string>
-    <string name="session_field_coordinates">Coordinates</string>
 
     <string name="session_speed_test_title">Speed Test</string>
     <string name="session_speed_test_subtitle">Test your Internet connection.</string>
