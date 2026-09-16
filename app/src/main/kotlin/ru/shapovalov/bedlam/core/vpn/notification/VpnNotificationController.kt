@@ -206,14 +206,14 @@ class VpnNotificationController(private val context: Context) {
     private fun stopAction(): Notification.Action = actionFor(
         requestCode = REQ_STOP,
         action = BedlamVpnService.ACTION_STOP,
-        iconRes = R.drawable.ic_action_stop,
+        iconRes = R.drawable.ic_stop,
         labelRes = R.string.action_disconnect,
     )
 
     private fun reconnectAction(): Notification.Action = actionFor(
         requestCode = REQ_RECONNECT,
         action = BedlamVpnService.ACTION_RECONNECT,
-        iconRes = R.drawable.ic_action_refresh,
+        iconRes = R.drawable.ic_refresh,
         labelRes = R.string.action_reconnect,
     )
 
