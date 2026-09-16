@@ -162,10 +162,11 @@ class BedlamVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         when (intent?.action) {
             ACTION_STOP -> {
                 startAsForeground()
-                stop(requestId = intent.getStringExtra(EXTRA_STOP_REQUEST_ID))
+                stop(requestId = intent.getStringExtra(EXTRA_STOP_REQUEST_ID), startId = startId)
                 return START_NOT_STICKY
             }
 
@@ -173,7 +174,7 @@ class BedlamVpnService : VpnService() {
                 startAsForeground()
                 if (client.stats() == null) {
                     Log.i(TAG, "Reconnect requested with no active session; stopping")
-                    stop()
+                    stop(startId = startId)
                     return START_NOT_STICKY
                 }
                 scope.launch {
@@ -184,7 +185,6 @@ class BedlamVpnService : VpnService() {
             }
         }
 
-        lastStartId = startId
         stopWasRequested = false
 
         if (!startAsForeground()) {
@@ -387,6 +387,7 @@ class BedlamVpnService : VpnService() {
     private fun stop(
         reason: DisconnectReason = DisconnectReason.USER,
         requestId: String? = null,
+        startId: Int = lastStartId,
     ) {
         stopWasRequested = true
         currentConfig = null
@@ -398,7 +399,7 @@ class BedlamVpnService : VpnService() {
             runCatching { client.stop(reason) }
                 .onFailure { Log.w(TAG, "client.stop failed", it) }
             runtimeStateRepository.markStopped(reason.name)
-            stopSelf(lastStartId)
+            stopSelf(startId)
         }
     }
 
