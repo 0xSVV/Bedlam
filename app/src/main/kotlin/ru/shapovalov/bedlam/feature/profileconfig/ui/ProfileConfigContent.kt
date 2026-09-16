@@ -47,8 +47,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -106,6 +108,9 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
 
     BackHandler(enabled = state.editMode) { component.onBackPressed() }
 
+    val reconnectMessage = stringResource(R.string.profile_config_reconnect_hint)
+    val reconnectAction = stringResource(R.string.action_reconnect)
+
     val saveErrorMessage = state.saveError?.let {
         stringResource(R.string.profile_config_save_error, it)
     }
@@ -113,7 +118,23 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
         val msg = saveErrorMessage ?: return@LaunchedEffect
         component.onDismissError()
         if (snackbarHostState.currentSnackbarData?.visuals?.message == msg) return@LaunchedEffect
+        snackbarHostState.dismissShowing(reconnectMessage)
         scope.launch { snackbarHostState.showSnackbar(msg) }
+    }
+
+    LaunchedEffect(state.offerReconnect) {
+        if (!state.offerReconnect) return@LaunchedEffect
+        component.onReconnectOfferShown()
+        snackbarHostState.dismissShowing(reconnectMessage)
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = reconnectMessage,
+                actionLabel = reconnectAction,
+                withDismissAction = true,
+                duration = SnackbarDuration.Long,
+            )
+            if (result == SnackbarResult.ActionPerformed) component.onReconnect()
+        }
     }
 
     LaunchedEffect(state.notFound) {
@@ -211,6 +232,10 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
             onDismiss = component::onKeepEditing,
         )
     }
+}
+
+private fun SnackbarHostState.dismissShowing(message: String) {
+    currentSnackbarData?.takeIf { it.visuals.message == message }?.dismiss()
 }
 
 @Composable

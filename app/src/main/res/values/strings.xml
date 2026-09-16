@@ -404,4 +404,6 @@
     <string name="profile_config_discard_keep">Keep editing</string>
 
     <string name="dashboard_error_import_failed">Import failed: %1$s</string>
+
+    <string name="profile_config_reconnect_hint">Saved. Reconnect to use the new settings.</string>
 </resources>
