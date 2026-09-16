@@ -169,6 +169,12 @@ private fun DashboardStore.ErrorReason.resolve(): String = when (this) {
         stringResource(R.string.dashboard_error_duplicate_profile, name)
     is DashboardStore.ErrorReason.ConnectionFailed ->
         stringResource(R.string.dashboard_connection_error, message)
+    is DashboardStore.ErrorReason.ImportFailed ->
+        if (message.isBlank()) {
+            stringResource(R.string.import_error_failed)
+        } else {
+            stringResource(R.string.dashboard_error_import_failed, message)
+        }
 }
 
 private val SmallIconSize = 20.dp

@@ -153,6 +153,16 @@ class DashboardReducerTest {
     }
 
     @Test
+    fun `a failed import with the sheet dismissed raises a dashboard error`() {
+        val state = DashboardReducer.reduceAll(
+            DashboardStore.State(isImporting = true),
+            Msg.ImportFailed("boom"),
+        )
+
+        assertEquals(DashboardStore.State(error = DashboardStore.ErrorReason.ImportFailed("boom")), state)
+    }
+
+    @Test
     fun `a successful import keeps the sheet until it slides away`() {
         val succeeded = DashboardReducer.reduceAll(
             DashboardStore.State(importSheet = seed, isImporting = true),

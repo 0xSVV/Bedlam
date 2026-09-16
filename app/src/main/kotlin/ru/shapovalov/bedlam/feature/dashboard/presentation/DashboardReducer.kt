@@ -51,7 +51,13 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             importError = null,
         )
 
-        is Msg.ImportFailed -> copy(isImporting = false, importError = msg.message)
+        is Msg.ImportFailed ->
+            if (importSheet != null) {
+                copy(isImporting = false, importError = msg.message)
+            } else {
+                copy(isImporting = false, error = DashboardStore.ErrorReason.ImportFailed(msg.message))
+            }
+
         is Msg.ImportRejectedAsDuplicate -> copy(
             isImporting = false,
             importSheetClosing = importSheet != null,

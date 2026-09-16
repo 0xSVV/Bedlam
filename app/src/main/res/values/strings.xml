@@ -402,4 +402,6 @@
     <string name="profile_config_discard_message">Your unsaved edits to this profile will be lost.</string>
     <string name="profile_config_discard_confirm">Discard</string>
     <string name="profile_config_discard_keep">Keep editing</string>
+
+    <string name="dashboard_error_import_failed">Import failed: %1$s</string>
 </resources>

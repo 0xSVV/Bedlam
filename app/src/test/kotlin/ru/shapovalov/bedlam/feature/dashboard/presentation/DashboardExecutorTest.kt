@@ -27,6 +27,7 @@ import ru.shapovalov.bedlam.testing.testConnected
 import ru.shapovalov.bedlam.testing.testProfile
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.parseHysteriaUri
+import java.io.IOException
 
 @ExtendWith(MainDispatcherExtension::class)
 class DashboardExecutorTest {
@@ -212,6 +213,40 @@ class DashboardExecutorTest {
 
             assertEquals(1, repository.profiles.value.size)
             assertFalse(store.state.isImporting)
+        }
+    }
+
+    @Test
+    fun `an import that fails after the sheet was dismissed is reported on the dashboard`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeProfileRepository()
+        repository.observeAllGate = gate
+        repository.upsertFailure = IOException("disk full")
+        store(DashboardStore.State(), repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.OpenImport(TEST_LINK))
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, TEST_LINK, ""))
+            store.accept(DashboardStore.Intent.CloseImport)
+
+            gate.complete(Unit)
+
+            assertEquals(
+                DashboardStore.State(error = DashboardStore.ErrorReason.ImportFailed("disk full")),
+                store.state,
+            )
+        }
+    }
+
+    @Test
+    fun `an import that fails in the open sheet is reported in the sheet`() = runTest {
+        val repository = FakeProfileRepository()
+        repository.upsertFailure = IOException("disk full")
+        store(DashboardStore.State(importSheet = seed), repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, TEST_LINK, ""))
+
+            assertEquals(
+                DashboardStore.State(importSheet = seed, importError = "disk full"),
+                store.state,
+            )
         }
     }
 
