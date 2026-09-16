@@ -21,6 +21,9 @@ jobs:
       - name: Check Hysteria core pin
         run: bash .github/scripts/check-core-pin.sh
 
+      - name: Lint workflow scripts
+        run: shellcheck --severity=warning .github/scripts/*.sh
+
       - uses: ./.github/actions/setup-build
 
       - name: Go tests
