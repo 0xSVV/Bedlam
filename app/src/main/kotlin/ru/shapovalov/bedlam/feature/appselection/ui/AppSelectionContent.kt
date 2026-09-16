@@ -23,10 +23,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularWavyProgressIndicator
@@ -56,6 +52,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -156,7 +153,7 @@ internal fun AppSelectionTopBar(
         navigationIcon = {
             IconButton(onClick = if (searchVisible) onCloseSearch else onBack) {
                 Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
+                    painterResource(R.drawable.ic_arrow_back),
                     contentDescription = stringResource(R.string.action_back),
                 )
             }
@@ -214,7 +211,7 @@ internal fun AppSelectionTopBar(
             ) {
                 IconButton(onClick = onToggleSearch) {
                     Icon(
-                        Icons.Default.Search,
+                        painterResource(R.drawable.ic_search),
                         contentDescription = stringResource(R.string.app_selection_search_cd),
                     )
                 }
@@ -226,7 +223,7 @@ internal fun AppSelectionTopBar(
             ) {
                 IconButton(onClick = { onQueryChange("") }) {
                     Icon(
-                        Icons.Default.Close,
+                        painterResource(R.drawable.ic_close),
                         contentDescription = stringResource(R.string.app_selection_clear_search_cd),
                     )
                 }
