@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,12 +25,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -58,9 +51,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -182,11 +175,11 @@ private fun LogsActionsMenu(
             ) {
                 val icon by remember {
                     derivedStateOf {
-                        if (checkedProgress > 0.5f) Icons.Default.Close else Icons.Default.MoreVert
+                        if (checkedProgress > 0.5f) R.drawable.ic_close else R.drawable.ic_more_vert
                     }
                 }
                 Icon(
-                    painter = rememberVectorPainter(icon),
+                    painter = painterResource(icon),
                     contentDescription = if (expanded) closeLabel else openLabel,
                     modifier = Modifier.animateIcon({ checkedProgress }),
                 )
@@ -199,14 +192,10 @@ private fun LogsActionsMenu(
                 onTogglePause()
             },
             icon = {
-                if (isPaused) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                } else {
-                    PauseGlyph(
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
+                Icon(
+                    painterResource(if (isPaused) R.drawable.ic_play_arrow else R.drawable.ic_pause),
+                    contentDescription = null,
+                )
             },
             text = { Text(pauseLabel) },
         )
@@ -215,7 +204,7 @@ private fun LogsActionsMenu(
                 expanded = false
                 onShare()
             },
-            icon = { Icon(Icons.Default.Share, contentDescription = null) },
+            icon = { Icon(painterResource(R.drawable.ic_share), contentDescription = null) },
             text = { Text(stringResource(R.string.logs_action_share_cd)) },
         )
         FloatingActionButtonMenuItem(
@@ -223,7 +212,7 @@ private fun LogsActionsMenu(
                 expanded = false
                 onClear()
             },
-            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            icon = { Icon(painterResource(R.drawable.ic_delete), contentDescription = null) },
             text = { Text(stringResource(R.string.logs_action_clear_cd)) },
         )
     }
@@ -428,30 +417,6 @@ private fun LogLevel.label(): String = stringResource(
     }
 )
 
-@Composable
-private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(PauseBarSpacing, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .width(PauseBarWidth)
-                .height(PauseBarHeight)
-                .clip(RoundedCornerShape(PauseBarCorner))
-                .background(tint),
-        )
-        Box(
-            modifier = Modifier
-                .width(PauseBarWidth)
-                .height(PauseBarHeight)
-                .clip(RoundedCornerShape(PauseBarCorner))
-                .background(tint),
-        )
-    }
-}
-
 private val TIMESTAMP_FORMAT = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
 private val LogListBottomPadding = 88.dp
@@ -459,10 +424,6 @@ private val LogRowSpacing = 2.dp
 private val LogAccentBarWidth = 3.dp
 private val LogAccentBarHeight = 32.dp
 private val LogAccentBarCorner = 2.dp
-private val PauseBarSpacing = 3.dp
-private val PauseBarWidth = 4.dp
-private val PauseBarHeight = 14.dp
-private val PauseBarCorner = 1.dp
 
 private const val DroppedNoticeKey = "dropped-notice"
 
