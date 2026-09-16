@@ -168,3 +168,74 @@ func TestTLSResolver_recoversAfterTheTunnelReconnects(t *testing.T) {
 		t.Errorf("session %d answered, want the replacement session 2", seq)
 	}
 }
+
+func TestTCPResolver_pooledQueryRidesOutASilentTunnelBeingReplaced(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
+	tt := newTestTunnel(t, true, srv.connect)
+	r := newTCPResolver(tt, "8.8.8.8:53")
+	defer r.close()
+	fillPool(t, r.pool, 2)
+	tt.blackhole()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	start := time.Now()
+	_, err := r.exchange(ctx, dnsQuery("dead.example"))
+	cancel()
+	if !isTimeoutClass(err) {
+		t.Fatalf("silent tunnel: err = %v, want a timeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
+		t.Errorf("silent tunnel held the query for %v, want it bounded by its 800ms budget", elapsed)
+	}
+
+	if held := len(r.pool.idle); held != 1 {
+		t.Fatalf("pool holds %d streams, want the one the failed query left untouched", held)
+	}
+	time.AfterFunc(200*time.Millisecond, func() { tt.markDead(errors.New("idle probe failed"), srcWatchdog) })
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start = time.Now()
+	if _, err := r.exchange(ctx, dnsQuery("inflight.example")); err != nil {
+		t.Fatalf("query waiting on a pooled stream across the replacement: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("query waiting on a pooled stream took %v, want release when the tunnel is replaced", elapsed)
+	}
+	for i := 0; i < 3; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		_, err := r.exchange(ctx, dnsQuery(fmt.Sprintf("after%d.example", i)))
+		cancel()
+		if err != nil {
+			t.Fatalf("query %d after the replacement: %v", i, err)
+		}
+	}
+	if seq := tt.SessionSeq(); seq != 2 {
+		t.Errorf("session %d answered, want the replacement session 2", seq)
+	}
+}
+
+func TestDNSUpstream_loneServerRidesOutATunnelReplacedLateInTheAttempt(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
+	tt := newTestTunnel(t, true, srv.connect)
+	r := newTCPResolver(tt, "8.8.8.8:53")
+	up := &dnsUpstream{resolvers: []dnsResolver{r}, ident: "tcp|8.8.8.8:53"}
+	defer up.close()
+	fillPool(t, r.pool, 1)
+	tt.blackhole()
+
+	const budget = 2 * time.Second
+	replace := time.AfterFunc(budget*3/4, func() { tt.markDead(errors.New("idle probe failed"), srcWatchdog) })
+	defer replace.Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	start := time.Now()
+	if _, err := up.exchange(ctx, dnsQuery("inflight.example")); err != nil {
+		t.Fatalf("a lone server's pooled query must be answered when the tunnel is replaced late in its attempt: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= budget {
+		t.Errorf("query took %v, want it answered on the new session inside its %v budget", elapsed, budget)
+	}
+	if seq := tt.SessionSeq(); seq != 2 {
+		t.Errorf("session %d answered, want the replacement session 2", seq)
+	}
+}
