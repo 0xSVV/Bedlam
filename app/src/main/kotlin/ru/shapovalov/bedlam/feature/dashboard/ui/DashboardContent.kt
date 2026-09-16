@@ -58,6 +58,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
         val msg = errorText ?: return@LaunchedEffect
         if (sheetOpen) return@LaunchedEffect
         component.onDismissError()
+        if (snackbarHostState.currentSnackbarData?.visuals?.message == msg) return@LaunchedEffect
         scope.launch { snackbarHostState.showSnackbar(msg) }
     }
 

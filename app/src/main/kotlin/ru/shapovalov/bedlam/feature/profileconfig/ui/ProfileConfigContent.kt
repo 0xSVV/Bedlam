@@ -108,6 +108,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
     LaunchedEffect(saveErrorMessage) {
         val msg = saveErrorMessage ?: return@LaunchedEffect
         component.onDismissError()
+        if (snackbarHostState.currentSnackbarData?.visuals?.message == msg) return@LaunchedEffect
         scope.launch { snackbarHostState.showSnackbar(msg) }
     }
 
