@@ -1,3 +1,4 @@
+import com.android.build.api.variant.BuildConfigField
 import java.util.Properties
 
 plugins {
@@ -12,6 +13,10 @@ android {
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
         consumerProguardFiles("consumer-rules.pro")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
@@ -43,6 +48,29 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+}
+
+val hysteriaCoreVersion = providers
+    .fileContents(rootProject.layout.projectDirectory.file(".github/toolchain.env"))
+    .asText
+    .map { toolchain ->
+        toolchain.lineSequence()
+            .map(String::trim)
+            .firstOrNull { it.startsWith("HYSTERIA_CORE_TAGS=") }
+            ?.substringAfter('=')
+            ?.split(Regex("\\s+"))
+            ?.firstOrNull { it.startsWith("core/v") }
+            ?.removePrefix("core/v")
+            ?: error("HYSTERIA_CORE_TAGS in .github/toolchain.env has no core/v<version> tag")
+    }
+
+androidComponents {
+    onVariants { variant ->
+        variant.buildConfigFields?.put(
+            "CORE_VERSION",
+            hysteriaCoreVersion.map { BuildConfigField("String", "\"$it\"", null) },
+        )
+    }
 }
 
 val golibDir = layout.projectDirectory.dir("golib")
