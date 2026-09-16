@@ -47,7 +47,6 @@ internal fun ProfilesCard(
     latencies: Map<String, LatencyResult>,
     onSelect: (String) -> Unit,
     onOpenConfig: (String) -> Unit,
-    onPingProfile: (String) -> Unit,
     onPingAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -84,7 +83,6 @@ internal fun ProfilesCard(
                         isActive = profile.id == activeProfileId,
                         latency = latencies[profile.id] ?: LatencyResult.Idle,
                         onClick = { onSelect(profile.id) },
-                        onPing = { onPingProfile(profile.id) },
                         onOpenConfig = { onOpenConfig(profile.id) },
                     )
                     if (index < profiles.lastIndex) {
@@ -105,7 +103,6 @@ private fun ProfileRow(
     isActive: Boolean,
     latency: LatencyResult,
     onClick: () -> Unit,
-    onPing: () -> Unit,
     onOpenConfig: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing

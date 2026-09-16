@@ -120,7 +120,6 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 latencies = state.latencies,
                 onSelect = component::onSelectProfile,
                 onOpenConfig = component::onOpenProfileConfig,
-                onPingProfile = component::onPingProfile,
                 onPingAll = component::onPingAllProfiles,
                 modifier = Modifier
                     .fillMaxWidth()
