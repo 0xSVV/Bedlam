@@ -43,8 +43,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -147,6 +149,7 @@ internal fun ConnectionHero(
                 else -> R.string.action_connect
             }
         )
+        val stateText = connectionState.displayText()
         ConnectionFab(
             morph = morph,
             progress = { buttonMorph.progress },
@@ -154,7 +157,10 @@ internal fun ConnectionHero(
             onClick = onToggle,
             modifier = Modifier
                 .size(ConnectionFabContainerSize)
-                .semantics { contentDescription = toggleCd },
+                .semantics {
+                    contentDescription = toggleCd
+                    stateDescription = stateText
+                },
         ) {
             AnimatedVisibility(
                 visible = buttonMorph.showIcon,
@@ -182,7 +188,7 @@ internal fun ConnectionHero(
             onClick = onOpenSession,
             label = {
                 Text(
-                    text = connectionState.displayText(),
+                    text = stateText,
                     style = MaterialTheme.typography.labelLargeEmphasized,
                 )
             },
@@ -253,6 +259,7 @@ private fun ConnectionFab(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(),
+                role = Role.Button,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
