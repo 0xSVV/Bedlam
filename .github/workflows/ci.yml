@@ -18,6 +18,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Check Hysteria core pin
+        run: bash .github/scripts/check-core-pin.sh
+
       - uses: ./.github/actions/setup-build
 
       - name: Go tests
