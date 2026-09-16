@@ -6,7 +6,11 @@ import androidx.compose.animation.core.spring
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.MotionDurationScale
 import androidx.graphics.shapes.RoundedPolygon
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.first
 
 internal class ConnectionButtonMorph(
     private val restingShape: RoundedPolygon,
@@ -26,7 +30,10 @@ internal class ConnectionButtonMorph(
     suspend fun animateLoading() {
         showIcon = false
         repeat(MaxLoadingMorphCycles) {
-            loadingShapes.forEach { morphTo(it) }
+            for (shape in loadingShapes) {
+                morphTo(shape)
+                awaitMotionEnabled()
+            }
         }
         returnToCurrentShape()
         morphTo(restingShape)
@@ -55,6 +62,13 @@ internal class ConnectionButtonMorph(
         fromShape = nextShape
         toShape = nextShape
         progressAnimatable.snapTo(0f)
+    }
+
+    private suspend fun awaitMotionEnabled() {
+        val motionDurationScale = currentCoroutineContext()[MotionDurationScale] ?: return
+        if (motionDurationScale.scaleFactor == 0f) {
+            snapshotFlow { motionDurationScale.scaleFactor }.first { it > 0f }
+        }
     }
 }
 
