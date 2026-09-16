@@ -5,6 +5,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -14,12 +15,13 @@ import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.isActiveTunnel
+import java.util.UUID
 
 class ReconnectProfileUseCase internal constructor(
     private val clientState: StateFlow<ConnectionState>,
     private val runtimeState: Flow<VpnRuntimeState>,
     private val consentRequired: () -> Boolean,
-    private val stopTunnel: () -> Unit,
+    private val stopTunnel: (String) -> Unit,
     private val startTunnel: (Profile) -> Unit,
     private val loadProfile: suspend (String) -> Profile?,
 ) {
@@ -44,14 +46,21 @@ class ReconnectProfileUseCase internal constructor(
     suspend operator fun invoke(profileId: String) {
         withContext(NonCancellable) {
             if (!isTunnelUsing(profileId) || consentRequired()) return@withContext
-            stopTunnel()
+            val stopRequestId = UUID.randomUUID().toString()
+            stopTunnel(stopRequestId)
             val stopped = withTimeoutOrNull(STOP_TIMEOUT_MS) {
                 combine(clientState, runtimeState) { state, runtime ->
-                    !state.isActiveTunnel && runtime.status == VpnRuntimeStatus.Stopped
-                }.first { it }
+                    runtime.takeIf {
+                        !state.isActiveTunnel && it.status == VpnRuntimeStatus.Stopped
+                    }
+                }.filterNotNull().first()
             }
             if (stopped == null) {
                 Log.w(TAG, "Tunnel did not stop within $STOP_TIMEOUT_MS ms, not restarting")
+                return@withContext
+            }
+            if (stopped.stopRequestId != stopRequestId) {
+                Log.i(TAG, "Another stop request followed the reconnect, not restarting")
                 return@withContext
             }
             val profile = loadProfile(profileId) ?: return@withContext

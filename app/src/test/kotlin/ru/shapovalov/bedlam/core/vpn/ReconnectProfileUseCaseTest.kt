@@ -26,12 +26,16 @@ class ReconnectProfileUseCaseTest {
     )
     private val events = mutableListOf<String>()
     private var consentRequired = false
+    private var requestedStopId: String? = null
 
     private fun useCase(): ReconnectProfileUseCase = ReconnectProfileUseCase(
         clientState = clientState,
         runtimeState = runtimeState,
         consentRequired = { consentRequired },
-        stopTunnel = { events += "stop" },
+        stopTunnel = {
+            events += "stop"
+            requestedStopId = it
+        },
         startTunnel = { events += "start ${it.config.server.address}" },
         loadProfile = FakeProfileRepository(listOf(saved))::get,
     )
@@ -40,8 +44,18 @@ class ReconnectProfileUseCaseTest {
         clientState.value = ConnectionState.Disconnected()
     }
 
-    private fun runtimeStatus(status: VpnRuntimeStatus) {
-        runtimeState.update { it.copy(desiredRunning = false, status = status) }
+    private fun markStopping(stopRequestId: String? = requestedStopId) {
+        runtimeState.update {
+            it.copy(
+                desiredRunning = false,
+                status = VpnRuntimeStatus.Stopping,
+                stopRequestId = stopRequestId,
+            )
+        }
+    }
+
+    private fun markStopped() {
+        runtimeState.update { it.copy(desiredRunning = false, status = VpnRuntimeStatus.Stopped) }
     }
 
     @Test
@@ -51,12 +65,12 @@ class ReconnectProfileUseCaseTest {
         assertEquals(listOf("stop"), events)
 
         clientStopped()
-        runtimeStatus(VpnRuntimeStatus.Stopping)
+        markStopping()
         runCurrent()
         assertEquals(listOf("stop"), events)
 
         advanceTimeBy(29_999)
-        runtimeStatus(VpnRuntimeStatus.Stopped)
+        markStopped()
         runCurrent()
         assertEquals(listOf("stop", "start saved.example:443"), events)
         assertTrue(reconnect.isCompleted)
@@ -67,7 +81,8 @@ class ReconnectProfileUseCaseTest {
         launch { useCase()("p1") }
         runCurrent()
 
-        runtimeStatus(VpnRuntimeStatus.Stopped)
+        markStopping()
+        markStopped()
         runCurrent()
         assertEquals(listOf("stop"), events)
 
@@ -86,9 +101,43 @@ class ReconnectProfileUseCaseTest {
         assertTrue(reconnect.isCompleted)
 
         clientStopped()
-        runtimeStatus(VpnRuntimeStatus.Stopped)
+        markStopping()
+        markStopped()
         runCurrent()
         assertEquals(listOf("stop"), events)
+    }
+
+    @Test
+    fun `reconnect does not restart after a later stop request`() = runTest {
+        val reconnect = launch { useCase()("p1") }
+        runCurrent()
+        markStopping()
+        runCurrent()
+
+        markStopping(stopRequestId = null)
+        clientStopped()
+        markStopped()
+        runCurrent()
+
+        assertEquals(listOf("stop"), events)
+        assertTrue(reconnect.isCompleted)
+    }
+
+    @Test
+    fun `only the later of two reconnects starts the profile`() = runTest {
+        val useCase = useCase()
+        launch { useCase("p1") }
+        runCurrent()
+        markStopping()
+
+        launch { useCase("p1") }
+        runCurrent()
+        markStopping()
+        clientStopped()
+        markStopped()
+        runCurrent()
+
+        assertEquals(listOf("stop", "stop", "start saved.example:443"), events)
     }
 
     @Test
@@ -98,7 +147,8 @@ class ReconnectProfileUseCaseTest {
 
         reconnect.cancel()
         clientStopped()
-        runtimeStatus(VpnRuntimeStatus.Stopped)
+        markStopping()
+        markStopped()
         runCurrent()
 
         assertEquals(listOf("stop", "start saved.example:443"), events)
