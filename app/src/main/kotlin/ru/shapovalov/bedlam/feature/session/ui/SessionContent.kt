@@ -49,9 +49,7 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
     val spacing = MaterialTheme.spacing
     var showSpeedTest by remember { mutableStateOf(false) }
 
-    BackHandler {
-        if (showSpeedTest) showSpeedTest = false else component.onBackPressed()
-    }
+    BackHandler(enabled = showSpeedTest) { showSpeedTest = false }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
