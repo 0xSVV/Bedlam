@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.feature.logs.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,14 +44,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -60,6 +64,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterIsInstance
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
@@ -102,7 +108,6 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
                 } else {
                     LogList(
                         entries = visible,
-                        isPaused = state.isPaused,
                         droppedCount = state.droppedCount,
                     )
                 }
@@ -258,13 +263,37 @@ private fun EmptyState(isPaused: Boolean) {
 }
 
 @Composable
-private fun LogList(entries: List<LogEntry>, isPaused: Boolean, droppedCount: Long) {
+private fun LogList(entries: List<LogEntry>, droppedCount: Long) {
     val listState = rememberLazyListState()
-    val lastIndex = entries.lastIndex
+    var followTail by rememberSaveable { mutableStateOf(true) }
+    val tailIndex = logTailIndex(entries.size, droppedCount)
+    val tailSeq = entries.lastOrNull()?.seq
+    val currentTailIndex by rememberUpdatedState(tailIndex)
+    val tailSlopPx by rememberUpdatedState(
+        with(LocalDensity.current) { FollowTailSlop.roundToPx() },
+    )
 
-    LaunchedEffect(entries.size, isPaused) {
-        if (!isPaused && lastIndex >= 0) {
-            listState.animateScrollToItem(lastIndex)
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions
+            .filterIsInstance<DragInteraction.Start>()
+            .collect { followTail = false }
+    }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }
+            .filter { inProgress -> !inProgress }
+            .collect {
+                if (!followTail) {
+                    followTail = !listState.canScrollForward ||
+                            listState.layoutInfo.isAtTail(currentTailIndex, tailSlopPx)
+                }
+            }
+    }
+    LaunchedEffect(tailSeq, tailIndex, followTail) {
+        if (!followTail || tailIndex < 0) return@LaunchedEffect
+        if (listState.layoutInfo.shouldSnapTo(tailIndex)) {
+            listState.scrollToItem(tailIndex)
+        } else {
+            listState.animateScrollToItem(tailIndex)
         }
     }
 
@@ -287,6 +316,8 @@ private fun LogList(entries: List<LogEntry>, isPaused: Boolean, droppedCount: Lo
         }
     }
 }
+
+private val FollowTailSlop = 8.dp
 
 @Composable
 private fun LogRow(entry: LogEntry) {
