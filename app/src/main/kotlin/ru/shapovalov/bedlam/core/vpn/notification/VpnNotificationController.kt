@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
+import android.os.SystemClock
 import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.formatBytes
@@ -123,9 +124,10 @@ class VpnNotificationController(private val context: Context) {
             }
 
             is ConnectionState.Connected -> {
-                rateHistory.record(txRate + rxRate)
+                val now = SystemClock.elapsedRealtime()
+                rateHistory.record(txRate + rxRate, now)
                 runCatching {
-                    sparklineRenderer.render(rateHistory.snapshot(), context.isNightMode())
+                    sparklineRenderer.render(rateHistory.snapshot(now), context.isNightMode())
                 }.getOrNull()?.let { builder.setLargeIcon(Icon.createWithBitmap(it)) }
                 val rateLine = context.getString(
                     R.string.notification_traffic_rate,
