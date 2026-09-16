@@ -2,8 +2,6 @@ package ru.shapovalov.bedlam.feature.dashboard.ui
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -24,11 +24,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,20 +75,22 @@ internal fun ProfilesCard(
                     )
                 }
             }
-            profiles.forEachIndexed { index, profile ->
-                ProfileRow(
-                    profile = profile,
-                    isActive = profile.id == activeProfileId,
-                    latency = latencies[profile.id] ?: LatencyResult.Idle,
-                    onClick = { onSelect(profile.id) },
-                    onPing = { onPingProfile(profile.id) },
-                    onOpenConfig = { onOpenConfig(profile.id) },
-                )
-                if (index < profiles.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = spacing.large),
-                        color = MaterialTheme.colorScheme.outlineVariant,
+            Column(modifier = Modifier.selectableGroup()) {
+                profiles.forEachIndexed { index, profile ->
+                    ProfileRow(
+                        profile = profile,
+                        isActive = profile.id == activeProfileId,
+                        latency = latencies[profile.id] ?: LatencyResult.Idle,
+                        onClick = { onSelect(profile.id) },
+                        onPing = { onPingProfile(profile.id) },
+                        onOpenConfig = { onOpenConfig(profile.id) },
                     )
+                    if (index < profiles.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = spacing.large),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                    }
                 }
             }
         }
@@ -112,11 +114,7 @@ private fun ProfileRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
+            .selectable(selected = isActive, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = spacing.large, vertical = spacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
