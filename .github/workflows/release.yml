@@ -36,11 +36,13 @@ jobs:
           echo "::error::A release needs the BEDLAM_STORE_BASE64, BEDLAM_STORE_PASSWORD, BEDLAM_KEY_ALIAS and BEDLAM_KEY_PASSWORD secrets. Unsigned APKs cannot update installed copies."
           exit 1
 
-      - uses: ./.github/actions/setup-build
+      - name: Check tag, version and release notes
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/check-release-version.sh "$GITHUB_REF_NAME"
 
-      - name: Resolve version
-        id: ver
-        run: echo "name=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/setup-build
 
       - name: Decode keystore
         env:
@@ -58,5 +60,5 @@ jobs:
           files: |
             app/build/outputs/apk/release/bedlam-*.apk
             app/build/outputs/apk/release/output-metadata.json
-          body_path: release-notes/${{ steps.ver.outputs.name }}.md
+          body_path: release-notes/${{ steps.version.outputs.name }}.md
           fail_on_unmatched_files: true
