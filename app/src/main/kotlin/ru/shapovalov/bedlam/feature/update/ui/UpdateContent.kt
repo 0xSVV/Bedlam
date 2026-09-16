@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -38,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -72,7 +71,7 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Default.Refresh,
+                painter = painterResource(R.drawable.ic_refresh),
                 contentDescription = null,
                 modifier = Modifier.size(UpdateBadgeIconSize),
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
