@@ -17,6 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Check Hysteria core pin
         run: bash .github/scripts/check-core-pin.sh
