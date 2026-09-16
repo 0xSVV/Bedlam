@@ -145,4 +145,10 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    inputs.dir(layout.projectDirectory.dir("src/main/res"))
+        .withPropertyName("mainResources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(layout.projectDirectory.file("src/main/AndroidManifest.xml"))
+        .withPropertyName("mainManifest")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
