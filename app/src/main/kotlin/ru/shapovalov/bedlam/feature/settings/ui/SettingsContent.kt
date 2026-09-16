@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -101,6 +102,7 @@ private fun SettingsRoot(
 ) {
     val spacing = MaterialTheme.spacing
     val context = LocalContext.current
+    val versionName = remember(context) { context.appVersionName() }
     val needsReliabilityAttention = reliabilitySnapshot != null &&
             PowerReliabilityRules.needsAttention(
                 snapshot = reliabilitySnapshot,
@@ -158,9 +160,9 @@ private fun SettingsRoot(
         SettingsDivider()
         SettingsRow(
             title = stringResource(R.string.settings_about_title),
-            subtitle = stringResource(R.string.settings_about_subtitle, context.appVersionName()),
+            subtitle = stringResource(R.string.settings_about_subtitle, versionName),
             showNavigationIcon = false,
-            onClick = { context.copyVersion() },
+            onClick = { context.copyVersion(versionName) },
         )
         SettingsDivider()
         SettingsRow(
@@ -266,9 +268,9 @@ private fun Context.appVersionName(): String = runCatching {
     packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
 }.getOrDefault("")
 
-private fun Context.copyVersion() {
+private fun Context.copyVersion(versionName: String) {
     val clipboard = getSystemService(ClipboardManager::class.java) ?: return
-    clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.app_name), appVersionName()))
+    clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.app_name), versionName))
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
         Toast.makeText(this, R.string.settings_about_copied, Toast.LENGTH_SHORT).show()
     }
