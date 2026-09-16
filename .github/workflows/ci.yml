@@ -29,7 +29,7 @@ jobs:
 
       - name: Go tests
         working-directory: hysteria/golib
-        run: go test ./...
+        run: go test -tags with_gvisor ./...
 
       - name: Unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
