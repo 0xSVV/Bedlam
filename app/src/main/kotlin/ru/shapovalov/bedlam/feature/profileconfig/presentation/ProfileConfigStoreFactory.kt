@@ -6,6 +6,7 @@ import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ObserveProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SaveProfileUseCase
+import ru.shapovalov.bedlam.core.vpn.ReconnectProfileUseCase
 import ru.shapovalov.hysteria.api.HysteriaClient
 
 @Inject
@@ -15,6 +16,7 @@ class ProfileConfigStoreFactory(
     private val saveProfile: SaveProfileUseCase,
     private val deleteProfile: DeleteProfileUseCase,
     private val client: HysteriaClient,
+    private val reconnectProfile: ReconnectProfileUseCase,
 ) {
     fun create(profileId: String): ProfileConfigStore =
         object : ProfileConfigStore,
@@ -23,7 +25,15 @@ class ProfileConfigStoreFactory(
                 name = "ProfileConfigStore",
                 initialState = ProfileConfigStore.State(profileId = profileId),
                 bootstrapper = ProfileConfigBootstrapper(profileId, observeProfile),
-                executorFactory = { ProfileConfigExecutor(saveProfile, deleteProfile, client) },
+                executorFactory = {
+                    ProfileConfigExecutor(
+                        saveProfile,
+                        deleteProfile,
+                        client,
+                        reconnectProfile::isTunnelUsing,
+                        reconnectProfile::invoke,
+                    )
+                },
                 reducer = ProfileConfigReducer,
             ) {}
 }

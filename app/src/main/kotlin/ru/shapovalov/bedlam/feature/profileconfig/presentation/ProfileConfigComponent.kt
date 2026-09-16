@@ -34,6 +34,8 @@ class ProfileConfigComponent(
     fun onCancelDelete() = store.accept(ProfileConfigStore.Intent.CancelDelete)
     fun onConfirmDelete() = store.accept(ProfileConfigStore.Intent.ConfirmDelete)
     fun onDismissError() = store.accept(ProfileConfigStore.Intent.DismissError)
+    fun onReconnectOfferShown() = store.accept(ProfileConfigStore.Intent.DismissReconnectOffer)
+    fun onReconnect() = store.accept(ProfileConfigStore.Intent.Reconnect)
     fun onClose() = onBack.invoke()
 
     fun onBackPressed() {

@@ -82,7 +82,7 @@ class ProfileConfigReducerTest {
 
         val state = ProfileConfigReducer.reduceAll(
             edited.copy(isSaving = true),
-            Msg.SaveSucceeded(saved),
+            Msg.SaveSucceeded(saved, offerReconnect = false),
             Msg.ProfileLoaded(saved),
         )
 
@@ -160,13 +160,33 @@ class ProfileConfigReducerTest {
 
         val state = ProfileConfigReducer.reduceAll(
             edited.copy(isSaving = true, pendingDiscardConfirmation = true),
-            Msg.SaveSucceeded(saved),
+            Msg.SaveSucceeded(saved, offerReconnect = false),
         )
 
         assertEquals(
             loaded.copy(original = saved, draftName = "Work"),
             state,
         )
+    }
+
+    @Test
+    fun `a reconnect offer lasts until it is dismissed`() {
+        val saved = profile.copy(config = testConfig("other.example:443"), updatedAt = 1L)
+
+        val offered = ProfileConfigReducer.reduceAll(
+            edited.copy(isSaving = true),
+            Msg.SaveSucceeded(saved, offerReconnect = true),
+        )
+        assertEquals(
+            loaded.copy(original = saved, draft = saved.config, offerReconnect = true),
+            offered,
+        )
+
+        val dismissed = ProfileConfigReducer.reduceAll(offered, Msg.ReconnectOfferDismissed)
+        assertFalse(dismissed.offerReconnect)
+
+        val editing = ProfileConfigReducer.reduceAll(offered, Msg.EditModeEntered)
+        assertFalse(editing.offerReconnect)
     }
 
     @Test

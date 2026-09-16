@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.feature.profileconfig.presentation
 
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SaveProfileUseCase
@@ -10,6 +11,8 @@ internal class ProfileConfigExecutor(
     private val saveProfile: SaveProfileUseCase,
     private val deleteProfile: DeleteProfileUseCase,
     private val client: HysteriaClient,
+    private val tunnelUsesProfile: suspend (String) -> Boolean,
+    private val reconnectProfile: suspend (String) -> Unit,
 ) : CoroutineExecutor<ProfileConfigStore.Intent, Action, ProfileConfigStore.State, Msg, Nothing>() {
 
     override fun executeAction(action: Action) {
@@ -32,6 +35,8 @@ internal class ProfileConfigExecutor(
             ProfileConfigStore.Intent.CancelDelete -> dispatch(Msg.DeleteCancelled)
             ProfileConfigStore.Intent.ConfirmDelete -> delete()
             ProfileConfigStore.Intent.DismissError -> dispatch(Msg.ErrorDismissed)
+            ProfileConfigStore.Intent.DismissReconnectOffer -> dispatch(Msg.ReconnectOfferDismissed)
+            ProfileConfigStore.Intent.Reconnect -> reconnect()
         }
     }
 
@@ -57,12 +62,23 @@ internal class ProfileConfigExecutor(
                 dispatch(Msg.SaveStarted)
                 scope.launch {
                     runCatching { saveProfile(original.copy(name = name, config = draft)) }
-                        .onSuccess { dispatch(Msg.SaveSucceeded(it)) }
+                        .onSuccess { saved ->
+                            val offerReconnect = draft != original.config &&
+                                runCatching { tunnelUsesProfile(saved.id) }.getOrDefault(false)
+                            dispatch(Msg.SaveSucceeded(saved, offerReconnect))
+                        }
                         .onFailure { dispatch(Msg.SaveFailed(it.message ?: "unknown error")) }
                 }
             },
             onFailure = { dispatch(Msg.SaveFailed(it.message ?: "invalid configuration")) },
         )
+    }
+
+    private fun reconnect() {
+        val id = state().original?.id ?: return
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            runCatching { reconnectProfile(id) }
+        }
     }
 
     private fun delete() {

@@ -14,13 +14,14 @@ internal sealed interface Msg {
     data class DraftUpdated(val config: HysteriaConfig) : Msg
     data class DraftNameUpdated(val name: String) : Msg
     data object SaveStarted : Msg
-    data class SaveSucceeded(val profile: Profile) : Msg
+    data class SaveSucceeded(val profile: Profile, val offerReconnect: Boolean) : Msg
     data class SaveFailed(val message: String) : Msg
     data object DeleteRequested : Msg
     data object DeleteCancelled : Msg
     data object DeleteStarted : Msg
     data class DeleteFailed(val message: String) : Msg
     data object ErrorDismissed : Msg
+    data object ReconnectOfferDismissed : Msg
 }
 
 internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
@@ -44,7 +45,7 @@ internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
         }
 
         Msg.ProfileMissing -> copy(isLoading = false, notFound = true)
-        Msg.EditModeEntered -> copy(editMode = true, saveError = null)
+        Msg.EditModeEntered -> copy(editMode = true, saveError = null, offerReconnect = false)
         Msg.DiscardRequested -> copy(pendingDiscardConfirmation = true)
         Msg.DiscardCancelled -> copy(pendingDiscardConfirmation = false)
         Msg.ChangesDiscarded -> copy(
@@ -66,6 +67,7 @@ internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
             isSaving = false,
             saveError = null,
             pendingDiscardConfirmation = false,
+            offerReconnect = msg.offerReconnect,
         )
 
         is Msg.SaveFailed -> copy(isSaving = false, saveError = msg.message)
@@ -74,5 +76,6 @@ internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
         Msg.DeleteStarted -> copy(pendingDeleteConfirmation = false, isDeleting = true)
         is Msg.DeleteFailed -> copy(isDeleting = false, saveError = msg.message)
         Msg.ErrorDismissed -> copy(saveError = null)
+        Msg.ReconnectOfferDismissed -> copy(offerReconnect = false)
     }
 }

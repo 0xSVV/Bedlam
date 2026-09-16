@@ -14,20 +14,24 @@ import ru.shapovalov.bedlam.testing.FakeHysteriaClient
 import ru.shapovalov.bedlam.testing.FakeProfileRepository
 import ru.shapovalov.bedlam.testing.MainDispatcherExtension
 import ru.shapovalov.bedlam.testing.disposeAfter
+import ru.shapovalov.bedlam.testing.idleReconnectProfile
 import ru.shapovalov.bedlam.testing.testConfig
 import ru.shapovalov.bedlam.testing.testProfile
 
 @ExtendWith(MainDispatcherExtension::class)
 class ProfileConfigStoreTest {
 
-    private fun store(repository: FakeProfileRepository, profileId: String): ProfileConfigStore =
-        ProfileConfigStoreFactory(
+    private fun store(repository: FakeProfileRepository, profileId: String): ProfileConfigStore {
+        val client = FakeHysteriaClient()
+        return ProfileConfigStoreFactory(
             DefaultStoreFactory(),
             ObserveProfileUseCase(repository),
             SaveProfileUseCase(repository),
             DeleteProfileUseCase(repository),
-            FakeHysteriaClient(),
+            client,
+            idleReconnectProfile(client, repository),
         ).create(profileId)
+    }
 
     @Test
     fun `an external change reaches the draft in view mode`() = runTest {

@@ -103,6 +103,7 @@ class TestGraph(
             SaveProfileUseCase(profiles),
             DeleteProfileUseCase(profiles),
             client,
+            idleReconnectProfile(client, profiles),
         )
     )
 

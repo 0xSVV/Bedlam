@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.testing
 
+import kotlinx.coroutines.flow.flowOf
 import ru.shapovalov.bedlam.core.appfilter.domain.model.InstalledApp
 import ru.shapovalov.bedlam.core.power.domain.model.AlwaysOnVpnState
 import ru.shapovalov.bedlam.core.power.domain.model.PowerReliabilitySnapshot
@@ -7,6 +8,9 @@ import ru.shapovalov.bedlam.core.power.domain.model.PowerRiskLevel
 import ru.shapovalov.bedlam.core.power.domain.model.PowerVendor
 import ru.shapovalov.bedlam.core.power.domain.model.StandbyBucket
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
+import ru.shapovalov.bedlam.core.vpn.ReconnectProfileUseCase
+import ru.shapovalov.bedlam.core.vpn.VpnRuntimeState
 import ru.shapovalov.bedlam.feature.session.domain.model.SessionInfo
 import ru.shapovalov.bedlam.feature.update.domain.model.AppUpdate
 import ru.shapovalov.hysteria.ConnectionState
@@ -88,3 +92,15 @@ fun appUpdate(version: String = "9.9.9"): AppUpdate = AppUpdate(
 
 fun installedApp(packageName: String, label: String): InstalledApp =
     InstalledApp(packageName = packageName, label = label, isSystem = false)
+
+fun idleReconnectProfile(
+    client: HysteriaClient,
+    profiles: ProfileRepository,
+): ReconnectProfileUseCase = ReconnectProfileUseCase(
+    clientState = client.state,
+    runtimeState = flowOf(VpnRuntimeState()),
+    consentRequired = { false },
+    stopTunnel = {},
+    startTunnel = {},
+    loadProfile = profiles::get,
+)
