@@ -19,8 +19,14 @@ catalog=gradle/libs.versions.toml
 version="${BASH_REMATCH[1]}"
 
 checkout_commit=$(git rev-parse HEAD)
-tagged_commit=$(git rev-parse --verify --quiet "refs/tags/$tag^{commit}") || fail "Tag $tag is not in this checkout"
-[ "$tagged_commit" = "$checkout_commit" ] || fail "Tag $tag is at $tagged_commit, the checkout is at $checkout_commit"
+remote_tag=$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}") || fail "Cannot list tag $tag at origin"
+tagged_commit=$(awk -v direct="refs/tags/$tag" -v peeled="refs/tags/$tag^{}" '
+  $2 == direct { direct_commit = $1 }
+  $2 == peeled { peeled_commit = $1 }
+  END { print (peeled_commit != "" ? peeled_commit : direct_commit) }
+' <<< "$remote_tag")
+[ -n "$tagged_commit" ] || fail "Tag $tag does not exist at origin"
+[ "$tagged_commit" = "$checkout_commit" ] || fail "Tag $tag at origin is at $tagged_commit, the checkout is at $checkout_commit"
 
 name=$(catalog_value versionName < "$catalog")
 code=$(catalog_value versionCode < "$catalog")

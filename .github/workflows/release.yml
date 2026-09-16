@@ -13,6 +13,10 @@ on:
   push:
     tags: ["v*"]
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -91,6 +95,11 @@ jobs:
           EXPECTED_CERT_SHA256: ${{ env.BEDLAM_CERT_SHA256 }}
           GOLIB_SHA256: ${{ steps.golib.outputs.sha256 }}
         run: bash .github/scripts/write-provenance.sh build/release
+
+      - name: Check the tag again before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/check-release-version.sh "$GITHUB_REF_NAME"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
