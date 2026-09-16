@@ -5,7 +5,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.Intent
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
@@ -62,11 +61,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.shapovalov.bedlam.R
+import ru.shapovalov.bedlam.core.util.openUrl
 import ru.shapovalov.bedlam.ui.markdown.MarkdownBlock
 import ru.shapovalov.bedlam.ui.markdown.MarkdownBlockContent
 import ru.shapovalov.bedlam.ui.markdown.MarkdownParser
@@ -306,11 +305,6 @@ internal fun Context.appVersionName(): String = runCatching {
 private fun Context.readReadme(): List<MarkdownBlock> = runCatching {
     assets.open(README_ASSET).bufferedReader().use { MarkdownParser(README_URL).parse(it.readText()) }
 }.getOrDefault(emptyList())
-
-private fun Context.openUrl(url: String) {
-    val intent = Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { startActivity(intent) }
-}
 
 private fun Context.copyVersions(versions: String) {
     val clipboard = getSystemService(ClipboardManager::class.java) ?: return
