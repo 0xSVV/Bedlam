@@ -28,11 +28,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -162,7 +157,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                         enabled = !state.isSaving,
                     ) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            painterResource(R.drawable.ic_arrow_back),
                             contentDescription = stringResource(R.string.action_back),
                         )
                     }
@@ -307,7 +302,7 @@ internal fun ProfileActionsToolbar(
             floatingActionButton = {
                 FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onEdit) {
                     Icon(
-                        Icons.Default.Edit,
+                        painterResource(R.drawable.ic_edit),
                         contentDescription = stringResource(R.string.profile_config_action_edit),
                     )
                 }
@@ -315,7 +310,7 @@ internal fun ProfileActionsToolbar(
         ) {
             IconButton(onClick = onDelete) {
                 Icon(
-                    Icons.Default.Delete,
+                    painterResource(R.drawable.ic_delete),
                     contentDescription = stringResource(R.string.profile_config_action_delete),
                     tint = MaterialTheme.colorScheme.error,
                 )
@@ -439,7 +434,7 @@ private fun DocsFooter() {
         )
         Spacer(Modifier.weight(1f))
         Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            painterResource(R.drawable.ic_keyboard_arrow_right),
             contentDescription = null,
         )
     }
