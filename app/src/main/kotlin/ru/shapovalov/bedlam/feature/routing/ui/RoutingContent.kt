@@ -35,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,8 +51,8 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
-    var showAddSource by remember { mutableStateOf(false) }
-    var showPresets by remember { mutableStateOf(false) }
+    var showAddSource by rememberSaveable { mutableStateOf(false) }
+    var showPresets by rememberSaveable { mutableStateOf(false) }
 
     val presetStatuses = remember(state.config.sources) {
         val existingAsns = state.config.sources

@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,9 +57,9 @@ internal fun AddSourceDialog(
     onDismiss: () -> Unit,
     onSave: (DirectRouteSource) -> Unit,
 ) {
-    var kind by remember { mutableStateOf(SourceKind.CIDR) }
-    var value by remember { mutableStateOf("") }
-    var comment by remember { mutableStateOf("") }
+    var kind by rememberSaveable { mutableStateOf(SourceKind.CIDR) }
+    var value by rememberSaveable { mutableStateOf("") }
+    var comment by rememberSaveable { mutableStateOf("") }
     val parsed: DirectRouteSource? = remember(kind, value, comment) {
         val v = value.trim()
         if (v.isEmpty()) null else when (kind) {

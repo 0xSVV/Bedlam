@@ -34,7 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -47,7 +47,7 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
-    var showSpeedTest by remember { mutableStateOf(false) }
+    var showSpeedTest by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = showSpeedTest) { showSpeedTest = false }
 
