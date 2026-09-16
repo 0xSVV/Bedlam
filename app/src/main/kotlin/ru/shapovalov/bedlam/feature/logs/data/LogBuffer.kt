@@ -39,14 +39,18 @@ class LogBuffer internal constructor(
         scope.launch {
             client.logs(LogLevel.DEBUG).collect { entry ->
                 _snapshot.value = synchronized(lock) {
-                    Snapshot(ring.add(entry), ring.droppedCount)
+                    ring.add(entry)
+                    Snapshot(ring.snapshot(), ring.droppedCount)
                 }
             }
         }
     }
 
     fun clear() {
-        _snapshot.value = synchronized(lock) { Snapshot(ring.clear(), ring.droppedCount) }
+        _snapshot.value = synchronized(lock) {
+            ring.clear()
+            Snapshot(ring.snapshot(), ring.droppedCount)
+        }
     }
 
     companion object {
