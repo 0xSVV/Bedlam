@@ -18,6 +18,9 @@ interface AppSelectionStore : Store<AppSelectionStore.Intent, AppSelectionStore.
         val apps: List<InstalledApp> = emptyList(),
         val filteredApps: List<InstalledApp> = emptyList(),
         val query: String = "",
-        val isLoading: Boolean = true,
-    )
+        val isFilterLoaded: Boolean = false,
+        val isAppsLoaded: Boolean = false,
+    ) {
+        val isLoading: Boolean get() = !isFilterLoaded || !isAppsLoaded
+    }
 }
