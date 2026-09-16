@@ -269,3 +269,46 @@ func TestStreamPool_closeClosesIdleConns(t *testing.T) {
 		t.Errorf("pool still holds %d connections after close", len(p.idle))
 	}
 }
+
+func TestStreamPool_retiresStreamsThatStallMidResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		fault streamFault
+	}{
+		{"no response", faultSilent},
+		{"half the length prefix", faultHalfLength},
+		{"half the body", faultHalfBody},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
+				if conn == 1 {
+					return tc.fault
+				}
+				return faultAnswer
+			})
+			p := newStreamPool("test", srv.dial)
+			defer p.close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			start := time.Now()
+			_, err := p.exchange(ctx, dnsQuery("example.com"))
+			if !isTimeoutClass(err) {
+				t.Fatalf("err = %v, want a timeout", err)
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Errorf("stalled read took %v, want it ended by the 300ms deadline", elapsed)
+			}
+			if len(p.idle) != 0 {
+				t.Error("a stalled stream went back to the pool")
+			}
+			resp, err := p.exchange(context.Background(), dnsQuery("example.org"))
+			if err != nil {
+				t.Fatalf("next query: %v", err)
+			}
+			if conn := answerConn(resp); conn != 2 {
+				t.Errorf("answer came from connection %d, want a new connection 2", conn)
+			}
+		})
+	}
+}

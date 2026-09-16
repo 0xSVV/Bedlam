@@ -361,3 +361,29 @@ func TestDNSUpstream_stopsWhenContextDone(t *testing.T) {
 		t.Errorf("resolver b called after cancellation")
 	}
 }
+
+func TestDNSUpstream_failsOverPastASilentServer(t *testing.T) {
+	silent := newFaultDNSServer(t, func(int, int) streamFault { return faultSilent })
+	healthy := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
+	up := &dnsUpstream{
+		resolvers: []dnsResolver{newTCPResolver(silent.client(), "1.1.1.1:53"), newTCPResolver(healthy.client(), "1.0.0.1:53")},
+		ident:     "tcp|1.1.1.1:53,1.0.0.1:53",
+	}
+	defer up.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	start := time.Now()
+	if _, err := up.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("the second server answers, so the query must succeed: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
+		t.Errorf("failover took %v, want the silent server cut off at its share of the budget", elapsed)
+	}
+	if up.preferred.Load() != 1 {
+		t.Errorf("preferred = %d, want the healthy server", up.preferred.Load())
+	}
+	if silent.queries.Load() != 1 {
+		t.Errorf("silent server saw %d queries, want 1", silent.queries.Load())
+	}
+}
