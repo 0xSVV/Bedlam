@@ -585,3 +585,99 @@ func TestStreamPool_keepsIdleStreamsWhenTheRetryAlsoTimesOut(t *testing.T) {
 		t.Errorf("pool holds %d streams, want the 2 untouched ones kept for a tunnel replacement to fail fast", held)
 	}
 }
+
+type signallingDialer struct {
+	srv    *faultDNSServer
+	dialed atomic.Int32
+	opened chan *closeSignalConn
+}
+
+func newSignallingDialer(srv *faultDNSServer) *signallingDialer {
+	return &signallingDialer{srv: srv, opened: make(chan *closeSignalConn, 8)}
+}
+
+func (d *signallingDialer) dial(ctx context.Context) (net.Conn, error) {
+	conn, err := d.srv.dial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d.dialed.Add(1)
+	signal := &closeSignalConn{Conn: conn, closed: make(chan struct{})}
+	d.opened <- signal
+	return signal, nil
+}
+
+func TestStreamPool_cancelDuringReadReturnsPromptly(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		pooled bool
+	}{
+		{"new stream", false},
+		{"pooled stream", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var silent atomic.Bool
+			srv := newFaultDNSServer(t, func(int, int) streamFault {
+				if silent.Load() {
+					return faultSilent
+				}
+				return faultAnswer
+			})
+			dialer := newSignallingDialer(srv)
+			p := newStreamPool("test", dialer.dial)
+			defer p.close()
+			if tc.pooled {
+				fillPool(t, p, 1)
+			}
+			silent.Store(true)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			time.AfterFunc(50*time.Millisecond, cancel)
+			start := time.Now()
+			_, err := p.exchange(ctx, dnsQuery("example.com"))
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("err = %v, want context.Canceled", err)
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Errorf("a cancel during the read took %v to return", elapsed)
+			}
+			if dialed := dialer.dialed.Load(); dialed != 1 {
+				t.Errorf("%d streams dialled, want only the interrupted one", dialed)
+			}
+			select {
+			case <-(<-dialer.opened).closed:
+			default:
+				t.Error("the interrupted stream was left open")
+			}
+			if len(p.idle) != 0 {
+				t.Error("an interrupted stream went back to the pool")
+			}
+		})
+	}
+}
+
+func TestStreamPool_stopsTheLosingStreamOnceAnotherAnswers(t *testing.T) {
+	var stale atomic.Bool
+	srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
+		if stale.Load() && conn == 1 {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	dialer := newSignallingDialer(srv)
+	p := newStreamPool("test", dialer.dial)
+	defer p.close()
+	fillPool(t, p, 1)
+	stale.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := p.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("a new stream answers, so the query must succeed: %v", err)
+	}
+	select {
+	case <-(<-dialer.opened).closed:
+	case <-time.After(200 * time.Millisecond):
+		t.Error("the stale pooled stream kept reading after the new stream answered")
+	}
+}
