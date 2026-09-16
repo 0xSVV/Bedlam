@@ -44,7 +44,7 @@ class DashboardStoreFactory(
                         setActiveProfile,
                         deleteProfile,
                         importProfile,
-                        pingProfile
+                        pingProfile::invoke,
                     )
                 },
                 reducer = DashboardReducer,

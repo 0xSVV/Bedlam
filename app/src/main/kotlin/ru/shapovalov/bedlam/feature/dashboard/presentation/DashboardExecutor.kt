@@ -3,8 +3,8 @@ package ru.shapovalov.bedlam.feature.dashboard.presentation
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.latency.LatencyResult
-import ru.shapovalov.bedlam.core.latency.PingProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.model.DuplicateProfileException
+import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.model.detectProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
@@ -16,7 +16,7 @@ internal class DashboardExecutor(
     private val setActiveProfile: SetActiveProfileUseCase,
     private val deleteProfile: DeleteProfileUseCase,
     private val importProfile: ImportProfileUseCase,
-    private val pingProfile: PingProfileUseCase,
+    private val pingProfile: suspend (Profile) -> LatencyResult,
 ) : CoroutineExecutor<DashboardStore.Intent, Action, DashboardStore.State, Msg, DashboardStore.Label>() {
 
     override fun executeAction(action: Action) {
