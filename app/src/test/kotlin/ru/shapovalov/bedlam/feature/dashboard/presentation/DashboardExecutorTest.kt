@@ -1,0 +1,201 @@
+package ru.shapovalov.bedlam.feature.dashboard.presentation
+
+import com.arkivanov.mvikotlin.core.store.Store
+import com.arkivanov.mvikotlin.main.store.DefaultStoreFactory
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
+import ru.shapovalov.bedlam.core.latency.LatencyResult
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
+import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
+import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
+import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
+import ru.shapovalov.bedlam.testing.FakeHysteriaClient
+import ru.shapovalov.bedlam.testing.FakeProfilePinger
+import ru.shapovalov.bedlam.testing.FakeProfileRepository
+import ru.shapovalov.bedlam.testing.MainDispatcherExtension
+import ru.shapovalov.bedlam.testing.TEST_LINK
+import ru.shapovalov.bedlam.testing.TestBootstrapper
+import ru.shapovalov.bedlam.testing.disposeAfter
+import ru.shapovalov.bedlam.testing.recordLabels
+import ru.shapovalov.bedlam.testing.testConnected
+import ru.shapovalov.bedlam.testing.testProfile
+import ru.shapovalov.hysteria.ConnectionState
+
+@ExtendWith(MainDispatcherExtension::class)
+class DashboardExecutorTest {
+
+    private val home = testProfile("a", name = "Home")
+    private val work = testProfile("b", name = "Work")
+    private val seed = DashboardStore.ImportSheetSeed(TEST_LINK, ProfileImportFormat.Link)
+
+    private fun store(
+        state: DashboardStore.State,
+        repository: FakeProfileRepository = FakeProfileRepository(),
+        client: FakeHysteriaClient = FakeHysteriaClient(),
+        pinger: FakeProfilePinger = FakeProfilePinger(),
+        bootstrapper: TestBootstrapper<Action>? = null,
+    ): Store<DashboardStore.Intent, DashboardStore.State, DashboardStore.Label> =
+        DefaultStoreFactory().create(
+            initialState = state,
+            bootstrapper = bootstrapper,
+            executorFactory = {
+                DashboardExecutor(
+                    SetActiveProfileUseCase(repository),
+                    DeleteProfileUseCase(repository),
+                    ImportProfileUseCase(repository, client),
+                    pinger::ping,
+                )
+            },
+            reducer = DashboardReducer,
+        )
+
+    @Test
+    fun `toggle while disconnected with an active profile requests a start`() = runTest {
+        val state = DashboardStore.State(profiles = listOf(home), activeProfileId = "a")
+        store(state).disposeAfter { store ->
+            val labels = store.recordLabels()
+
+            store.accept(DashboardStore.Intent.ToggleConnection)
+
+            assertEquals(listOf(DashboardStore.Label.RequestStartVpn(home)), labels)
+            assertNull(store.state.error)
+        }
+    }
+
+    @Test
+    fun `toggle while the tunnel is active requests a stop`() = runTest {
+        val active = listOf(
+            ConnectionState.Connecting,
+            testConnected(),
+            ConnectionState.Reconnecting(1, "timeout"),
+        )
+        active.forEach { connection ->
+            val state = DashboardStore.State(
+                profiles = listOf(home),
+                activeProfileId = "a",
+                connectionState = connection,
+            )
+            store(state).disposeAfter { store ->
+                val labels = store.recordLabels()
+
+                store.accept(DashboardStore.Intent.ToggleConnection)
+
+                assertEquals(listOf(DashboardStore.Label.RequestStopVpn), labels, "$connection")
+            }
+        }
+    }
+
+    @Test
+    fun `toggle without an active profile raises an error and requests nothing`() = runTest {
+        store(DashboardStore.State(profiles = listOf(home))).disposeAfter { store ->
+            val labels = store.recordLabels()
+
+            store.accept(DashboardStore.Intent.ToggleConnection)
+
+            assertEquals(emptyList<DashboardStore.Label>(), labels)
+            assertEquals(DashboardStore.ErrorReason.NoActiveProfile, store.state.error)
+
+            store.accept(DashboardStore.Intent.DismissError)
+
+            assertNull(store.state.error)
+        }
+    }
+
+    @Test
+    fun `selecting a profile makes it active`() = runTest {
+        val repository = FakeProfileRepository(listOf(home, work), activeId = "a")
+        val state = DashboardStore.State(profiles = listOf(home, work), activeProfileId = "a")
+        store(state, repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.SelectProfile("b"))
+
+            assertEquals("b", repository.active.value)
+        }
+    }
+
+    @Test
+    fun `opening the import sheet seeds it with the trimmed text and its format`() = runTest {
+        store(DashboardStore.State()).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.OpenImport("  $TEST_LINK\n"))
+
+            assertEquals(seed, store.state.importSheet)
+        }
+    }
+
+    @Test
+    fun `importing a link saves it and activates the first profile`() = runTest {
+        val repository = FakeProfileRepository()
+        store(DashboardStore.State(importSheet = seed), repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, TEST_LINK, " "))
+
+            val saved = repository.profiles.value.single()
+            assertEquals("Imported", saved.name)
+            assertEquals(saved.id, repository.active.value)
+            assertFalse(store.state.isImporting)
+            assertNull(store.state.importError)
+        }
+    }
+
+    @Test
+    fun `importing keeps an existing active profile`() = runTest {
+        val repository = FakeProfileRepository(listOf(home), activeId = "a")
+        val state = DashboardStore.State(
+            profiles = listOf(home),
+            activeProfileId = "a",
+            importSheet = seed,
+        )
+        store(state, repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, TEST_LINK, "Office"))
+
+            assertEquals(listOf("Home", "Office"), repository.profiles.value.map { it.name })
+            assertEquals("a", repository.active.value)
+        }
+    }
+
+    @Test
+    fun `blank import text and a second import while importing are ignored`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeProfileRepository()
+        repository.observeAllGate = gate
+        val client = FakeHysteriaClient()
+        store(DashboardStore.State(importSheet = seed), repository, client).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, "  ", ""))
+
+            assertFalse(store.state.isImporting)
+            assertEquals(0, client.validateCalls)
+
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, TEST_LINK, ""))
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, TEST_LINK, ""))
+
+            assertTrue(store.state.isImporting)
+            assertEquals(1, client.validateCalls)
+
+            gate.complete(Unit)
+
+            assertEquals(1, repository.profiles.value.size)
+            assertFalse(store.state.isImporting)
+        }
+    }
+
+    @Test
+    fun `a connected tunnel pings the active profile`() = runTest {
+        val pinger = FakeProfilePinger()
+        val bootstrapper = TestBootstrapper<Action>()
+        val state = DashboardStore.State(profiles = listOf(home, work), activeProfileId = "a")
+        store(state, pinger = pinger, bootstrapper = bootstrapper).disposeAfter { store ->
+            bootstrapper.send(Action.TunnelConnected)
+
+            assertEquals(listOf("a"), pinger.calls.map { it.first })
+            assertEquals(mapOf("a" to LatencyResult.Measuring), store.state.latencies)
+
+            pinger.calls.single().second.complete(LatencyResult.Success(42))
+
+            assertEquals(mapOf("a" to LatencyResult.Success(42)), store.state.latencies)
+        }
+    }
+}
