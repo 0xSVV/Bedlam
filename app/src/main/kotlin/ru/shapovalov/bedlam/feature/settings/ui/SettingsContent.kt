@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.arkivanov.decompose.ExperimentalDecomposeApi
@@ -233,7 +234,7 @@ private fun SettingsRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = SettingsItemMinHeight)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = spacing.large, vertical = spacing.small),
         verticalAlignment = Alignment.CenterVertically,
     ) {
