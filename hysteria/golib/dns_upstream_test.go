@@ -40,6 +40,7 @@ func TestNormalizeDNSServer(t *testing.T) {
 		{"tcp", "dns.example", "", true},
 		{"udp", "dns.example:53", "", true},
 		{"tls", "dns.google", "dns.google:853", false},
+		{"tls", "one.one.one.one:853", "one.one.one.one:853", false},
 		{"tls", "1.1.1.1", "1.1.1.1:853", false},
 		{"tls", "1.1.1.1:8853", "1.1.1.1:8853", false},
 		{"tls", "2001:4860:4860::8888", "[2001:4860:4860::8888]:853", false},
@@ -56,6 +57,7 @@ func TestNormalizeDNSServer(t *testing.T) {
 		{"https", "[2001:4860:4860::8888]:8443", "", true},
 		{"https", "1.1.1.1:53", "", true},
 		{"https", "https://dns.google/dns-query", "https://dns.google/dns-query", false},
+		{"https", "https://cloudflare-dns.com/dns-query", "https://cloudflare-dns.com/dns-query", false},
 		{"https", "https://dns.google", "https://dns.google/dns-query", false},
 		{"https", "https://dns.google/", "https://dns.google/dns-query", false},
 		{"https", "https://[2001:4860:4860::8888]/", "https://[2001:4860:4860::8888]/dns-query", false},
@@ -127,6 +129,64 @@ func TestNewDNSUpstream_buildsAndIdentifies(t *testing.T) {
 	}
 	if up.isListenAddr(netip.MustParseAddr("172.19.0.1")) {
 		t.Error("interface address must not be a listen address")
+	}
+}
+
+func TestNewDNSUpstream_hostnamePresetsKeepTheHost(t *testing.T) {
+	build := func(transport, servers string) *dnsUpstream {
+		t.Helper()
+		cfg, err := parseDNSUpstream(`{"transport":"` + transport + `","servers":[` + servers + `],"listen":["172.19.0.2","fdfe:dcba:9876::2"]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		up, err := newDNSUpstream(&fakeClient{}, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(up.close)
+		return up
+	}
+
+	dot := build("tls", `"one.one.one.one:853"`)
+	if dot.id() != "tls|one.one.one.one:853" {
+		t.Errorf("DoT id = %q", dot.id())
+	}
+	tlsR := dot.resolvers[0].(*tlsResolver)
+	if tlsR.server != "one.one.one.one:853" || tlsR.tlsCfg.ServerName != "one.one.one.one" {
+		t.Errorf("DoT server=%q sni=%q", tlsR.server, tlsR.tlsCfg.ServerName)
+	}
+	if tlsR.tlsCfg.InsecureSkipVerify || tlsR.tlsCfg.RootCAs == nil {
+		t.Error("DoT to a hostname must verify the certificate against the system roots")
+	}
+
+	doh := build("https", `"https://cloudflare-dns.com/dns-query"`)
+	if doh.id() != "https|https://cloudflare-dns.com/dns-query" {
+		t.Errorf("DoH id = %q", doh.id())
+	}
+	httpsR := doh.resolvers[0].(*httpsResolver)
+	if httpsR.url != "https://cloudflare-dns.com/dns-query" || httpsR.dial != "cloudflare-dns.com:443" || httpsR.tlsCfg.ServerName != "cloudflare-dns.com" {
+		t.Errorf("DoH url=%q dial=%q sni=%q", httpsR.url, httpsR.dial, httpsR.tlsCfg.ServerName)
+	}
+	if httpsR.tlsCfg.InsecureSkipVerify || httpsR.tlsCfg.RootCAs == nil {
+		t.Error("DoH to a hostname must verify the certificate against the system roots")
+	}
+
+	doh3 := build("http3", `"https://1.1.1.1/dns-query","https://[2606:4700:4700::1111]/dns-query"`)
+	numeric := []struct {
+		dial string
+		name string
+	}{
+		{"1.1.1.1:443", "1.1.1.1"},
+		{"[2606:4700:4700::1111]:443", "2606:4700:4700::1111"},
+	}
+	for i, want := range numeric {
+		h3R := doh3.resolvers[i].(*h3Resolver)
+		if h3R.dial != want.dial || h3R.tlsCfg.ServerName != want.name {
+			t.Errorf("HTTP/3 %d dial=%q sni=%q, want %q and %q", i, h3R.dial, h3R.tlsCfg.ServerName, want.dial, want.name)
+		}
+		if h3R.fallback.dial != want.dial {
+			t.Errorf("HTTP/3 %d fallback dial=%q, want %q", i, h3R.fallback.dial, want.dial)
+		}
 	}
 }
 
