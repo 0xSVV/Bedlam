@@ -103,12 +103,21 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
                     .fillMaxWidth()
                     .weight(1f)
             ) {
-                val visible = state.visibleEntries
-                if (visible.isEmpty()) {
-                    EmptyState(isPaused = state.isPaused)
+                val emptyReason = state.emptyReason()
+                if (emptyReason != null) {
+                    EmptyState(
+                        text = when (emptyReason) {
+                            LogsEmptyReason.Filtered -> stringResource(
+                                R.string.logs_empty_filtered,
+                                state.minLevel.label(),
+                            )
+                            LogsEmptyReason.Paused -> stringResource(R.string.logs_empty_paused)
+                            LogsEmptyReason.Idle -> stringResource(R.string.logs_empty_idle)
+                        },
+                    )
                 } else {
                     LogList(
-                        entries = visible,
+                        entries = state.visibleEntries,
                         droppedCount = state.droppedCount,
                     )
                 }
@@ -243,7 +252,7 @@ private fun LevelFilterRow(
 }
 
 @Composable
-private fun EmptyState(isPaused: Boolean) {
+private fun EmptyState(text: String) {
     val spacing = MaterialTheme.spacing
     Box(
         modifier = Modifier
@@ -252,9 +261,7 @@ private fun EmptyState(isPaused: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = stringResource(
-                if (isPaused) R.string.logs_empty_paused else R.string.logs_empty_idle
-            ),
+            text = text,
             style = MaterialTheme.typography.bodyMedium.copy(
                 fontFamily = FontFamily.Monospace,
             ),
