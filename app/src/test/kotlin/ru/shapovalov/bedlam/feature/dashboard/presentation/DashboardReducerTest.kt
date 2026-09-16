@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
@@ -8,6 +9,7 @@ import ru.shapovalov.bedlam.testing.TEST_LINK
 import ru.shapovalov.bedlam.testing.reduceAll
 import ru.shapovalov.bedlam.testing.testConnected
 import ru.shapovalov.bedlam.testing.testProfile
+import ru.shapovalov.hysteria.ConnectionState
 
 class DashboardReducerTest {
 
@@ -38,6 +40,73 @@ class DashboardReducerTest {
             DashboardStore.State(connectionState = connected, connectedSinceMillis = 5_000L),
             state,
         )
+    }
+
+    @Test
+    fun `a failed attempt raises one connection error`() {
+        val active = listOf(
+            ConnectionState.Connecting,
+            testConnected(),
+            ConnectionState.Reconnecting(1, "timeout"),
+        )
+        active.forEach { connection ->
+            val failed = DashboardReducer.reduceAll(
+                DashboardStore.State(connectionState = connection),
+                Msg.ConnectionChanged(ConnectionState.Error("tls"), null),
+            )
+            assertEquals(DashboardStore.ErrorReason.ConnectionFailed("tls"), failed.error, "$connection")
+
+            val repeated = DashboardReducer.reduceAll(
+                failed,
+                Msg.ErrorDismissed,
+                Msg.ConnectionChanged(ConnectionState.Error("Start failed"), null),
+            )
+            assertNull(repeated.error, "$connection")
+            assertEquals(ConnectionState.Error("Start failed"), repeated.connectionState)
+        }
+    }
+
+    @Test
+    fun `a second error keeps a connection error that was not shown yet`() {
+        val state = DashboardReducer.reduceAll(
+            DashboardStore.State(connectionState = ConnectionState.Connecting),
+            Msg.ConnectionChanged(ConnectionState.Error("tls"), null),
+            Msg.ConnectionChanged(ConnectionState.Error("Start failed"), null),
+        )
+
+        assertEquals(DashboardStore.ErrorReason.ConnectionFailed("tls"), state.error)
+        assertEquals(ConnectionState.Error("Start failed"), state.connectionState)
+    }
+
+    @Test
+    fun `a failure recorded before the dashboard started raises no connection error`() {
+        val state = DashboardReducer.reduceAll(
+            DashboardStore.State(),
+            Msg.ConnectionChanged(ConnectionState.Error("tls"), null),
+        )
+
+        assertEquals(DashboardStore.State(connectionState = ConnectionState.Error("tls")), state)
+    }
+
+    @Test
+    fun `leaving the error state drops an unshown connection error only`() {
+        val unshown = DashboardReducer.reduceAll(
+            DashboardStore.State(
+                connectionState = ConnectionState.Error("tls"),
+                error = DashboardStore.ErrorReason.ConnectionFailed("tls"),
+            ),
+            Msg.ConnectionChanged(ConnectionState.Connecting, null),
+        )
+        assertNull(unshown.error)
+
+        val other = DashboardReducer.reduceAll(
+            DashboardStore.State(
+                connectionState = ConnectionState.Error("tls"),
+                error = DashboardStore.ErrorReason.NoActiveProfile,
+            ),
+            Msg.ConnectionChanged(ConnectionState.Connecting, null),
+        )
+        assertEquals(DashboardStore.ErrorReason.NoActiveProfile, other.error)
     }
 
     @Test

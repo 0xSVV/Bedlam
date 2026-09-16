@@ -183,6 +183,29 @@ class DashboardExecutorTest {
     }
 
     @Test
+    fun `the connection error is raised once per entry into the error state`() = runTest {
+        val bootstrapper = TestBootstrapper<Action>()
+        val state = DashboardStore.State(connectionState = ConnectionState.Connecting)
+        store(state, bootstrapper = bootstrapper).disposeAfter { store ->
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Error("tls"), null))
+
+            assertEquals(DashboardStore.ErrorReason.ConnectionFailed("tls"), store.state.error)
+
+            store.accept(DashboardStore.Intent.DismissError)
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Error("tls"), null))
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Error("tls"), null))
+
+            assertNull(store.state.error)
+
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Connecting, null))
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Error("tls"), null))
+
+            assertEquals(DashboardStore.ErrorReason.ConnectionFailed("tls"), store.state.error)
+            assertEquals(ConnectionState.Error("tls"), store.state.connectionState)
+        }
+    }
+
+    @Test
     fun `a connected tunnel pings the active profile`() = runTest {
         val pinger = FakeProfilePinger()
         val bootstrapper = TestBootstrapper<Action>()

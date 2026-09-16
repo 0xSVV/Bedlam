@@ -4,6 +4,7 @@ import com.arkivanov.mvikotlin.core.store.Reducer
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.hysteria.ConnectionState
+import ru.shapovalov.hysteria.isActiveTunnel
 
 internal sealed interface Msg {
     data class ProfilesLoaded(val profiles: List<Profile>, val activeId: String?) : Msg
@@ -25,6 +26,7 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
         is Msg.ConnectionChanged -> copy(
             connectionState = msg.state,
             connectedSinceMillis = msg.connectedSinceMillis,
+            error = errorAfterConnectionChange(msg.state),
         )
 
         is Msg.ImportSheetOpened -> copy(importSheet = msg.seed, importError = null)
@@ -41,5 +43,15 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
         is Msg.ErrorRaised -> copy(error = msg.reason)
         Msg.ErrorDismissed -> copy(error = null)
         is Msg.LatencyUpdated -> copy(latencies = latencies + (msg.id to msg.result))
+    }
+
+    private fun DashboardStore.State.errorAfterConnectionChange(
+        next: ConnectionState,
+    ): DashboardStore.ErrorReason? = when {
+        next is ConnectionState.Error && connectionState.isActiveTunnel ->
+            DashboardStore.ErrorReason.ConnectionFailed(next.message)
+
+        next !is ConnectionState.Error && error is DashboardStore.ErrorReason.ConnectionFailed -> null
+        else -> error
     }
 }

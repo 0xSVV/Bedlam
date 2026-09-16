@@ -45,6 +45,7 @@ interface DashboardStore :
     sealed interface ErrorReason {
         data object NoActiveProfile : ErrorReason
         data class DuplicateProfile(val name: String) : ErrorReason
+        data class ConnectionFailed(val message: String) : ErrorReason
     }
 
     sealed interface Label {

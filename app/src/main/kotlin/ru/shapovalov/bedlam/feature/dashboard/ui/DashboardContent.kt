@@ -41,7 +41,6 @@ import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardStore
 import ru.shapovalov.bedlam.ui.theme.spacing
-import ru.shapovalov.hysteria.ConnectionState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,13 +57,6 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
         val msg = errorText ?: return@LaunchedEffect
         component.onDismissError()
         scope.launch { snackbarHostState.showSnackbar(msg) }
-    }
-    val connectionErrorText = (state.connectionState as? ConnectionState.Error)?.let {
-        stringResource(R.string.dashboard_connection_error, it.message)
-    }
-    LaunchedEffect(connectionErrorText) {
-        val msg = connectionErrorText ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
     }
 
     Box(
@@ -172,6 +164,8 @@ private fun DashboardStore.ErrorReason.resolve(): String = when (this) {
     DashboardStore.ErrorReason.NoActiveProfile -> stringResource(R.string.dashboard_error_no_profile)
     is DashboardStore.ErrorReason.DuplicateProfile ->
         stringResource(R.string.dashboard_error_duplicate_profile, name)
+    is DashboardStore.ErrorReason.ConnectionFailed ->
+        stringResource(R.string.dashboard_connection_error, message)
 }
 
 private val SmallIconSize = 20.dp
