@@ -31,6 +31,7 @@ import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,8 +43,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.formatBytes
+import ru.shapovalov.bedlam.core.util.openUrl
 import ru.shapovalov.bedlam.feature.update.presentation.UpdateComponent
 import ru.shapovalov.bedlam.feature.update.presentation.UpdateStore
+import ru.shapovalov.bedlam.ui.markdown.MarkdownBlockContent
+import ru.shapovalov.bedlam.ui.markdown.markdownBlockSpacing
 import ru.shapovalov.bedlam.ui.theme.spacing
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -51,6 +55,7 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
+    val context = LocalContext.current
 
     BackHandler { component.onBack() }
 
@@ -96,6 +101,7 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(spacing.large))
         ReleaseNotesCard(
             notes = state.update.releaseNotes,
+            onOpenUrl = remember(context) { { url: String -> context.openUrl(url) } },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -139,8 +145,13 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
 }
 
 @Composable
-internal fun ReleaseNotesCard(notes: String, modifier: Modifier = Modifier) {
+internal fun ReleaseNotesCard(
+    notes: String,
+    onOpenUrl: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val spacing = MaterialTheme.spacing
+    val blocks = remember(notes) { releaseNotesBlocks(notes) }
     ElevatedCard(modifier = modifier, shape = MaterialTheme.shapes.extraLarge) {
         Column(
             modifier = Modifier
@@ -152,12 +163,23 @@ internal fun ReleaseNotesCard(notes: String, modifier: Modifier = Modifier) {
                 text = stringResource(R.string.update_whats_new),
                 style = MaterialTheme.typography.titleMediumEmphasized,
             )
-            Spacer(Modifier.height(spacing.small))
-            Text(
-                text = notes.ifBlank { stringResource(R.string.update_notes_empty) },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (blocks.isEmpty()) {
+                Spacer(Modifier.height(spacing.small))
+                Text(
+                    text = stringResource(R.string.update_notes_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            blocks.forEachIndexed { index, block ->
+                MarkdownBlockContent(
+                    block = block,
+                    onOpenUrl = onOpenUrl,
+                    modifier = Modifier.padding(
+                        top = if (index == 0) spacing.small else markdownBlockSpacing(block),
+                    ),
+                )
+            }
         }
     }
 }

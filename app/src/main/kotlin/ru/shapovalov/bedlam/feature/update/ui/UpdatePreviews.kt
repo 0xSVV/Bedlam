@@ -26,11 +26,17 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 )
 private annotation class UpdatePreviews
 
-private const val PreviewReleaseNotes = """Changes in this version
+private const val PreviewReleaseNotes = """Bedlam 1.6.0 fixes Android 10 and 11 and updates the Hysteria core to 2.12.3.
 
-- A short change
-- A longer change whose description wraps onto a second line of the card
-- Another short change"""
+**DNS**
+
+- The presets use `one.one.one.one` and `dns.google` instead of numeric addresses.
+- A DNS connection that stops answering is replaced sooner.
+
+**Other changes**
+
+- **Raise `quic.maxIdleTimeout`** on your server to keep a sleeping phone connected.
+- The [1.5.3 notes](release-notes/1.5.3.md) explain the earlier timer change."""
 
 @Composable
 private fun UpdatePreview(content: @Composable () -> Unit) {
@@ -49,9 +55,10 @@ private fun ReleaseNotesCardPreview() {
     UpdatePreview {
         ReleaseNotesCard(
             notes = PreviewReleaseNotes,
+            onOpenUrl = {},
             modifier = Modifier
                 .fillMaxWidth()
-                .height(240.dp),
+                .height(420.dp),
         )
     }
 }
@@ -60,7 +67,7 @@ private fun ReleaseNotesCardPreview() {
 @Composable
 private fun ReleaseNotesCardEmptyPreview() {
     UpdatePreview {
-        ReleaseNotesCard(notes = "", modifier = Modifier.fillMaxWidth())
+        ReleaseNotesCard(notes = "", onOpenUrl = {}, modifier = Modifier.fillMaxWidth())
     }
 }
 
