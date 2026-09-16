@@ -39,6 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -256,6 +259,7 @@ internal fun SwitchRow(
         caution = caution,
         editMode = editMode,
         showDivider = showDivider,
+        labelSpoken = !editMode,
         labelTrailing = {
             AnimatedVisibility(
                 visible = editMode,
@@ -266,7 +270,11 @@ internal fun SwitchRow(
                         shrinkVertically(motion.fastSpatialSpec()) +
                         scaleOut(motion.fastSpatialSpec()),
             ) {
-                Switch(checked = value, onCheckedChange = onChange)
+                Switch(
+                    checked = value,
+                    onCheckedChange = onChange,
+                    modifier = Modifier.semantics { contentDescription = label },
+                )
             }
         },
     ) {
@@ -340,11 +348,13 @@ private fun FieldRowFrame(
     editMode: Boolean,
     showDivider: Boolean,
     labelInField: Boolean = false,
+    labelSpoken: Boolean = true,
     labelTrailing: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     val motion = MaterialTheme.motionScheme
+    val labelModifier = if (labelSpoken) Modifier else Modifier.clearAndSetSemantics {}
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -362,11 +372,11 @@ private fun FieldRowFrame(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    FieldLabel(label, modifier = Modifier.weight(1f))
+                    FieldLabel(label, modifier = Modifier.weight(1f).then(labelModifier))
                     labelTrailing()
                 }
             } else {
-                FieldLabel(label)
+                FieldLabel(label, modifier = labelModifier)
             }
         }
         content()
