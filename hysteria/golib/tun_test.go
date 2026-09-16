@@ -406,6 +406,78 @@ func TestTunHandler_dohBodyIsTheQueryFromEitherIngress(t *testing.T) {
 	}
 }
 
+func TestServeDNSPackets_nonDNSPayloadNeverReachesTheUpstream(t *testing.T) {
+	d := newDoHServer(t, [4]byte{7, 7, 7, 7}, http.StatusOK)
+	d.maxBody.Store(dohFixtureQueryLimit)
+	h := dohTunHandler(t, d)
+	pc := newFakePacketConn()
+	defer pc.Close()
+	dest := M.SocksaddrFrom(netip.MustParseAddr("203.0.113.53"), 53)
+	go h.serveDNSPackets(context.Background(), pc, dest.String())
+
+	for _, size := range []int{148, 1400} {
+		pc.in <- fakePacket{nonDNSPayload(size), dest}
+		select {
+		case p := <-pc.out:
+			if len(p.data) != size || p.data[3]&0x0f != 2 {
+				t.Errorf("%d-byte payload: reply is %d bytes with rcode %d, want a SERVFAIL of the same size", size, len(p.data), p.data[3]&0x0f)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no reply to a %d-byte non-DNS payload", size)
+		}
+	}
+	if n := d.requests.Load(); n != 0 {
+		t.Errorf("the DoH server saw %d requests for non-DNS payloads", n)
+	}
+
+	pc.in <- fakePacket{dnsQuery("example.com"), dest}
+	select {
+	case p := <-pc.out:
+		if p.data[len(p.data)-1] != 7 {
+			t.Errorf("answer = %v", p.data)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no answer to a real query")
+	}
+	if d.requests.Load() != 1 {
+		t.Errorf("the DoH server saw %d requests in total, want 1", d.requests.Load())
+	}
+}
+
+func TestServeDNSStream_nonDNSFrameNeverReachesTheUpstream(t *testing.T) {
+	d := newDoHServer(t, [4]byte{7, 7, 7, 7}, http.StatusOK)
+	d.maxBody.Store(dohFixtureQueryLimit)
+	h := dohTunHandler(t, d)
+	c, s := net.Pipe()
+	defer c.Close()
+	go h.serveDNSStream(context.Background(), s)
+
+	if err := writeDNSFrame(c, nonDNSPayload(1400)); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := readDNSFrame(c)
+	if err != nil {
+		t.Fatalf("read SERVFAIL: %v", err)
+	}
+	if len(resp) != 1400 || resp[3]&0x0f != 2 {
+		t.Errorf("reply is %d bytes with rcode %d, want a 1400-byte SERVFAIL", len(resp), resp[3]&0x0f)
+	}
+	if n := d.requests.Load(); n != 0 {
+		t.Errorf("the DoH server saw %d requests for a non-DNS frame", n)
+	}
+
+	if err := writeDNSFrame(c, dnsQuery("example.com")); err != nil {
+		t.Fatal(err)
+	}
+	resp, err = readDNSFrame(c)
+	if err != nil {
+		t.Fatalf("the stream must stay open after a refused frame: %v", err)
+	}
+	if resp[len(resp)-1] != 7 {
+		t.Errorf("answer = %v", resp)
+	}
+}
+
 func TestTunHandler_truncatedAnswerIsRetriedOverTCP(t *testing.T) {
 	var mu sync.Mutex
 	var seen [][]byte
