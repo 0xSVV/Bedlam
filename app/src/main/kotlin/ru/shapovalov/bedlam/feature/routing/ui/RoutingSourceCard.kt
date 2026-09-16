@@ -365,10 +365,10 @@ private fun DetailRow(
 
 @Composable
 private fun KindChip(source: DirectRouteSource) {
-    val (label, color) = when (source) {
-        is DirectRouteSource.Cidr -> "CIDR" to MaterialTheme.colorScheme.primary
-        is DirectRouteSource.Asn -> "ASN" to MaterialTheme.colorScheme.tertiary
-        is DirectRouteSource.Domain -> "DOMAIN" to MaterialTheme.colorScheme.secondary
+    val (labelRes, color) = when (source) {
+        is DirectRouteSource.Cidr -> R.string.routing_source_kind_cidr to MaterialTheme.colorScheme.primary
+        is DirectRouteSource.Asn -> R.string.routing_source_kind_asn to MaterialTheme.colorScheme.tertiary
+        is DirectRouteSource.Domain -> R.string.routing_source_kind_domain to MaterialTheme.colorScheme.secondary
     }
     Box(
         modifier = Modifier
@@ -377,7 +377,7 @@ private fun KindChip(source: DirectRouteSource) {
             .padding(horizontal = KindChipHPad, vertical = KindChipVPad),
     ) {
         Text(
-            text = label,
+            text = stringResource(labelRes),
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
             color = color,
         )

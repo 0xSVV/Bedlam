@@ -415,4 +415,7 @@
     <string name="dashboard_latency_ms">%1$d ms</string>
     <string name="dashboard_latency_unreachable">—</string>
     <string name="dashboard_latency_unreachable_cd">Unreachable</string>
+    <string name="routing_source_kind_cidr">CIDR</string>
+    <string name="routing_source_kind_asn">ASN</string>
+    <string name="routing_source_kind_domain">DOMAIN</string>
 </resources>
