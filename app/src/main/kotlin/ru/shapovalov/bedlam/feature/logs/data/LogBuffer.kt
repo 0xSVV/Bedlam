@@ -3,6 +3,8 @@ package ru.shapovalov.bedlam.feature.logs.data
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,28 +34,51 @@ class LogBuffer internal constructor(
 
     private val lock = Any()
     private val ring = LogRing(CAPACITY)
+    private var unpublished = false
+    private val lineAdded = Channel<Unit>(Channel.CONFLATED)
     private val _snapshot = MutableStateFlow(Snapshot())
     val snapshot: StateFlow<Snapshot> = _snapshot.asStateFlow()
 
     init {
         scope.launch {
             client.logs(LogLevel.DEBUG).collect { entry ->
-                _snapshot.value = synchronized(lock) {
+                synchronized(lock) {
                     ring.add(entry)
-                    Snapshot(ring.snapshot(), ring.droppedCount)
+                    unpublished = true
                 }
+                lineAdded.trySend(Unit)
             }
         }
+        scope.launch { publishAddedLines() }
     }
 
     fun clear() {
-        _snapshot.value = synchronized(lock) {
+        synchronized(lock) {
             ring.clear()
-            Snapshot(ring.snapshot(), ring.droppedCount)
+            publishLocked()
         }
+    }
+
+    private suspend fun publishAddedLines() {
+        while (true) {
+            if (publishUnpublished()) delay(PUBLISH_INTERVAL_MS)
+            lineAdded.receive()
+        }
+    }
+
+    private fun publishUnpublished(): Boolean = synchronized(lock) {
+        val published = unpublished
+        if (published) publishLocked()
+        published
+    }
+
+    private fun publishLocked() {
+        unpublished = false
+        _snapshot.value = Snapshot(ring.snapshot(), ring.droppedCount)
     }
 
     companion object {
         const val CAPACITY = 5000
+        private const val PUBLISH_INTERVAL_MS = 100L
     }
 }
