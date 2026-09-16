@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -216,6 +217,65 @@ func TestH3Resolver_bodyIsTheQueryWithAZeroID(t *testing.T) {
 	}
 	if d.proto.Load() != 3 {
 		t.Errorf("negotiated HTTP/%d, want HTTP/3", d.proto.Load())
+	}
+}
+
+func TestH3Resolver_rejectionsNeitherTripTheGateNorFallBack(t *testing.T) {
+	d := newDoH3Server(t, [4]byte{3, 3, 3, 3})
+	d.maxBody.Store(dohFixtureQueryLimit)
+	fc, _ := d.client(t)
+	var tcpDials atomic.Int32
+	fc.tcp = func(string) (net.Conn, error) {
+		tcpDials.Add(1)
+		return nil, errors.New("the HTTPS fallback must stay unused")
+	}
+	r, err := newH3Resolver(fc, d.url(), &tls.Config{RootCAs: d.pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+
+	rejected := []struct {
+		query  []byte
+		status int
+	}{
+		{withPadding(dnsQuery("example.com"), dohFixtureQueryLimit+1), http.StatusRequestEntityTooLarge},
+		{nonDNSPayload(300), http.StatusBadRequest},
+		{nonDNSPayload(1400), http.StatusRequestEntityTooLarge},
+	}
+	for i := 0; i <= fallbackGateThreshold; i++ {
+		c := rejected[i%len(rejected)]
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := r.exchange(ctx, c.query)
+		cancel()
+		var statusErr *dohStatusError
+		if !errors.As(err, &statusErr) {
+			t.Fatalf("exchange %d: err = %v, want a DoH status error", i, err)
+		}
+		if statusErr.status != c.status || statusErr.proto != "HTTP/3.0" || statusErr.queryLen != len(c.query) {
+			t.Errorf("exchange %d: HTTP %d over %q for %d bytes, want %d over HTTP/3.0 for %d", i, statusErr.status, statusErr.proto, statusErr.queryLen, c.status, len(c.query))
+		}
+		if isTimeoutClass(err) {
+			t.Fatalf("exchange %d: a rejection counted as a timeout", i)
+		}
+	}
+	if r.gate.tripped() || r.isUDPDown() {
+		t.Error("HTTP rejections must not move the resolver off HTTP/3")
+	}
+	if tcpDials.Load() != 0 {
+		t.Errorf("HTTPS fallback dialed %d times", tcpDials.Load())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := r.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("a small query after the rejections: %v", err)
+	}
+	if resp[len(resp)-1] != 3 {
+		t.Errorf("answer = %v", resp)
+	}
+	if got := d.requests.Load(); got != int32(fallbackGateThreshold+2) {
+		t.Errorf("server saw %d requests, want %d", got, fallbackGateThreshold+2)
 	}
 }
 

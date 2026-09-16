@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -192,8 +193,10 @@ func TestHTTPSResolver_non200IsError(t *testing.T) {
 	}
 	defer r.close()
 
-	if _, err := r.exchange(context.Background(), dnsQuery("example.com")); err == nil {
-		t.Fatal("HTTP 503 must be an error")
+	_, err = r.exchange(context.Background(), dnsQuery("example.com"))
+	var statusErr *dohStatusError
+	if !errors.As(err, &statusErr) || statusErr.status != http.StatusServiceUnavailable {
+		t.Fatalf("err = %v, want an HTTP 503 status error", err)
 	}
 }
 
@@ -316,5 +319,118 @@ func TestDNSUpstream_failsOverPastAnHTTP413(t *testing.T) {
 	}
 	if up.preferred.Load() != 1 {
 		t.Errorf("preferred = %d, want 1", up.preferred.Load())
+	}
+}
+
+func TestHTTPSResolver_http413IsAStatusErrorWithTheQuerySize(t *testing.T) {
+	d := newDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	d.maxBody.Store(dohFixtureQueryLimit)
+	r, err := newHTTPSResolver(d.client(), d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if _, err := r.exchange(ctx, withPadding(dnsQuery("example.com"), dohFixtureQueryLimit)); err != nil {
+		t.Fatalf("a query at the limit must pass: %v", err)
+	}
+	_, err = r.exchange(ctx, withPadding(dnsQuery("example.com"), dohFixtureQueryLimit+1))
+	var statusErr *dohStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("err = %v, want a DoH status error", err)
+	}
+	if statusErr.status != http.StatusRequestEntityTooLarge || statusErr.queryLen != dohFixtureQueryLimit+1 || statusErr.proto != "HTTP/2.0" {
+		t.Errorf("status = %d over %q for %d bytes, want 413 over HTTP/2.0 for %d", statusErr.status, statusErr.proto, statusErr.queryLen, dohFixtureQueryLimit+1)
+	}
+	var certErr *tls.CertificateVerificationError
+	if isTimeoutClass(err) || errors.Is(err, errDNSMalformed) || errors.As(err, &certErr) {
+		t.Errorf("HTTP 413 misclassified: %v", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "HTTP 413 over HTTP/2.0 for a 513-byte query") {
+		t.Errorf("message %q lacks the status, protocol or query size", msg)
+	}
+	if strings.Contains(msg, "html") || strings.Contains(msg, "Entity") || strings.Contains(msg, "example") {
+		t.Errorf("message %q leaks the response body or the query name", msg)
+	}
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("a small query after a 413 must pass: %v", err)
+	}
+	if d.requests.Load() != 3 {
+		t.Errorf("server saw %d requests, want 3", d.requests.Load())
+	}
+}
+
+func TestHTTPSResolver_malformedQueryIsAStatusError(t *testing.T) {
+	d := newDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	r, err := newHTTPSResolver(d.client(), d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = r.exchange(ctx, nonDNSPayload(300))
+	var statusErr *dohStatusError
+	if !errors.As(err, &statusErr) || statusErr.status != http.StatusBadRequest || statusErr.queryLen != 300 {
+		t.Fatalf("err = %v, want HTTP 400 for a 300-byte query", err)
+	}
+	if strings.Contains(err.Error(), "Bad Request") {
+		t.Errorf("message %q leaks the response body", err)
+	}
+}
+
+func TestHTTPSResolver_timeoutIsNotAStatusError(t *testing.T) {
+	d := newDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	d.delay.Store(int64(2 * time.Second))
+	r, err := newHTTPSResolver(d.client(), d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	_, err = r.exchange(ctx, dnsQuery("example.com"))
+	var statusErr *dohStatusError
+	if !isTimeoutClass(err) || errors.As(err, &statusErr) {
+		t.Fatalf("err = %v, want a timeout", err)
+	}
+}
+
+func TestDNSUpstream_http413EverywhereKeepsTheStatus(t *testing.T) {
+	var resolvers []dnsResolver
+	var servers []*dohServer
+	for i := 0; i < 2; i++ {
+		d := newDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+		d.maxBody.Store(dohFixtureQueryLimit)
+		r, err := newHTTPSResolver(d.client(), d.url(), &tls.Config{RootCAs: d.pool()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		servers = append(servers, d)
+		resolvers = append(resolvers, r)
+	}
+	up := &dnsUpstream{resolvers: resolvers, ident: "https|a,b"}
+	defer up.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	start := time.Now()
+	_, err := up.exchange(ctx, withPadding(dnsQuery("example.com"), 700))
+	var statusErr *dohStatusError
+	if !errors.As(err, &statusErr) || statusErr.status != http.StatusRequestEntityTooLarge {
+		t.Fatalf("err = %v, want HTTP 413", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("a rejected query took %v", elapsed)
+	}
+	for i, d := range servers {
+		if d.requests.Load() != 1 {
+			t.Errorf("server %d saw %d requests, want 1", i, d.requests.Load())
+		}
 	}
 }

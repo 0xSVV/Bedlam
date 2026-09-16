@@ -20,6 +20,16 @@ const (
 	dohMaxResponse = 64 * 1024
 )
 
+type dohStatusError struct {
+	status   int
+	proto    string
+	queryLen int
+}
+
+func (e *dohStatusError) Error() string {
+	return fmt.Sprintf("HTTP %d over %s for a %d-byte query", e.status, e.proto, e.queryLen)
+}
+
 type httpsResolver struct {
 	client client.Client
 	url    string
@@ -102,7 +112,7 @@ func dohExchange(ctx context.Context, hc *http.Client, url string, query []byte)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("DoH %s: HTTP %d", url, resp.StatusCode)
+		return nil, fmt.Errorf("DoH %s: %w", url, &dohStatusError{status: resp.StatusCode, proto: resp.Proto, queryLen: len(query)})
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(ct, dohContentType) {
 		return nil, fmt.Errorf("DoH %s: unexpected content type %q", url, ct)
