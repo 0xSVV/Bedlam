@@ -12,7 +12,6 @@ interface DashboardStore :
     sealed interface Intent {
         data object ToggleConnection : Intent
         data class SelectProfile(val id: String) : Intent
-        data class DeleteProfile(val id: String) : Intent
         data class OpenImport(val prefill: String) : Intent
         data object CloseImport : Intent
         data class ImportProfile(

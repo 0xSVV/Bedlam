@@ -4,7 +4,6 @@ import com.arkivanov.mvikotlin.core.store.Store
 import com.arkivanov.mvikotlin.core.store.StoreFactory
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.latency.PingProfileUseCase
-import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.GetProfilesUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ObserveActiveProfileIdUseCase
@@ -19,7 +18,6 @@ class DashboardStoreFactory(
     private val getProfiles: GetProfilesUseCase,
     private val observeActiveId: ObserveActiveProfileIdUseCase,
     private val setActiveProfile: SetActiveProfileUseCase,
-    private val deleteProfile: DeleteProfileUseCase,
     private val importProfile: ImportProfileUseCase,
     private val client: HysteriaClient,
     private val pingProfile: PingProfileUseCase,
@@ -42,7 +40,6 @@ class DashboardStoreFactory(
                 executorFactory = {
                     DashboardExecutor(
                         setActiveProfile,
-                        deleteProfile,
                         importProfile,
                         pingProfile::invoke,
                     )

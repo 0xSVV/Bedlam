@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
-import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
 import ru.shapovalov.bedlam.testing.FakeHysteriaClient
@@ -49,7 +48,6 @@ class DashboardExecutorTest {
             executorFactory = {
                 DashboardExecutor(
                     SetActiveProfileUseCase(repository),
-                    DeleteProfileUseCase(repository),
                     ImportProfileUseCase(repository, client),
                     pinger::ping,
                 )

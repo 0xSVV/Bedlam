@@ -8,14 +8,12 @@ import ru.shapovalov.bedlam.core.profile.domain.model.DuplicateProfileException
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.model.detectProfileImportFormat
-import ru.shapovalov.bedlam.core.profile.domain.usecase.DeleteProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
 import ru.shapovalov.hysteria.ConnectionState
 
 internal class DashboardExecutor(
     private val setActiveProfile: SetActiveProfileUseCase,
-    private val deleteProfile: DeleteProfileUseCase,
     private val importProfile: ImportProfileUseCase,
     private val pingProfile: suspend (Profile) -> LatencyResult,
 ) : CoroutineExecutor<DashboardStore.Intent, Action, DashboardStore.State, Msg, DashboardStore.Label>() {
@@ -49,7 +47,6 @@ internal class DashboardExecutor(
         when (intent) {
             DashboardStore.Intent.ToggleConnection -> toggleConnection()
             is DashboardStore.Intent.SelectProfile -> scope.launch { setActiveProfile(intent.id) }
-            is DashboardStore.Intent.DeleteProfile -> scope.launch { deleteProfile(intent.id) }
             is DashboardStore.Intent.OpenImport -> openImport(intent.prefill)
             DashboardStore.Intent.CloseImport -> dispatch(Msg.ImportSheetClosed)
             is DashboardStore.Intent.ImportProfile ->

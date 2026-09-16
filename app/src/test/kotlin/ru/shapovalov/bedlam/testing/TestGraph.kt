@@ -136,7 +136,6 @@ class TestGraph(
                 GetProfilesUseCase(profiles),
                 ObserveActiveProfileIdUseCase(profiles),
                 SetActiveProfileUseCase(profiles),
-                DeleteProfileUseCase(profiles),
                 ImportProfileUseCase(profiles, client),
                 client,
                 PingProfileUseCase(android),
