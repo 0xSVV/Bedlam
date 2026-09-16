@@ -33,6 +33,7 @@ class LogBuffer internal constructor(
     data class Snapshot(
         val entries: List<LogEntry> = emptyList(),
         val droppedCount: Long = 0L,
+        val firstIndex: Long = 0L,
     )
 
     private val lock = Any()
@@ -82,7 +83,7 @@ class LogBuffer internal constructor(
 
     private fun publishLocked() {
         unpublished = false
-        _snapshot.value = Snapshot(ring.snapshot(), ring.droppedCount)
+        _snapshot.value = Snapshot(ring.snapshot(), ring.droppedCount, ring.firstIndex)
     }
 
     companion object {

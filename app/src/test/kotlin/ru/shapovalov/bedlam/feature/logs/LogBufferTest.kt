@@ -105,7 +105,7 @@ class LogBufferTest {
 
         buffer.clear()
 
-        assertEquals(LogBuffer.Snapshot(), buffer.snapshot.value)
-        assertEquals(LogBuffer.Snapshot(), published.last())
+        assertEquals(LogBuffer.Snapshot(firstIndex = 3), buffer.snapshot.value)
+        assertEquals(LogBuffer.Snapshot(firstIndex = 3), published.last())
     }
 }

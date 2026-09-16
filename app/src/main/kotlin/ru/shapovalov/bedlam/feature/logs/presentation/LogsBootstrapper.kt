@@ -9,6 +9,7 @@ internal sealed interface Action {
     data class LiveUpdated(
         val entries: List<HysteriaClient.LogEntry>,
         val droppedCount: Long,
+        val firstIndex: Long,
     ) : Action
 }
 
@@ -19,7 +20,9 @@ internal class LogsBootstrapper(
     override fun invoke() {
         scope.launch {
             buffer.snapshot.collect { snapshot ->
-                dispatch(Action.LiveUpdated(snapshot.entries, snapshot.droppedCount))
+                dispatch(
+                    Action.LiveUpdated(snapshot.entries, snapshot.droppedCount, snapshot.firstIndex)
+                )
             }
         }
     }

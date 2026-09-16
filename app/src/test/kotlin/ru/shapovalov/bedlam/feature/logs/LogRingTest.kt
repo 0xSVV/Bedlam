@@ -27,19 +27,22 @@ class LogRingTest {
         assertEquals("line 100", snapshot.first().message)
         assertEquals("line 1099", snapshot.last().message)
         assertEquals(100L, ring.droppedCount)
+        assertEquals(100L, ring.firstIndex)
     }
 
     @Test
-    fun `clear empties the ring`() {
+    fun `clear empties the ring and moves the first index past the cleared lines`() {
         val ring = LogRing(capacity = 4)
         repeat(3) { ring.add(entry(it)) }
 
         ring.clear()
         assertEquals(emptyList<String>(), ring.messages())
         assertEquals(0L, ring.droppedCount)
+        assertEquals(3L, ring.firstIndex)
 
         ring.add(entry(9))
         assertEquals(listOf("line 9"), ring.messages())
+        assertEquals(3L, ring.firstIndex)
     }
 
     @Test

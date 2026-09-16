@@ -13,6 +13,7 @@ interface LogsStore : Store<LogsStore.Intent, LogsStore.State, Nothing> {
 
     data class State(
         val liveEntries: List<HysteriaClient.LogEntry> = emptyList(),
+        val liveFirstIndex: Long = 0L,
         val pausedSnapshot: List<HysteriaClient.LogEntry>? = null,
         val minLevel: HysteriaClient.LogLevel = HysteriaClient.LogLevel.INFO,
         val visibleEntries: List<HysteriaClient.LogEntry> = emptyList(),
