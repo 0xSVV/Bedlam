@@ -31,9 +31,16 @@ GeoIP is deliberately out of scope. Bedlam bundles no `geoip.dat` or `.mmdb`, an
 
 ## Building
 
-You need Go 1.25+, gomobile and gobind (`go install golang.org/x/mobile/cmd/{gomobile,gobind}@latest`), the Android NDK, and the submodule checked out (`git submodule update --init --recursive`). After that, `./gradlew assembleDebug` builds everything, Go core included.
+You need Go, gomobile and gobind, the Android NDK, and the submodule checked out (`git submodule update --init --recursive`). Releases use the Go and NDK versions in `.github/toolchain.env`, and gomobile and gobind at the `golang.org/x/mobile` version that `hysteria/golib/go.mod` selects:
 
-Bedlam vendors the Hysteria core at a pinned commit. `./gradlew :hysteria:updateHysteriaCore` moves it to upstream's latest. Run it deliberately, review the diff, then rebuild. A regular build never touches the pin.
+```sh
+v=$(cd hysteria/golib && go list -m -f '{{.Version}}' golang.org/x/mobile)
+go install golang.org/x/mobile/cmd/gomobile@$v golang.org/x/mobile/cmd/gobind@$v
+```
+
+Set `ANDROID_NDK_HOME` to the pinned NDK, or the build picks the highest NDK installed. After that, `./gradlew assembleDebug` builds everything, Go core included.
+
+Bedlam vendors the Hysteria core at a pinned commit. `./gradlew :hysteria:updateHysteriaCore` moves it to upstream's latest. Run it deliberately, review the diff, then rebuild. A regular build never touches the pin. CI accepts only a core commit that carries upstream release tags. If upstream's latest commit has none, check out the release tag in `hysteria/upstream` instead. Then set `HYSTERIA_CORE_COMMIT` and `HYSTERIA_CORE_TAGS` in `.github/toolchain.env` to that commit and its tags, for example `app/v2.12.2 core/v2.12.2 extras/v2.12.2`. CI rejects a checkout whose core differs from them.
 
 ## License
 
