@@ -6,13 +6,13 @@ import org.junit.jupiter.api.Test
 class SparklineTest {
 
     @Test
-    fun `peak is the max across both series`() {
-        assertEquals(90L, Sparkline.peak(tx = listOf(10, 90), rx = listOf(40, 20)))
+    fun `peak is the max of the series`() {
+        assertEquals(90L, Sparkline.peak(listOf(10, 90, 40)))
     }
 
     @Test
     fun `peak of empty series is zero`() {
-        assertEquals(0L, Sparkline.peak(tx = emptyList(), rx = emptyList()))
+        assertEquals(0L, Sparkline.peak(emptyList()))
     }
 
     @Test

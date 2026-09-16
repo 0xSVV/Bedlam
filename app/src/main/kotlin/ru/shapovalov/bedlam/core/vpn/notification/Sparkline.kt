@@ -2,8 +2,7 @@ package ru.shapovalov.bedlam.core.vpn.notification
 
 object Sparkline {
 
-    fun peak(tx: List<Long>, rx: List<Long>): Long =
-        maxOf(tx.maxOrNull() ?: 0L, rx.maxOrNull() ?: 0L)
+    fun peak(values: List<Long>): Long = values.maxOrNull() ?: 0L
 
     fun fractions(values: List<Long>, peak: Long): List<Float> {
         if (peak <= 0L) return values.map { 0f }

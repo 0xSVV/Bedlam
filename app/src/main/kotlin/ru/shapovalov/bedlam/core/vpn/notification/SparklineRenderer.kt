@@ -6,14 +6,10 @@ import android.graphics.Paint
 import android.graphics.Path
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.createBitmap
-import ru.shapovalov.bedlam.ui.theme.onSurfaceVariantDark
-import ru.shapovalov.bedlam.ui.theme.onSurfaceVariantLight
 import ru.shapovalov.bedlam.ui.theme.primaryDark
 import ru.shapovalov.bedlam.ui.theme.primaryLight
 import ru.shapovalov.bedlam.ui.theme.surfaceContainerHighDark
 import ru.shapovalov.bedlam.ui.theme.surfaceContainerHighLight
-import ru.shapovalov.bedlam.ui.theme.tertiaryDark
-import ru.shapovalov.bedlam.ui.theme.tertiaryLight
 
 class SparklineRenderer(
     private val widthPx: Int = WIDTH_PX,
@@ -23,7 +19,7 @@ class SparklineRenderer(
     private val bitmap = createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
     private val canvas = Canvas(bitmap)
 
-    fun render(samples: RateHistory.Samples, night: Boolean): Bitmap {
+    fun render(values: List<Long>, night: Boolean): Bitmap {
         val palette = if (night) NightPalette else DayPalette
         bitmap.eraseColor(0)
 
@@ -32,24 +28,10 @@ class SparklineRenderer(
             Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.card },
         )
 
-        val left = PADDING
-        val top = PADDING
         val plotW = widthPx - PADDING * 2
         val plotH = heightPx - PADDING * 2
-        val baseline = top + plotH
-
-        canvas.drawLine(
-            left, baseline, left + plotW, baseline,
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = palette.axis
-                strokeWidth = AXIS_WIDTH
-                alpha = AXIS_ALPHA
-            },
-        )
-
-        val peak = Sparkline.peak(samples.tx, samples.rx)
-        drawSeries(canvas, Sparkline.fractions(samples.rx, peak), left, top, plotW, plotH, palette.download, fill = true)
-        drawSeries(canvas, Sparkline.fractions(samples.tx, peak), left, top, plotW, plotH, palette.upload, fill = false)
+        val fractions = Sparkline.fractions(values, Sparkline.peak(values))
+        drawSeries(canvas, fractions, PADDING, PADDING, plotW, plotH, palette.series)
         return bitmap
     }
 
@@ -61,7 +43,6 @@ class SparklineRenderer(
         plotW: Float,
         plotH: Float,
         color: Int,
-        fill: Boolean,
     ) {
         if (fractions.isEmpty()) return
         val baseline = top + plotH
@@ -83,20 +64,18 @@ class SparklineRenderer(
             }
         }
 
-        if (fill) {
-            val area = Path(line)
-            area.lineTo(left + plotW, baseline)
-            area.lineTo(left, baseline)
-            area.close()
-            canvas.drawPath(
-                area,
-                Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    this.color = color
-                    style = Paint.Style.FILL
-                    alpha = FILL_ALPHA
-                },
-            )
-        }
+        val area = Path(line)
+        area.lineTo(left + plotW, baseline)
+        area.lineTo(left, baseline)
+        area.close()
+        canvas.drawPath(
+            area,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.color = color
+                style = Paint.Style.FILL
+                alpha = FILL_ALPHA
+            },
+        )
 
         canvas.drawPath(
             line,
@@ -112,9 +91,7 @@ class SparklineRenderer(
 
     private class Palette(
         val card: Int,
-        val axis: Int,
-        val download: Int,
-        val upload: Int,
+        val series: Int,
     )
 
     private companion object {
@@ -123,21 +100,15 @@ class SparklineRenderer(
         const val PADDING = 22f
         const val CORNER = 40f
         const val LINE_WIDTH = 7f
-        const val AXIS_WIDTH = 2f
-        const val AXIS_ALPHA = 90
         const val FILL_ALPHA = 70
 
         val DayPalette = Palette(
             card = surfaceContainerHighLight.toArgb(),
-            axis = onSurfaceVariantLight.toArgb(),
-            download = primaryLight.toArgb(),
-            upload = tertiaryLight.toArgb(),
+            series = primaryLight.toArgb(),
         )
         val NightPalette = Palette(
             card = surfaceContainerHighDark.toArgb(),
-            axis = onSurfaceVariantDark.toArgb(),
-            download = primaryDark.toArgb(),
-            upload = tertiaryDark.toArgb(),
+            series = primaryDark.toArgb(),
         )
     }
 }

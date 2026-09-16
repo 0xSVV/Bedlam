@@ -8,42 +8,36 @@ class RateHistoryTest {
     @Test
     fun `records samples in order`() {
         val history = RateHistory(capacity = 4)
-        history.record(10, 20)
-        history.record(30, 40)
+        history.record(10)
+        history.record(30)
 
-        val snapshot = history.snapshot()
-        assertEquals(listOf(10L, 30L), snapshot.tx)
-        assertEquals(listOf(20L, 40L), snapshot.rx)
+        assertEquals(listOf(10L, 30L), history.snapshot())
     }
 
     @Test
     fun `evicts oldest beyond capacity`() {
         val history = RateHistory(capacity = 2)
-        history.record(1, 1)
-        history.record(2, 2)
-        history.record(3, 3)
+        history.record(1)
+        history.record(2)
+        history.record(3)
 
-        val snapshot = history.snapshot()
-        assertEquals(listOf(2L, 3L), snapshot.tx)
-        assertEquals(listOf(2L, 3L), snapshot.rx)
+        assertEquals(listOf(2L, 3L), history.snapshot())
     }
 
     @Test
     fun `clamps negative rates to zero`() {
         val history = RateHistory(capacity = 2)
-        history.record(-5, -7)
+        history.record(-5)
 
-        val snapshot = history.snapshot()
-        assertEquals(listOf(0L), snapshot.tx)
-        assertEquals(listOf(0L), snapshot.rx)
+        assertEquals(listOf(0L), history.snapshot())
     }
 
     @Test
     fun `clear empties history`() {
         val history = RateHistory(capacity = 2)
-        history.record(1, 1)
+        history.record(1)
         history.clear()
 
-        assertEquals(0, history.snapshot().size)
+        assertEquals(emptyList<Long>(), history.snapshot())
     }
 }

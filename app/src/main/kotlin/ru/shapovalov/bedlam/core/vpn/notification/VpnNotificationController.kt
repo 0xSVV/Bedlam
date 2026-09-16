@@ -123,7 +123,7 @@ class VpnNotificationController(private val context: Context) {
             }
 
             is ConnectionState.Connected -> {
-                rateHistory.record(txRate, rxRate)
+                rateHistory.record(txRate + rxRate)
                 runCatching {
                     sparklineRenderer.render(rateHistory.snapshot(), context.isNightMode())
                 }.getOrNull()?.let { builder.setLargeIcon(Icon.createWithBitmap(it)) }
