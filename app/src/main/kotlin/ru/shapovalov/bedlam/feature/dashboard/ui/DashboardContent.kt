@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -36,11 +37,13 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardStore
 import ru.shapovalov.bedlam.ui.theme.spacing
+import ru.shapovalov.hysteria.ConnectionState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,13 +56,20 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     val spacing = MaterialTheme.spacing
 
     val errorText = state.error?.resolve()
+    val connectionFailure = state.error is DashboardStore.ErrorReason.ConnectionFailed
     val sheetOpen = state.importSheet != null
+    val connectionSnackbar = remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(errorText, sheetOpen) {
         val msg = errorText ?: return@LaunchedEffect
         if (sheetOpen) return@LaunchedEffect
         component.onDismissError()
         if (snackbarHostState.currentSnackbarData?.visuals?.message == msg) return@LaunchedEffect
-        scope.launch { snackbarHostState.showSnackbar(msg) }
+        val snackbar = scope.launch { snackbarHostState.showSnackbar(msg) }
+        if (connectionFailure) connectionSnackbar.value = snackbar
+    }
+    val inErrorState = state.connectionState is ConnectionState.Error
+    LaunchedEffect(inErrorState) {
+        if (!inErrorState) connectionSnackbar.value?.cancel()
     }
 
     Box(
