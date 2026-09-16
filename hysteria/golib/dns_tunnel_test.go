@@ -344,3 +344,28 @@ func TestTCPResolver_fastOpenReportsARefusedServerDialAsADialError(t *testing.T)
 		t.Errorf("a refused server dial took %v to surface", elapsed)
 	}
 }
+
+func TestWatchdogProbe_keepsTheTunnelWhenTheServerRefusesTheProbe(t *testing.T) {
+	var probed atomic.Int32
+	tt := newTestTunnel(t, true, func(addr string) (net.Conn, error) {
+		if addr == probeDNSServer {
+			probed.Add(1)
+		}
+		return nil, errors.New("connect: connection refused")
+	})
+	c, err := tt.currentClient(srcWatchdog)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tt.probe(c, "Idle")
+	if probed.Load() != 1 {
+		t.Fatalf("server saw %d probe dials, want 1", probed.Load())
+	}
+	if now, err := tt.currentClient(srcWatchdog); err != nil || now != c {
+		t.Errorf("a refused probe replaced the tunnel: client %p, err %v", now, err)
+	}
+	if seq := tt.SessionSeq(); seq != 1 {
+		t.Errorf("session %d, want the original session 1 kept", seq)
+	}
+}
