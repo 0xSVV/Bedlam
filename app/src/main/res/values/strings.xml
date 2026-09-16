@@ -410,4 +410,9 @@
     <string name="logs_empty_filtered">The %1$s filter hides every line</string>
 
     <string name="dashboard_ping_all_cd">Measure latency of all profiles</string>
+    <string name="dashboard_latency_measuring">…</string>
+    <string name="dashboard_latency_measuring_cd">Measuring latency</string>
+    <string name="dashboard_latency_ms">%1$d ms</string>
+    <string name="dashboard_latency_unreachable">—</string>
+    <string name="dashboard_latency_unreachable_cd">Unreachable</string>
 </resources>

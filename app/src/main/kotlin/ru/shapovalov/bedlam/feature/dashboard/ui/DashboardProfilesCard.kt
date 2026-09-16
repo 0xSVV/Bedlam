@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -169,11 +171,13 @@ private fun ProfileRow(
 
 @Composable
 private fun LatencyLabel(latency: LatencyResult) {
-    val text = when (latency) {
+    val (text, description) = when (latency) {
         LatencyResult.Idle -> return
-        LatencyResult.Measuring -> "..."
-        is LatencyResult.Success -> "${latency.ms} ms"
-        LatencyResult.Unreachable -> "—"
+        LatencyResult.Measuring -> stringResource(R.string.dashboard_latency_measuring) to
+                stringResource(R.string.dashboard_latency_measuring_cd)
+        is LatencyResult.Success -> stringResource(R.string.dashboard_latency_ms, latency.ms) to null
+        LatencyResult.Unreachable -> stringResource(R.string.dashboard_latency_unreachable) to
+                stringResource(R.string.dashboard_latency_unreachable_cd)
     }
     val color = when (latency) {
         is LatencyResult.Success -> when {
@@ -190,6 +194,11 @@ private fun LatencyLabel(latency: LatencyResult) {
         text = text,
         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
         color = color,
+        modifier = if (description != null) {
+            Modifier.semantics { contentDescription = description }
+        } else {
+            Modifier
+        },
     )
 }
 
