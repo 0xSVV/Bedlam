@@ -96,15 +96,16 @@ private fun SettingsRoot(
     onOpenBatteryReliability: () -> Unit,
     quickSettingsTileAdded: Boolean,
     onQuickSettingsTileAdded: (Boolean) -> Unit,
-    reliabilitySnapshot: PowerReliabilitySnapshot,
+    reliabilitySnapshot: PowerReliabilitySnapshot?,
     confirmedReliabilityFingerprint: String?,
 ) {
     val spacing = MaterialTheme.spacing
     val context = LocalContext.current
-    val needsReliabilityAttention = PowerReliabilityRules.needsAttention(
-        snapshot = reliabilitySnapshot,
-        confirmedFingerprint = confirmedReliabilityFingerprint,
-    )
+    val needsReliabilityAttention = reliabilitySnapshot != null &&
+            PowerReliabilityRules.needsAttention(
+                snapshot = reliabilitySnapshot,
+                confirmedFingerprint = confirmedReliabilityFingerprint,
+            )
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -125,14 +126,16 @@ private fun SettingsRoot(
         SettingsDivider()
         SettingsRow(
             title = stringResource(R.string.settings_reliability_title),
-            subtitle = stringResource(
-                if (needsReliabilityAttention) {
-                    R.string.settings_reliability_subtitle_action
-                } else {
-                    R.string.settings_reliability_subtitle_ok
-                },
-                reliabilitySnapshot.vendor.displayName,
-            ),
+            subtitle = reliabilitySnapshot?.let { snapshot ->
+                stringResource(
+                    if (needsReliabilityAttention) {
+                        R.string.settings_reliability_subtitle_action
+                    } else {
+                        R.string.settings_reliability_subtitle_ok
+                    },
+                    snapshot.vendor.displayName,
+                )
+            }.orEmpty(),
             subtitleEmphasized = needsReliabilityAttention,
             onClick = onOpenBatteryReliability,
         )

@@ -12,7 +12,7 @@ interface SettingsStore : Store<SettingsStore.Intent, SettingsStore.State, Nothi
 
     data class State(
         val quickSettingsTileAdded: Boolean = false,
-        val reliabilitySnapshot: PowerReliabilitySnapshot,
+        val reliabilitySnapshot: PowerReliabilitySnapshot? = null,
         val confirmedReliabilityFingerprint: String? = null,
     )
 }

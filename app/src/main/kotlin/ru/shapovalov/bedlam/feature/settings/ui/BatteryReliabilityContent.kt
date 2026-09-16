@@ -52,14 +52,14 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun BatteryReliabilityContent(
-    snapshot: PowerReliabilitySnapshot,
+    snapshot: PowerReliabilitySnapshot?,
     confirmedFingerprint: String?,
     onMarkConfirmed: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val confirmed = confirmedFingerprint == snapshot.buildFingerprint
+    val confirmed = snapshot != null && confirmedFingerprint == snapshot.buildFingerprint
     val spacing = MaterialTheme.spacing
 
     Scaffold(
@@ -93,6 +93,8 @@ fun BatteryReliabilityContent(
             ),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
+            if (snapshot == null) return@LazyColumn
+
             item(key = "hero") {
                 ReliabilityHero(
                     snapshot = snapshot,

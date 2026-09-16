@@ -17,9 +17,7 @@ class SettingsStoreFactory(
             Store<SettingsStore.Intent, SettingsStore.State, Nothing>
             by storeFactory.create(
                 name = "SettingsStore",
-                initialState = SettingsStore.State(
-                    reliabilitySnapshot = powerReliabilityRepository.snapshotNow(),
-                ),
+                initialState = SettingsStore.State(),
                 bootstrapper = SettingsBootstrapper(
                     powerReliabilityRepository = powerReliabilityRepository,
                     quickSettingsTileRepository = quickSettingsTileRepository,

@@ -18,15 +18,8 @@ class FakePowerReliabilityRepository(
     val confirmedFingerprints = mutableListOf<String>()
     var activePolls = 0
         private set
-    var snapshotNowCalls = 0
-        private set
 
     override val confirmedFingerprint: Flow<String?> = confirmed
-
-    override fun snapshotNow(): PowerReliabilitySnapshot {
-        snapshotNowCalls++
-        return snapshots.value
-    }
 
     override fun observeSnapshot(refreshIntervalMillis: Long): Flow<PowerReliabilitySnapshot> =
         snapshots

@@ -63,9 +63,6 @@ class PowerReliabilityRepositoryImpl(
     override val confirmedFingerprint: Flow<String?> =
         dataStore.data.map { prefs -> prefs[KEY_CONFIRMED_FINGERPRINT] }
 
-    override fun snapshotNow(): PowerReliabilitySnapshot =
-        buildSnapshot(recentObservedAlwaysOnState = null)
-
     override fun observeSnapshot(refreshIntervalMillis: Long): Flow<PowerReliabilitySnapshot> =
         flow {
             while (true) {
