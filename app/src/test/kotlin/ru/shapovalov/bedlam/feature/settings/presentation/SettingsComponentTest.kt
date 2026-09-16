@@ -124,6 +124,62 @@ class SettingsComponentTest {
     }
 
     @Test
+    fun `resuming the settings root reads a fresh snapshot without polling`() = runTest {
+        val graph = TestGraph()
+        graph.power.snapshots.value = powerSnapshot(risk = PowerRiskLevel.High)
+        withComponentContext { lifecycle, context ->
+            val settings = graph.settingsFactory.create(context)
+
+            lifecycle.resume()
+            assertEquals(PowerRiskLevel.High, settings.state.value.reliabilitySnapshot?.riskLevel)
+            advanceTimeBy(5_000)
+            assertEquals(1, graph.power.snapshotReads)
+
+            lifecycle.pause()
+            graph.power.snapshots.value = powerSnapshot(risk = PowerRiskLevel.Low)
+            lifecycle.resume()
+            assertEquals(PowerRiskLevel.Low, settings.state.value.reliabilitySnapshot?.riskLevel)
+            assertEquals(2, graph.power.snapshotReads)
+        }
+    }
+
+    @Test
+    fun `the battery screen polls every second while visible`() = runTest {
+        val graph = TestGraph()
+        withComponentContext { lifecycle, context ->
+            val settings = graph.settingsFactory.create(context)
+            lifecycle.resume()
+
+            settings.onOpenBatteryReliability()
+            val opened = graph.power.snapshotReads
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(opened + 3, graph.power.snapshotReads)
+
+            graph.power.snapshots.value = powerSnapshot(risk = PowerRiskLevel.High)
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertEquals(PowerRiskLevel.High, settings.state.value.reliabilitySnapshot?.riskLevel)
+        }
+    }
+
+    @Test
+    fun `closing the battery screen stops polling`() = runTest {
+        val graph = TestGraph()
+        withComponentContext { lifecycle, context ->
+            val settings = graph.settingsFactory.create(context)
+            lifecycle.resume()
+            settings.onOpenBatteryReliability()
+
+            settings.onBack()
+            val closed = graph.power.snapshotReads
+            advanceTimeBy(5_000)
+
+            assertEquals(closed, graph.power.snapshotReads)
+        }
+    }
+
+    @Test
     fun `pausing the settings component stops polling and resuming restarts it`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->

@@ -14,6 +14,7 @@ internal class SettingsExecutor(
 ) : CoroutineExecutor<SettingsStore.Intent, Action, SettingsStore.State, Msg, Nothing>() {
 
     private var foreground = false
+    private var reliabilityVisible = false
     private var reliabilityJob: Job? = null
 
     override fun executeAction(action: Action) {
@@ -40,20 +41,26 @@ internal class SettingsExecutor(
                 foreground = intent.foreground
                 restartReliabilityJob()
             }
+
+            is SettingsStore.Intent.SetReliabilityVisible -> {
+                reliabilityVisible = intent.visible
+                restartReliabilityJob()
+            }
         }
     }
 
     private fun restartReliabilityJob() {
         reliabilityJob?.cancel()
-        reliabilityJob = if (foreground) {
-            scope.launch {
+        reliabilityJob = when {
+            !foreground -> null
+            reliabilityVisible -> scope.launch {
                 while (true) {
                     loadReliabilitySnapshot()
                     delay(reliabilityRefreshMillis)
                 }
             }
-        } else {
-            null
+
+            else -> scope.launch { loadReliabilitySnapshot() }
         }
     }
 

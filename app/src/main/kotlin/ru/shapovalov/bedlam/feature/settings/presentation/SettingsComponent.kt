@@ -50,7 +50,15 @@ class SettingsComponent(
                     routingFactory.create(ctx, RoutingComponent.OnBack { navigation.pop() })
                 )
 
-                Config.BatteryReliability -> Child.BatteryReliability
+                Config.BatteryReliability -> {
+                    ctx.lifecycle.doOnResume {
+                        store.accept(SettingsStore.Intent.SetReliabilityVisible(true))
+                    }
+                    ctx.lifecycle.doOnPause {
+                        store.accept(SettingsStore.Intent.SetReliabilityVisible(false))
+                    }
+                    Child.BatteryReliability
+                }
             }
         },
     )
