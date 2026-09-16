@@ -387,3 +387,45 @@ func TestDNSUpstream_failsOverPastASilentServer(t *testing.T) {
 		t.Errorf("silent server saw %d queries, want 1", silent.queries.Load())
 	}
 }
+
+func TestDNSUpstream_allSilentServersFailInBudgetThenRecover(t *testing.T) {
+	var down atomic.Bool
+	down.Store(true)
+	fault := func(int, int) streamFault {
+		if down.Load() {
+			return faultSilent
+		}
+		return faultAnswer
+	}
+	a, b := newFaultDNSServer(t, fault), newFaultDNSServer(t, fault)
+	up := &dnsUpstream{
+		resolvers: []dnsResolver{newTCPResolver(a.client(), "1.1.1.1:53"), newTCPResolver(b.client(), "1.0.0.1:53")},
+		ident:     "tcp|1.1.1.1:53,1.0.0.1:53",
+	}
+	defer up.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	start := time.Now()
+	_, err := up.exchange(ctx, dnsQuery("example.com"))
+	cancel()
+	if !isTimeoutClass(err) {
+		t.Fatalf("err = %v, want a timeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > 3500*time.Millisecond {
+		t.Errorf("a total failure took %v, want it within the 3s query budget", elapsed)
+	}
+	if a.queries.Load() != 1 || b.queries.Load() != 1 {
+		t.Errorf("servers saw %d and %d queries, want each tried once", a.queries.Load(), b.queries.Load())
+	}
+
+	down.Store(false)
+	ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	start = time.Now()
+	if _, err := up.exchange(ctx, dnsQuery("example.org")); err != nil {
+		t.Fatalf("the next query once the servers answer: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("the next query took %v, want it answered at once", elapsed)
+	}
+}
