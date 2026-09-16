@@ -3,9 +3,6 @@ package ru.shapovalov.bedlam.feature.dashboard.ui
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
@@ -35,9 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,7 +49,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
-import androidx.graphics.shapes.RoundedPolygon
 import kotlinx.coroutines.delay
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.formatDuration
@@ -76,48 +70,19 @@ internal fun ConnectionHero(
             connectionState is ConnectionState.Reconnecting
     val isError = connectionState is ConnectionState.Error
 
-    val restingButtonShape = MaterialShapes.Square
-    val loadingButtonShapes = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
-    var fromButtonShape by remember { mutableStateOf(restingButtonShape) }
-    var toButtonShape by remember { mutableStateOf(restingButtonShape) }
-    var showButtonIcon by remember { mutableStateOf(!isConnecting) }
-    val buttonMorphProgress = remember { Animatable(0f) }
-    val morph = remember(fromButtonShape, toButtonShape) {
-        Morph(fromButtonShape, toButtonShape)
+    val buttonMorph = remember {
+        ConnectionButtonMorph(
+            restingShape = MaterialShapes.Square,
+            loadingShapes = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons,
+            connecting = isConnecting,
+        )
+    }
+    val morph = remember(buttonMorph.fromShape, buttonMorph.toShape) {
+        Morph(buttonMorph.fromShape, buttonMorph.toShape)
     }
 
     LaunchedEffect(isConnecting) {
-        suspend fun returnToCurrentShape() {
-            if (fromButtonShape != toButtonShape && buttonMorphProgress.value > 0f) {
-                buttonMorphProgress.animateTo(0f, ConnectionMorphAnimationSpec)
-                toButtonShape = fromButtonShape
-                buttonMorphProgress.snapTo(0f)
-            }
-        }
-
-        suspend fun morphTo(nextShape: RoundedPolygon) {
-            if (fromButtonShape == nextShape) return
-            toButtonShape = nextShape
-            buttonMorphProgress.snapTo(0f)
-            buttonMorphProgress.animateTo(1f, ConnectionMorphAnimationSpec)
-            fromButtonShape = nextShape
-            toButtonShape = nextShape
-            buttonMorphProgress.snapTo(0f)
-        }
-
-        if (isConnecting) {
-            showButtonIcon = false
-            repeat(MaxLoadingMorphCycles) {
-                loadingButtonShapes.forEach { morphTo(it) }
-            }
-            returnToCurrentShape()
-            morphTo(restingButtonShape)
-            showButtonIcon = true
-        } else {
-            showButtonIcon = true
-            returnToCurrentShape()
-            morphTo(restingButtonShape)
-        }
+        if (isConnecting) buttonMorph.animateLoading() else buttonMorph.settle()
     }
 
     val connectionButtonColor by animateColorAsState(
@@ -180,7 +145,7 @@ internal fun ConnectionHero(
         )
         ConnectionFab(
             morph = morph,
-            progress = { buttonMorphProgress.value },
+            progress = { buttonMorph.progress },
             containerColor = connectionButtonColor,
             onClick = onToggle,
             modifier = Modifier
@@ -188,7 +153,7 @@ internal fun ConnectionHero(
                 .semantics { contentDescription = toggleCd },
         ) {
             AnimatedVisibility(
-                visible = showButtonIcon,
+                visible = buttonMorph.showIcon,
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
@@ -304,14 +269,6 @@ private fun ConnectionState.displayText(): String = when (this) {
 
     is ConnectionState.Error -> stringResource(R.string.dashboard_state_error)
 }
-
-private const val MaxLoadingMorphCycles = 5
-
-private val ConnectionMorphAnimationSpec = spring<Float>(
-    dampingRatio = Spring.DampingRatioMediumBouncy,
-    stiffness = Spring.StiffnessLow,
-    visibilityThreshold = 0.1f,
-)
 
 private val ConnectionFabContainerSize = 96.dp
 private val ConnectionFabShadowElevation = 6.dp
