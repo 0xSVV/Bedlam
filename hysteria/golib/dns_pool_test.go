@@ -3,8 +3,10 @@ package golib
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -310,5 +312,53 @@ func TestStreamPool_retiresStreamsThatStallMidResponse(t *testing.T) {
 				t.Errorf("answer came from connection %d, want a new connection 2", conn)
 			}
 		})
+	}
+}
+
+type closeSignalConn struct {
+	net.Conn
+	once   sync.Once
+	closed chan struct{}
+}
+
+func (c *closeSignalConn) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return c.Conn.Close()
+}
+
+func TestTCPResolver_cancelDuringDialReturnsPromptly(t *testing.T) {
+	release := make(chan struct{})
+	late := make(chan *closeSignalConn, 1)
+	fc := &fakeClient{tcp: func(string) (net.Conn, error) {
+		<-release
+		client, server := net.Pipe()
+		t.Cleanup(func() { server.Close() })
+		conn := &closeSignalConn{Conn: client, closed: make(chan struct{})}
+		late <- conn
+		return conn, nil
+	}}
+	r := newTCPResolver(fc, "1.1.1.1:53")
+	defer r.close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := r.exchange(ctx, dnsQuery("example.com"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("cancel during dial took %v", elapsed)
+	}
+
+	close(release)
+	conn := <-late
+	select {
+	case <-conn.closed:
+	case <-time.After(time.Second):
+		t.Fatal("a stream that finished dialling after the cancel was never closed")
+	}
+	if len(r.pool.idle) != 0 {
+		t.Error("a late stream went into the pool")
 	}
 }

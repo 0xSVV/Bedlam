@@ -337,3 +337,45 @@ func TestTLSResolver_ipServerName(t *testing.T) {
 		t.Fatalf("IP SAN should verify: %v", err)
 	}
 }
+
+func TestTLSResolver_cancelDuringHandshakeReturnsPromptly(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		if c, err := ln.Accept(); err == nil {
+			accepted <- c
+		}
+	}()
+	_, pool := testCert(t)
+	fc := &fakeClient{tcp: func(string) (net.Conn, error) { return net.Dial("tcp", ln.Addr().String()) }}
+	r := newTLSResolver(fc, "dns.test:853", &tls.Config{RootCAs: pool})
+	defer r.close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	_, err = r.exchange(ctx, dnsQuery("example.com"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("cancel during the handshake took %v", elapsed)
+	}
+
+	s := <-accepted
+	defer s.Close()
+	_ = s.SetReadDeadline(time.Now().Add(time.Second))
+	buf := make([]byte, 4096)
+	for {
+		if _, err := s.Read(buf); err != nil {
+			if isTimeoutClass(err) {
+				t.Error("the abandoned handshake left its connection open")
+			}
+			return
+		}
+	}
+}
