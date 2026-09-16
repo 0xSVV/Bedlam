@@ -14,8 +14,10 @@ const (
 )
 
 type pooledConn struct {
-	conn net.Conn
-	last time.Time
+	conn     net.Conn
+	opened   time.Time
+	last     time.Time
+	answered int
 }
 
 // Without reuse every lookup opens its own tunnel stream, and a page that
@@ -36,18 +38,32 @@ func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *
 }
 
 func (p *streamPool) exchange(ctx context.Context, query []byte) ([]byte, error) {
+	pooledFailure := ""
 	if c := p.take(); c != nil {
-		if resp, err := p.exchangeOn(ctx, c, query); err == nil {
+		stream := c.describe()
+		resp, err := p.exchangeOn(ctx, c, query)
+		if err == nil {
 			return resp, nil
-		} else if ctx.Err() != nil {
-			return nil, err
 		}
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%s: %s: %w", p.label, stream, err)
+		}
+		pooledFailure = fmt.Sprintf("%s failed: %v; ", stream, err)
 	}
+	dialStart := time.Now()
 	conn, err := p.dial(ctx)
 	if err != nil {
+		if pooledFailure != "" {
+			return nil, fmt.Errorf("%s: %s%w", p.label, pooledFailure, err)
+		}
 		return nil, err
 	}
-	return p.exchangeOn(ctx, &pooledConn{conn: conn}, query)
+	c := &pooledConn{conn: conn, opened: time.Now()}
+	resp, err := p.exchangeOn(ctx, c, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %snew stream dialed in %s: %w", p.label, pooledFailure, diagDuration(c.opened.Sub(dialStart)), err)
+	}
+	return resp, nil
 }
 
 func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte) ([]byte, error) {
@@ -59,12 +75,26 @@ func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte
 	resp, err := dnsStreamExchange(c.conn, query)
 	if err != nil {
 		_ = c.conn.Close()
-		return nil, fmt.Errorf("%s: %w", p.label, err)
+		return nil, err
 	}
 	_ = c.conn.SetDeadline(time.Time{})
 	c.last = time.Now()
+	c.answered++
 	p.put(c)
 	return resp, nil
+}
+
+func (c *pooledConn) describe() string {
+	return fmt.Sprintf("pooled stream idle %s (open %s, answered %d)",
+		diagDuration(wallSince(c.last)), diagDuration(wallSince(c.opened)), c.answered)
+}
+
+func wallSince(t time.Time) time.Duration {
+	return time.Now().Round(0).Sub(t.Round(0))
+}
+
+func diagDuration(d time.Duration) time.Duration {
+	return d.Round(100 * time.Millisecond)
 }
 
 func (p *streamPool) take() *pooledConn {

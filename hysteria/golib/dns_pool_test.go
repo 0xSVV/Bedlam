@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -399,5 +401,85 @@ func TestStreamPool_concurrentQueriesKeepTheirAnswers(t *testing.T) {
 	}
 	if held := len(p.idle); held == 0 || held > dnsPoolSize {
 		t.Errorf("pool holds %d streams after the burst, want between 1 and %d", held, dnsPoolSize)
+	}
+}
+
+func TestStreamPool_reportsWhetherTheFailedStreamWasPooled(t *testing.T) {
+	var stale atomic.Bool
+	srv := newFaultDNSServer(t, func(int, int) streamFault {
+		if stale.Load() {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	p := newStreamPool("DNS over TCP 1.1.1.1:53", srv.dial)
+	defer p.close()
+	fillPool(t, p, 1)
+	c := <-p.idle
+	c.last = time.Now().Add(-12 * time.Second)
+	c.opened = time.Now().Add(-45 * time.Second)
+	p.idle <- c
+	stale.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	_, err := p.exchange(ctx, dnsQuery("example.com"))
+	msg := fmt.Sprint(err)
+	for _, want := range []string{"DNS over TCP 1.1.1.1:53: pooled stream idle 12s (open 45s, answered 1)", "read response length"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("err = %q, want it to contain %q", msg, want)
+		}
+	}
+	if !isTimeoutClass(err) {
+		t.Errorf("err = %v, want it still classified as a timeout", err)
+	}
+}
+
+func TestStreamPool_reportsHowLongANewStreamTookToDial(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultSilent })
+	p := newStreamPool("DoT dns.test:853", func(ctx context.Context) (net.Conn, error) {
+		time.Sleep(200 * time.Millisecond)
+		return srv.dial(ctx)
+	})
+	defer p.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+	_, err := p.exchange(ctx, dnsQuery("example.com"))
+	match := regexp.MustCompile(`^DoT dns\.test:853: new stream dialed in (\S+): read response length: `).FindStringSubmatch(fmt.Sprint(err))
+	if match == nil {
+		t.Fatalf("err = %v, want the new stream and its dial time named", err)
+	}
+	if dialed, perr := time.ParseDuration(match[1]); perr != nil || dialed < 200*time.Millisecond || dialed > 500*time.Millisecond {
+		t.Errorf("reported dial time %q, want the 200ms the dial took", match[1])
+	}
+	if !isTimeoutClass(err) {
+		t.Errorf("err = %v, want a timeout", err)
+	}
+}
+
+func TestStreamPool_reportsAClosedPooledStreamBeforeTheRedialError(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswerThenClose })
+	errRedial := errors.New("redial refused")
+	var dialed atomic.Int32
+	p := newStreamPool("DoT dns.test:853", func(ctx context.Context) (net.Conn, error) {
+		if dialed.Add(1) > 1 {
+			return nil, errRedial
+		}
+		return srv.dial(ctx)
+	})
+	defer p.close()
+	fillPool(t, p, 1)
+	time.Sleep(100 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := p.exchange(ctx, dnsQuery("example.com"))
+	if !errors.Is(err, errRedial) {
+		t.Fatalf("err = %v, want the redial error kept for errors.Is", err)
+	}
+	msg := fmt.Sprint(err)
+	if !strings.HasPrefix(msg, "DoT dns.test:853: pooled stream idle ") || !strings.Contains(msg, " failed: ") || !strings.HasSuffix(msg, "; redial refused") {
+		t.Errorf("err = %q, want the closed pooled stream reported before the redial error", msg)
 	}
 }
