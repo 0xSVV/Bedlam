@@ -101,6 +101,36 @@ class ConnectionButtonMorphTest {
     }
 
     @Test
+    fun `a morph created while connecting starts on the first loading shape`() {
+        val connectingMorph = ConnectionButtonMorph(resting, loading, connecting = true)
+        assertEquals(loading.first(), connectingMorph.fromShape)
+        assertEquals(loading.first(), connectingMorph.toShape)
+        assertFalse(connectingMorph.showIcon)
+
+        val idleMorph = ConnectionButtonMorph(resting, loading, connecting = false)
+        assertEquals(resting, idleMorph.fromShape)
+        assertEquals(resting, idleMorph.toShape)
+        assertTrue(idleMorph.showIcon)
+    }
+
+    @Test
+    fun `a morph created while connecting with animations off holds its shape without a frame`() = runTest {
+        val clock = FakeFrameClock()
+        val morph = ConnectionButtonMorph(resting, loading, connecting = true)
+        val loop = backgroundScope.launch(clock + FakeMotionDurationScale(0f)) {
+            morph.animateLoading()
+        }
+
+        advanceTimeBy(60_000)
+
+        assertTrue(loop.isActive)
+        assertEquals(0, clock.frameCount, "frames: ${clock.frameCount}")
+        assertEquals(loading.first(), morph.fromShape)
+        assertEquals(loading.first(), morph.toShape)
+        assertFalse(morph.showIcon)
+    }
+
+    @Test
     fun `a morph needs at least two distinct loading shapes`() {
         val onlyShape = loading.first()
         assertThrows(IllegalArgumentException::class.java) {

@@ -21,9 +21,9 @@ internal class ConnectionButtonMorph(
         require(loadingShapes.distinct().size > 1)
     }
 
-    var fromShape by mutableStateOf(restingShape)
+    var fromShape by mutableStateOf(if (connecting) loadingShapes.first() else restingShape)
         private set
-    var toShape by mutableStateOf(restingShape)
+    var toShape by mutableStateOf(fromShape)
         private set
     var showIcon by mutableStateOf(!connecting)
         private set
