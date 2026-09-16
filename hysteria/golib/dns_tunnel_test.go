@@ -239,3 +239,31 @@ func TestDNSUpstream_loneServerRidesOutATunnelReplacedLateInTheAttempt(t *testin
 		t.Errorf("session %d answered, want the replacement session 2", seq)
 	}
 }
+
+func TestTCPResolver_retriesWhenTheResolverClosesAnIdleStreamThroughTheTunnel(t *testing.T) {
+	srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
+		if conn == 1 {
+			return faultAnswerThenClose
+		}
+		return faultAnswer
+	})
+	tt := newTestTunnel(t, true, srv.connect)
+	r := newTCPResolver(tt, "8.8.8.8:53")
+	defer r.close()
+	fillPool(t, r.pool, 1)
+	time.Sleep(200 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	resp, err := r.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("query after the resolver closed the idle stream: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Errorf("query after the idle close took %v, want the closed stream noticed at once", elapsed)
+	}
+	if conn := answerConn(resp); conn != 2 {
+		t.Errorf("answer came from connection %d, want a new connection 2", conn)
+	}
+}
