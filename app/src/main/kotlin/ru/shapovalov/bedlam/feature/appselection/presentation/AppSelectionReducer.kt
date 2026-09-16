@@ -12,8 +12,18 @@ internal sealed interface Msg {
 
 internal object AppSelectionReducer : Reducer<AppSelectionStore.State, Msg> {
     override fun AppSelectionStore.State.reduce(msg: Msg): AppSelectionStore.State = when (msg) {
-        is Msg.FilterLoaded -> copy(mode = msg.mode, selectedPackages = msg.packages)
-        is Msg.AppsLoaded -> copy(apps = msg.apps, isLoading = false)
-        is Msg.QueryChanged -> copy(query = msg.query)
+        is Msg.FilterLoaded ->
+            copy(mode = msg.mode, selectedPackages = msg.packages).withFilteredApps()
+        is Msg.AppsLoaded -> copy(apps = msg.apps, isLoading = false).withFilteredApps()
+        is Msg.QueryChanged -> copy(query = msg.query).withFilteredApps()
     }
 }
+
+private fun AppSelectionStore.State.withFilteredApps(): AppSelectionStore.State = copy(
+    filteredApps = apps
+        .filter { query.isBlank() || it.matches(query) }
+        .sortedBy { it.packageName !in selectedPackages },
+)
+
+private fun InstalledApp.matches(query: String): Boolean =
+    label.contains(query, ignoreCase = true) || packageName.contains(query, ignoreCase = true)

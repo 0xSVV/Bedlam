@@ -16,17 +16,8 @@ interface AppSelectionStore : Store<AppSelectionStore.Intent, AppSelectionStore.
         val mode: AppFilterMode = AppFilterMode.All,
         val selectedPackages: Set<String> = emptySet(),
         val apps: List<InstalledApp> = emptyList(),
+        val filteredApps: List<InstalledApp> = emptyList(),
         val query: String = "",
         val isLoading: Boolean = true,
-    ) {
-        val filteredApps: List<InstalledApp>
-            get() {
-                val base = if (query.isBlank()) apps
-                else apps.filter {
-                    it.label.contains(query, ignoreCase = true) ||
-                            it.packageName.contains(query, ignoreCase = true)
-                }
-                return base.sortedBy { it.packageName !in selectedPackages }
-            }
-    }
+    )
 }
