@@ -221,4 +221,55 @@ class DashboardExecutorTest {
             assertEquals(mapOf("a" to LatencyResult.Success(42)), store.state.latencies)
         }
     }
+
+    @Test
+    fun `a repeated ping of a profile reports only the latest measurement`() = runTest {
+        val pinger = FakeProfilePinger()
+        store(DashboardStore.State(profiles = listOf(home)), pinger = pinger).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.PingProfile("a"))
+            store.accept(DashboardStore.Intent.PingProfile("a"))
+            store.accept(DashboardStore.Intent.PingProfile("a"))
+
+            assertEquals(1, pinger.active)
+
+            pinger.calls[0].second.complete(LatencyResult.Success(900))
+            pinger.calls[1].second.complete(LatencyResult.Unreachable)
+
+            assertEquals(LatencyResult.Measuring, store.state.latencies["a"])
+
+            pinger.calls[2].second.complete(LatencyResult.Success(40))
+
+            assertEquals(LatencyResult.Success(40), store.state.latencies["a"])
+            assertEquals(0, pinger.active)
+        }
+    }
+
+    @Test
+    fun `ping all keeps one measurement per profile`() = runTest {
+        val pinger = FakeProfilePinger()
+        val state = DashboardStore.State(profiles = listOf(home, work))
+        store(state, pinger = pinger).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.PingProfile("a"))
+            store.accept(DashboardStore.Intent.PingAllProfiles)
+            store.accept(DashboardStore.Intent.PingAllProfiles)
+
+            assertEquals(listOf("a", "a", "b", "a", "b"), pinger.calls.map { it.first })
+            assertEquals(2, pinger.active)
+
+            pinger.calls.take(3).forEach { it.second.complete(LatencyResult.Success(900)) }
+
+            assertEquals(
+                mapOf("a" to LatencyResult.Measuring, "b" to LatencyResult.Measuring),
+                store.state.latencies,
+            )
+
+            pinger.calls[3].second.complete(LatencyResult.Success(30))
+            pinger.calls[4].second.complete(LatencyResult.Unreachable)
+
+            assertEquals(
+                mapOf("a" to LatencyResult.Success(30), "b" to LatencyResult.Unreachable),
+                store.state.latencies,
+            )
+        }
+    }
 }

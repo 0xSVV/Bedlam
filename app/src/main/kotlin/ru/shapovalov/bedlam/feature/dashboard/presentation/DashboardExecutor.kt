@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.DuplicateProfileException
@@ -18,6 +19,8 @@ internal class DashboardExecutor(
     private val importProfile: ImportProfileUseCase,
     private val pingProfile: suspend (Profile) -> LatencyResult,
 ) : CoroutineExecutor<DashboardStore.Intent, Action, DashboardStore.State, Msg, DashboardStore.Label>() {
+
+    private val pingJobs = HashMap<String, Job>()
 
     override fun executeAction(action: Action) {
         when (action) {
@@ -105,19 +108,18 @@ internal class DashboardExecutor(
     }
 
     private fun ping(id: String) {
-        val profile = state().profiles.firstOrNull { it.id == id } ?: return
-        dispatch(Msg.LatencyUpdated(id, LatencyResult.Measuring))
-        scope.launch {
-            dispatch(Msg.LatencyUpdated(id, pingProfile(profile)))
-        }
+        state().profiles.firstOrNull { it.id == id }?.let(::measure)
     }
 
     private fun pingAll() {
-        state().profiles.forEach { profile ->
-            dispatch(Msg.LatencyUpdated(profile.id, LatencyResult.Measuring))
-            scope.launch {
-                dispatch(Msg.LatencyUpdated(profile.id, pingProfile(profile)))
-            }
+        state().profiles.forEach(::measure)
+    }
+
+    private fun measure(profile: Profile) {
+        pingJobs[profile.id]?.cancel()
+        dispatch(Msg.LatencyUpdated(profile.id, LatencyResult.Measuring))
+        pingJobs[profile.id] = scope.launch {
+            dispatch(Msg.LatencyUpdated(profile.id, pingProfile(profile)))
         }
     }
 
