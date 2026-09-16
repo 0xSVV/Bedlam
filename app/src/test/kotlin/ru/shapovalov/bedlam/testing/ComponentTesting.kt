@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.DefaultComponentContext
+import com.arkivanov.essenty.instancekeeper.InstanceKeeper
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
 import com.arkivanov.essenty.lifecycle.create
 import com.arkivanov.essenty.lifecycle.destroy
@@ -17,12 +18,13 @@ import com.arkivanov.mvikotlin.main.store.DefaultStoreFactory
 
 inline fun <R> withComponentContext(
     stateKeeper: StateKeeper? = null,
+    instanceKeeper: InstanceKeeper? = null,
     block: (LifecycleRegistry, ComponentContext) -> R,
 ): R {
     val lifecycle = LifecycleRegistry()
     lifecycle.create()
     try {
-        return block(lifecycle, DefaultComponentContext(lifecycle, stateKeeper))
+        return block(lifecycle, DefaultComponentContext(lifecycle, stateKeeper, instanceKeeper))
     } finally {
         lifecycle.destroy()
     }
