@@ -25,13 +25,23 @@ internal sealed interface Msg {
 
 internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
     override fun ProfileConfigStore.State.reduce(msg: Msg): ProfileConfigStore.State = when (msg) {
-        is Msg.ProfileLoaded -> copy(
-            original = msg.profile,
-            draft = draft ?: msg.profile.config,
-            draftName = draftName ?: msg.profile.name,
-            isLoading = false,
-            notFound = false,
-        )
+        is Msg.ProfileLoaded -> if (editMode) {
+            copy(
+                original = msg.profile,
+                draft = draft ?: msg.profile.config,
+                draftName = draftName ?: msg.profile.name,
+                isLoading = false,
+                notFound = false,
+            )
+        } else {
+            copy(
+                original = msg.profile,
+                draft = msg.profile.config,
+                draftName = msg.profile.name,
+                isLoading = false,
+                notFound = false,
+            )
+        }
 
         Msg.ProfileMissing -> copy(isLoading = false, notFound = true)
         Msg.EditModeEntered -> copy(editMode = true, saveError = null)

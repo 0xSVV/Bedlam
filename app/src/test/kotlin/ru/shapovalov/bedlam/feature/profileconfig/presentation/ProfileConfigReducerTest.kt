@@ -38,6 +38,62 @@ class ProfileConfigReducerTest {
     }
 
     @Test
+    fun `a changed profile replaces the draft in view mode`() {
+        val changed = profile.copy(
+            name = "Office",
+            config = testConfig("office.example:443"),
+            updatedAt = 1L,
+        )
+
+        val state = ProfileConfigReducer.reduceAll(loaded, Msg.ProfileLoaded(changed))
+
+        assertEquals(
+            loaded.copy(original = changed, draft = changed.config, draftName = "Office"),
+            state,
+        )
+        assertFalse(state.isDirty)
+    }
+
+    @Test
+    fun `a changed profile keeps the edits in edit mode`() {
+        val changed = profile.copy(
+            name = "Office",
+            config = testConfig("office.example:443"),
+            updatedAt = 1L,
+        )
+
+        val state = ProfileConfigReducer.reduceAll(
+            loaded,
+            Msg.EditModeEntered,
+            Msg.DraftNameUpdated("Mine"),
+            Msg.ProfileLoaded(changed),
+        )
+
+        assertEquals(
+            loaded.copy(editMode = true, original = changed, draftName = "Mine"),
+            state,
+        )
+        assertTrue(state.isDirty)
+    }
+
+    @Test
+    fun `the echo of a saved profile leaves the state clean`() {
+        val saved = profile.copy(name = "Work", config = testConfig("other.example:443"), updatedAt = 1L)
+
+        val state = ProfileConfigReducer.reduceAll(
+            edited.copy(isSaving = true),
+            Msg.SaveSucceeded(saved),
+            Msg.ProfileLoaded(saved),
+        )
+
+        assertEquals(
+            loaded.copy(original = saved, draft = saved.config, draftName = "Work"),
+            state,
+        )
+        assertFalse(state.isDirty)
+    }
+
+    @Test
     fun `a missing profile is marked not found`() {
         val state = ProfileConfigReducer.reduceAll(
             ProfileConfigStore.State(profileId = "p1"),

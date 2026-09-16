@@ -14,6 +14,7 @@ import ru.shapovalov.bedlam.testing.FakeHysteriaClient
 import ru.shapovalov.bedlam.testing.FakeProfileRepository
 import ru.shapovalov.bedlam.testing.MainDispatcherExtension
 import ru.shapovalov.bedlam.testing.disposeAfter
+import ru.shapovalov.bedlam.testing.testConfig
 import ru.shapovalov.bedlam.testing.testProfile
 
 @ExtendWith(MainDispatcherExtension::class)
@@ -27,6 +28,48 @@ class ProfileConfigStoreTest {
             DeleteProfileUseCase(repository),
             FakeHysteriaClient(),
         ).create(profileId)
+
+    @Test
+    fun `an external change reaches the draft in view mode`() = runTest {
+        val profile = testProfile("p1", name = "Home")
+        val repository = FakeProfileRepository(listOf(profile))
+        store(repository, "p1").disposeAfter { store ->
+            val changed = profile.copy(
+                name = "Office",
+                config = testConfig("office.example:443"),
+                updatedAt = 1L,
+            )
+
+            repository.upsert(changed)
+
+            assertEquals(changed, store.state.original)
+            assertEquals(changed.config, store.state.draft)
+            assertEquals("Office", store.state.draftName)
+            assertFalse(store.state.isDirty)
+        }
+    }
+
+    @Test
+    fun `an external change keeps the edits in edit mode`() = runTest {
+        val profile = testProfile("p1", name = "Home")
+        val repository = FakeProfileRepository(listOf(profile))
+        store(repository, "p1").disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.EnterEditMode)
+            store.accept(ProfileConfigStore.Intent.UpdateDraftName("Mine"))
+            val changed = profile.copy(
+                name = "Office",
+                config = testConfig("office.example:443"),
+                updatedAt = 1L,
+            )
+
+            repository.upsert(changed)
+
+            assertEquals(changed, store.state.original)
+            assertEquals(profile.config, store.state.draft)
+            assertEquals("Mine", store.state.draftName)
+            assertTrue(store.state.isDirty)
+        }
+    }
 
     @Test
     fun `deleting the open profile marks it not found`() = runTest {
