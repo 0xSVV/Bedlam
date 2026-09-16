@@ -29,6 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -190,15 +192,19 @@ private fun <T> NumericFieldRow(
     ) {
         AnimatedFieldContent(editMode = editMode) { isEditing ->
             if (isEditing) {
-                var local by remember(text) { mutableStateOf(text) }
+                var local by rememberSaveable { mutableStateOf(text) }
+                var focused by remember { mutableStateOf(false) }
+                LaunchedEffect(text, focused) {
+                    local = numericFieldText(local, text, focused, parse)
+                }
                 ConfigTextField(
                     value = local,
                     onValueChange = { entry ->
                         local = entry
-                        val source = entry.ifEmpty { "0" }
-                        parse(source)?.let(onChange)
+                        parse(entry.ifEmpty { "0" })?.let(onChange)
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.onFocusChanged { focused = it.isFocused },
                 )
             } else {
                 val unset = stringResource(R.string.profile_config_value_unset)
@@ -209,6 +215,13 @@ private fun <T> NumericFieldRow(
         }
     }
 }
+
+internal fun <T> numericFieldText(
+    local: String,
+    stored: String,
+    focused: Boolean,
+    parse: (String) -> T?,
+): String = if (focused || parse(local.ifEmpty { "0" }) == parse(stored)) local else stored
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
