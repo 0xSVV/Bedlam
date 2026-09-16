@@ -49,6 +49,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.formatDuration
@@ -103,14 +106,15 @@ internal fun ConnectionHero(
         label = "connection-button-content-color",
     )
 
-    val elapsedSeconds = remember(connectedSinceMillis) { mutableLongStateOf(0L) }
-    LaunchedEffect(connectedSinceMillis) {
-        if (connectedSinceMillis == null) {
-            elapsedSeconds.longValue = 0L
-        } else {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val elapsedSeconds = remember(connectedSinceMillis) {
+        mutableLongStateOf(connectedSinceMillis?.let(::secondsSince) ?: 0L)
+    }
+    LaunchedEffect(connectedSinceMillis, lifecycleOwner) {
+        if (connectedSinceMillis == null) return@LaunchedEffect
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                elapsedSeconds.longValue =
-                    (SystemClock.elapsedRealtime() - connectedSinceMillis) / 1000
+                elapsedSeconds.longValue = secondsSince(connectedSinceMillis)
                 delay(1000)
             }
         }
@@ -269,6 +273,9 @@ private fun ConnectionState.displayText(): String = when (this) {
 
     is ConnectionState.Error -> stringResource(R.string.dashboard_state_error)
 }
+
+private fun secondsSince(elapsedRealtimeMillis: Long): Long =
+    (SystemClock.elapsedRealtime() - elapsedRealtimeMillis) / 1000
 
 private val ConnectionFabContainerSize = 96.dp
 private val ConnectionFabShadowElevation = 6.dp
