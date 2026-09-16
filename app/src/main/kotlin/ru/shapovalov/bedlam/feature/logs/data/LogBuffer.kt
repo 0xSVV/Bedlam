@@ -8,6 +8,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.di.AppScope
@@ -49,7 +52,12 @@ class LogBuffer internal constructor(
                 lineAdded.trySend(Unit)
             }
         }
-        scope.launch { publishAddedLines() }
+        scope.launch {
+            _snapshot.subscriptionCount
+                .map { it > 0 }
+                .distinctUntilChanged()
+                .collectLatest { collected -> if (collected) publishAddedLines() }
+        }
     }
 
     fun clear() {

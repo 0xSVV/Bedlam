@@ -66,6 +66,33 @@ class LogBufferTest {
     }
 
     @Test
+    fun `nothing is published while nobody collects`() = runTest {
+        val client = FakeHysteriaClient()
+        val buffer = LogBuffer(client, backgroundScope)
+        runCurrent()
+        repeat(10) { client.logEntries.emit(logEntry(it)) }
+        advanceTimeBy(1_000)
+
+        assertEquals(emptyList<Long>(), buffer.snapshot.value.entries.map { it.seq })
+
+        val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            buffer.snapshot.collect {}
+        }
+        runCurrent()
+        assertEquals((0L until 10L).toList(), buffer.snapshot.value.entries.map { it.seq })
+
+        collector.cancel()
+        runCurrent()
+        client.logEntries.emit(logEntry(10))
+        advanceTimeBy(1_000)
+        assertEquals(10, buffer.snapshot.value.entries.size)
+
+        val published = record(buffer)
+        runCurrent()
+        assertEquals((0L..10L).toList(), published.lastSeqs())
+    }
+
+    @Test
     fun `clear publishes an empty snapshot at once`() = runTest {
         val client = FakeHysteriaClient()
         val buffer = LogBuffer(client, backgroundScope)
