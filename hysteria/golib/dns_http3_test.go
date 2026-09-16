@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -169,6 +170,52 @@ func TestH3Resolver_roundTrip(t *testing.T) {
 	}
 	if d.requests.Load() != 2 {
 		t.Errorf("server saw %d requests, want 2", d.requests.Load())
+	}
+}
+
+func TestH3Resolver_bodyIsTheQueryWithAZeroID(t *testing.T) {
+	d := newDoH3Server(t, [4]byte{3, 3, 3, 3})
+	fc, _ := d.client(t)
+	r, err := newH3Resolver(fc, d.url(), &tls.Config{RootCAs: d.pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cases := []struct {
+		name     string
+		query    []byte
+		rejected bool
+	}{
+		{"plain", dnsQuery("example.com"), false},
+		{"EDNS with DO", withEDNS(dnsQuery("example.com"), 4096, true), false},
+		{"padded to the limit", withPadding(dnsQuery("example.com"), dohFixtureQueryLimit), false},
+		{"padded past the limit", withPadding(dnsQuery("example.com"), dohFixtureQueryLimit+1), false},
+		{"300 bytes of non-DNS", nonDNSPayload(300), true},
+	}
+	for _, c := range cases {
+		binary.BigEndian.PutUint16(c.query[:2], 0x3333)
+		sent := append([]byte(nil), c.query...)
+		_, err := r.exchange(ctx, c.query)
+		if c.rejected && err == nil {
+			t.Errorf("%s: the server's 400 must be an error", c.name)
+		}
+		if !c.rejected && err != nil {
+			t.Fatalf("%s: exchange: %v", c.name, err)
+		}
+		want := append([]byte(nil), sent...)
+		want[0], want[1] = 0, 0
+		if got := d.lastBody(); !bytes.Equal(got, want) {
+			t.Errorf("%s: body is %d bytes, want the %d-byte query with a zero ID", c.name, len(got), len(sent))
+		}
+		if !bytes.Equal(c.query, sent) {
+			t.Errorf("%s: exchange modified the query it was given", c.name)
+		}
+	}
+	if d.proto.Load() != 3 {
+		t.Errorf("negotiated HTTP/%d, want HTTP/3", d.proto.Load())
 	}
 }
 

@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"sync"
@@ -339,6 +340,42 @@ func nonDNSPayload(n int) []byte {
 		out[i] = byte(i*131 + 7)
 	}
 	return out
+}
+
+func TestDNSCacheResolve_forwardsValidQueriesUnchanged(t *testing.T) {
+	c := newDNSCache()
+	var mu sync.Mutex
+	var seen [][]byte
+	r := &stubResolver{name: "https|fixture", reply: func(q []byte) ([]byte, error) {
+		mu.Lock()
+		seen = append(seen, append([]byte(nil), q...))
+		mu.Unlock()
+		resp := dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1})
+		resp[10], resp[11] = 0, 0
+		return resp, nil
+	}}
+	queries := [][]byte{
+		withEDNS(dnsQuery("a.example"), 512, false),
+		withEDNS(dnsQuery("b.example"), 4096, true),
+		withPadding(dnsQuery("c.example"), 128),
+		withPadding(dnsQuery("d.example"), 1400),
+		append(dnsQuery("e.example"), 0, 0, 0, 0),
+	}
+	for _, q := range queries {
+		if _, err := c.resolve(context.Background(), r, q, nil); err != nil {
+			t.Fatalf("%d-byte query: %v", len(q), err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != len(queries) {
+		t.Fatalf("resolver saw %d queries, want %d", len(seen), len(queries))
+	}
+	for i, q := range queries {
+		if !bytes.Equal(seen[i], q) {
+			t.Errorf("query %d reached the resolver altered", i)
+		}
+	}
 }
 
 func TestEdnsOptions(t *testing.T) {

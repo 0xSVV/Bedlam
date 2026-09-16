@@ -1,11 +1,14 @@
 package golib
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -80,6 +83,17 @@ func testHandler(t *testing.T, resolver dnsResolver) *tunHandler {
 		ipv6Enabled: true,
 		dns:         up,
 	}
+}
+
+func dohTunHandler(t *testing.T, d *dohServer) *tunHandler {
+	t.Helper()
+	r, err := newHTTPSResolver(d.client(), d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := testHandler(t, r)
+	t.Cleanup(h.dns.close)
+	return h
 }
 
 func TestTunHandler_isResolverAddr(t *testing.T) {
@@ -334,5 +348,117 @@ func TestServeDNSPackets_cachedAnswerSkipsSaturatedSlots(t *testing.T) {
 	}
 	if got := stub.calls.Load(); got != int32(maxConcurrentDNS)+1 {
 		t.Errorf("resolver calls = %d, want %d (cache hit must not reach the resolver)", got, maxConcurrentDNS+1)
+	}
+}
+
+func TestTunHandler_dohBodyIsTheQueryFromEitherIngress(t *testing.T) {
+	d := newDoHServer(t, [4]byte{7, 7, 7, 7}, http.StatusOK)
+	h := dohTunHandler(t, d)
+	dest := M.SocksaddrFrom(netip.MustParseAddr("203.0.113.53"), 53)
+	zeroID := func(q []byte) []byte {
+		out := append([]byte(nil), q...)
+		out[0], out[1] = 0, 0
+		return out
+	}
+
+	pc := newFakePacketConn()
+	defer pc.Close()
+	go h.serveDNSPackets(context.Background(), pc, dest.String())
+	udpQueries := [][]byte{withPadding(dnsQuery("udp.example"), 700), dnsQuery("small.udp.example")}
+	for i, query := range udpQueries {
+		binary.BigEndian.PutUint16(query[:2], uint16(0x4240+i))
+		pc.in <- fakePacket{append([]byte(nil), query...), dest}
+		select {
+		case p := <-pc.out:
+			if p.data[len(p.data)-1] != 7 {
+				t.Errorf("UDP answer %d = %v", i, p.data)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no UDP answer to query %d", i)
+		}
+		if got := d.lastBody(); !bytes.Equal(got, zeroID(query)) {
+			t.Errorf("UDP ingress posted %d bytes for query %d, want the %d-byte datagram with a zero ID", len(got), i, len(query))
+		}
+	}
+
+	c, s := net.Pipe()
+	defer c.Close()
+	go h.serveDNSStream(context.Background(), s)
+	tcpQueries := [][]byte{withPadding(dnsQuery("tcp.example"), 700), dnsQuery("small.tcp.example")}
+	for i, query := range tcpQueries {
+		binary.BigEndian.PutUint16(query[:2], uint16(0x4340+i))
+		if err := writeDNSFrame(c, query); err != nil {
+			t.Fatal(err)
+		}
+		resp, err := readDNSFrame(c)
+		if err != nil {
+			t.Fatalf("TCP answer to query %d: %v", i, err)
+		}
+		if resp[len(resp)-1] != 7 {
+			t.Errorf("TCP answer %d = %v", i, resp)
+		}
+		if got := d.lastBody(); !bytes.Equal(got, zeroID(query)) {
+			t.Errorf("TCP ingress posted %d bytes for query %d, want the %d-byte frame payload with a zero ID", len(got), i, len(query))
+		}
+	}
+	if want := int32(len(udpQueries) + len(tcpQueries)); d.requests.Load() != want {
+		t.Errorf("server saw %d requests, want %d", d.requests.Load(), want)
+	}
+}
+
+func TestTunHandler_truncatedAnswerIsRetriedOverTCP(t *testing.T) {
+	var mu sync.Mutex
+	var seen [][]byte
+	stub := &stubResolver{name: "stub", reply: func(q []byte) ([]byte, error) {
+		mu.Lock()
+		seen = append(seen, append([]byte(nil), q...))
+		first := len(seen) == 1
+		mu.Unlock()
+		resp := dnsResponseFor(q, 60, [4]byte{8, 8, 8, 8})
+		resp[10], resp[11] = 0, 0
+		if first {
+			resp[2] |= 0x02
+		}
+		return resp, nil
+	}}
+	h := testHandler(t, stub)
+	query := withEDNS(dnsQuery("large.example"), 1232, true)
+	dest := M.SocksaddrFrom(netip.MustParseAddr("172.19.0.2"), 53)
+
+	pc := newFakePacketConn()
+	defer pc.Close()
+	go h.serveDNSPackets(context.Background(), pc, dest.String())
+	pc.in <- fakePacket{append([]byte(nil), query...), dest}
+	select {
+	case p := <-pc.out:
+		if p.data[2]&0x02 == 0 {
+			t.Fatal("the UDP answer should carry TC")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no UDP answer")
+	}
+
+	c, s := net.Pipe()
+	defer c.Close()
+	go h.serveDNSStream(context.Background(), s)
+	if err := writeDNSFrame(c, query); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := readDNSFrame(c)
+	if err != nil {
+		t.Fatalf("TCP retry: %v", err)
+	}
+	if resp[2]&0x02 != 0 || resp[len(resp)-1] != 8 {
+		t.Errorf("TCP retry answer = %v", resp)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 2 {
+		t.Fatalf("resolver saw %d queries, want 2 (a truncated answer is not cached)", len(seen))
+	}
+	for i, q := range seen {
+		if !bytes.Equal(q, query) {
+			t.Errorf("attempt %d reached the resolver altered", i)
+		}
 	}
 }
