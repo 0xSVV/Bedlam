@@ -1,11 +1,14 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import com.arkivanov.decompose.ComponentContext
+import com.arkivanov.essenty.lifecycle.pause
 import com.arkivanov.essenty.lifecycle.resume
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
@@ -118,6 +121,28 @@ class DashboardContainerComponentTest {
 
             assertSame(home, container.home())
             assertEquals(importSeed, home.state.value.importSheet)
+        }
+    }
+
+    @Test
+    fun `the dashboard counts as resumed only while it is on top of a resumed screen`() = runTest {
+        val graph = TestGraph()
+        withComponentContext { lifecycle, context ->
+            val container = graph.container(context)
+            val home = container.home()
+            assertFalse(home.isResumed.value)
+
+            lifecycle.resume()
+            assertTrue(home.isResumed.value)
+
+            home.onOpenSession()
+            assertFalse(home.isResumed.value)
+
+            container.onBack()
+            assertTrue(home.isResumed.value)
+
+            lifecycle.pause()
+            assertFalse(home.isResumed.value)
         }
     }
 

@@ -49,6 +49,7 @@ import ru.shapovalov.hysteria.ConnectionState
 @Composable
 fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
+    val resumed by component.isResumed.collectAsState()
     val clipboard = LocalClipboard.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -59,9 +60,9 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     val connectionFailure = state.error is DashboardStore.ErrorReason.ConnectionFailed
     val sheetOpen = state.importSheet != null
     val connectionSnackbar = remember { mutableStateOf<Job?>(null) }
-    LaunchedEffect(errorText, sheetOpen) {
+    LaunchedEffect(errorText, sheetOpen, resumed) {
         val msg = errorText ?: return@LaunchedEffect
-        if (sheetOpen) return@LaunchedEffect
+        if (sheetOpen || !resumed) return@LaunchedEffect
         component.onDismissError()
         if (snackbarHostState.currentSnackbarData?.visuals?.message == msg) return@LaunchedEffect
         val snackbar = scope.launch { snackbarHostState.showSnackbar(msg) }
