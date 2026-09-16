@@ -1,5 +1,10 @@
 name: Set up build toolchain
 description: Java, Go, gomobile, Android NDK, and Gradle for building Bedlam, at the Go and NDK versions in .github/toolchain.env and the gomobile version that hysteria/golib/go.mod selects.
+inputs:
+  cache:
+    description: Restore and save the Go and Gradle caches.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -23,6 +28,7 @@ runs:
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ steps.pins.outputs.go }}
+        cache: ${{ inputs.cache }}
         cache-dependency-path: hysteria/golib/go.sum
     - name: Install gomobile and gobind at the go.mod version
       shell: bash
@@ -42,3 +48,5 @@ runs:
         fi
         echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
     - uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-disabled: ${{ inputs.cache != 'true' }}
