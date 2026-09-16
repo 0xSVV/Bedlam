@@ -26,9 +26,6 @@ jobs:
     timeout-minutes: 60
     env:
       HAS_SIGNING_SECRETS: ${{ secrets.BEDLAM_STORE_BASE64 != '' && secrets.BEDLAM_STORE_PASSWORD != '' && secrets.BEDLAM_KEY_ALIAS != '' && secrets.BEDLAM_KEY_PASSWORD != '' }}
-      ORG_GRADLE_PROJECT_BEDLAM_STORE_PASSWORD: ${{ secrets.BEDLAM_STORE_PASSWORD }}
-      ORG_GRADLE_PROJECT_BEDLAM_KEY_ALIAS: ${{ secrets.BEDLAM_KEY_ALIAS }}
-      ORG_GRADLE_PROJECT_BEDLAM_KEY_PASSWORD: ${{ secrets.BEDLAM_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,15 +71,17 @@ jobs:
       - name: Lint
         run: ./gradlew :app:lintRelease -x :hysteria:buildGolib --stacktrace
 
-      - name: Decode keystore
+      - name: Build signed APKs
         env:
-          KS: ${{ secrets.BEDLAM_STORE_BASE64 }}
+          BEDLAM_STORE_BASE64: ${{ secrets.BEDLAM_STORE_BASE64 }}
+          ORG_GRADLE_PROJECT_BEDLAM_STORE_PASSWORD: ${{ secrets.BEDLAM_STORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_BEDLAM_KEY_ALIAS: ${{ secrets.BEDLAM_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_BEDLAM_KEY_PASSWORD: ${{ secrets.BEDLAM_KEY_PASSWORD }}
         run: |
-          echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.jks"
-          echo "ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
-
-      - name: Build per-ABI APKs
-        run: ./gradlew :app:assembleRelease -x :hysteria:buildGolib --stacktrace
+          export ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE="$RUNNER_TEMP/release.jks"
+          trap 'rm -f "$ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE"' EXIT
+          printf '%s' "$BEDLAM_STORE_BASE64" | base64 -d > "$ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE"
+          ./gradlew :app:assembleRelease -x :hysteria:buildGolib --stacktrace
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
