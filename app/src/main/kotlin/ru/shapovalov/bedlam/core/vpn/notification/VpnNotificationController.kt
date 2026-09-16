@@ -29,6 +29,9 @@ class VpnNotificationController(private val context: Context) {
     @Volatile
     private var closed = false
 
+    @Volatile
+    private var lastSparkline: Icon? = null
+
     private val notificationManager: NotificationManager =
         requireNotNull(context.getSystemService(NotificationManager::class.java)) {
             "NotificationManager unavailable"
@@ -67,7 +70,7 @@ class VpnNotificationController(private val context: Context) {
     fun cancel() {
         synchronized(postLock) {
             closed = true
-            rateHistory.clear()
+            clearSparkline()
             notificationManager.cancel(NOTIFICATION_ID)
         }
     }
@@ -118,7 +121,7 @@ class VpnNotificationController(private val context: Context) {
     ) {
         when (state) {
             is ConnectionState.Connecting -> {
-                rateHistory.clear()
+                clearSparkline()
                 builder.setContentText(context.getString(R.string.notification_state_connecting))
                 builder.addAction(stopAction())
             }
@@ -128,7 +131,11 @@ class VpnNotificationController(private val context: Context) {
                 rateHistory.record(txRate + rxRate, now)
                 runCatching {
                     sparklineRenderer.render(rateHistory.snapshot(now), context.isNightMode())
-                }.getOrNull()?.let { builder.setLargeIcon(Icon.createWithBitmap(it)) }
+                }.getOrNull()?.let { bitmap ->
+                    val icon = Icon.createWithBitmap(bitmap)
+                    lastSparkline = icon
+                    builder.setLargeIcon(icon)
+                }
                 val rateLine = context.getString(
                     R.string.notification_traffic_rate,
                     context.formatRate(txRate),
@@ -160,6 +167,7 @@ class VpnNotificationController(private val context: Context) {
             }
 
             is ConnectionState.Reconnecting -> {
+                lastSparkline?.let { builder.setLargeIcon(it) }
                 builder.setContentText(
                     context.getString(R.string.notification_state_reconnecting, state.attempt)
                 )
@@ -169,7 +177,7 @@ class VpnNotificationController(private val context: Context) {
             }
 
             is ConnectionState.Error -> {
-                rateHistory.clear()
+                clearSparkline()
                 builder.setContentText(
                     context.getString(R.string.notification_state_error, state.message)
                 )
@@ -178,11 +186,16 @@ class VpnNotificationController(private val context: Context) {
             }
 
             is ConnectionState.Disconnected -> {
-                rateHistory.clear()
+                clearSparkline()
                 builder.setContentText(context.getString(R.string.notification_state_disconnected))
                 builder.addAction(stopAction())
             }
         }
+    }
+
+    private fun clearSparkline() {
+        rateHistory.clear()
+        lastSparkline = null
     }
 
     private fun Context.isNightMode(): Boolean =
