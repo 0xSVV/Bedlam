@@ -4,23 +4,31 @@ import ru.shapovalov.hysteria.api.DnsTransport
 
 object DnsPresets {
 
-    private val CLOUDFLARE = listOf(
-        "1.1.1.1",
-        "1.0.0.1",
-        "2606:4700:4700::1111",
-        "2606:4700:4700::1001",
+    private val CLOUDFLARE = Provider(
+        addresses = listOf(
+            "1.1.1.1",
+            "1.0.0.1",
+            "2606:4700:4700::1111",
+            "2606:4700:4700::1001",
+        ),
     )
 
-    private val GOOGLE = listOf(
-        "8.8.8.8",
-        "8.8.4.4",
-        "2001:4860:4860::8888",
-        "2001:4860:4860::8844",
+    private val GOOGLE = Provider(
+        addresses = listOf(
+            "8.8.8.8",
+            "8.8.4.4",
+            "2001:4860:4860::8888",
+            "2001:4860:4860::8844",
+        ),
     )
 
-    fun cloudflare(transport: DnsTransport): List<String> = CLOUDFLARE.map { endpoint(it, transport) }
+    fun cloudflare(transport: DnsTransport): List<String> = CLOUDFLARE.endpoints(transport)
 
-    fun google(transport: DnsTransport): List<String> = GOOGLE.map { endpoint(it, transport) }
+    fun google(transport: DnsTransport): List<String> = GOOGLE.endpoints(transport)
+
+    fun cloudflareAddresses(): List<String> = CLOUDFLARE.addresses
+
+    fun googleAddresses(): List<String> = GOOGLE.addresses
 
     fun supportedTransports(mode: DnsMode): List<DnsTransport> = when (mode) {
         DnsMode.System -> listOf(DnsTransport.Udp, DnsTransport.Tcp)
@@ -36,12 +44,16 @@ object DnsPresets {
         else -> DnsTransport.Tls
     }
 
-    private fun endpoint(ip: String, transport: DnsTransport): String {
-        val host = if (':' in ip) "[$ip]" else ip
-        return when (transport) {
-            DnsTransport.Udp, DnsTransport.Tcp -> "$host:53"
-            DnsTransport.Tls, DnsTransport.Doq -> "$host:853"
-            DnsTransport.Https, DnsTransport.Http3 -> "https://$host/dns-query"
+    private class Provider(val addresses: List<String>) {
+
+        fun endpoints(transport: DnsTransport): List<String> = when (transport) {
+            DnsTransport.Udp, DnsTransport.Tcp -> addresses.map { "${endpointHost(it)}:53" }
+            DnsTransport.Tls, DnsTransport.Doq -> addresses.map { "${endpointHost(it)}:853" }
+            DnsTransport.Https, DnsTransport.Http3 ->
+                addresses.map { "https://${endpointHost(it)}/dns-query" }
         }
+
+        private fun endpointHost(address: String): String =
+            if (':' in address) "[$address]" else address
     }
 }
