@@ -7,6 +7,8 @@ import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.router.stack.pop
 import com.arkivanov.decompose.router.stack.pushNew
 import com.arkivanov.decompose.value.Value
+import com.arkivanov.essenty.lifecycle.doOnPause
+import com.arkivanov.essenty.lifecycle.doOnResume
 import com.arkivanov.mvikotlin.core.instancekeeper.getStore
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +54,11 @@ class SettingsComponent(
             }
         },
     )
+
+    init {
+        lifecycle.doOnResume { store.accept(SettingsStore.Intent.SetForeground(true)) }
+        lifecycle.doOnPause { store.accept(SettingsStore.Intent.SetForeground(false)) }
+    }
 
     fun onBack() {
         navigation.pop()

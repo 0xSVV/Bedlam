@@ -2,10 +2,13 @@ package ru.shapovalov.bedlam.navigation
 
 import com.arkivanov.essenty.lifecycle.resume
 import com.arkivanov.essenty.statekeeper.StateKeeperDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
@@ -20,6 +23,7 @@ import ru.shapovalov.bedlam.testing.TestGraph
 import ru.shapovalov.bedlam.testing.appUpdate
 import ru.shapovalov.bedlam.testing.withComponentContext
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @ExtendWith(MainDispatcherExtension::class)
 class RootComponentTest {
 
@@ -176,6 +180,26 @@ class RootComponentTest {
 
             assertInstanceOf(Child.Dashboard::class.java, root.activeChild())
             assertEquals(linkSeed, root.home().state.value.importSheet)
+        }
+    }
+
+    @Test
+    fun `a settings tab behind another tab does not poll power settings`() = runTest {
+        val graph = TestGraph()
+        withComponentContext { lifecycle, context ->
+            val root = graph.root(context)
+            lifecycle.resume()
+            root.onTabSelected(Tab.Settings)
+            assertInstanceOf(Child.Settings::class.java, root.activeChild())
+                .component
+                .onOpenBatteryReliability()
+            assertTrue(graph.power.snapshotReads > 0)
+
+            root.onTabSelected(Tab.Dashboard)
+            val left = graph.power.snapshotReads
+            advanceTimeBy(5_000)
+
+            assertEquals(left, graph.power.snapshotReads)
         }
     }
 }

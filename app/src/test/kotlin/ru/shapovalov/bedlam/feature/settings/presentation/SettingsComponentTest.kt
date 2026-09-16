@@ -1,17 +1,25 @@
 package ru.shapovalov.bedlam.feature.settings.presentation
 
+import com.arkivanov.essenty.lifecycle.pause
 import com.arkivanov.essenty.lifecycle.resume
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import ru.shapovalov.bedlam.core.power.domain.model.PowerRiskLevel
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child
 import ru.shapovalov.bedlam.testing.MainDispatcherExtension
 import ru.shapovalov.bedlam.testing.TestGraph
+import ru.shapovalov.bedlam.testing.powerSnapshot
 import ru.shapovalov.bedlam.testing.withComponentContext
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @ExtendWith(MainDispatcherExtension::class)
 class SettingsComponentTest {
 
@@ -99,6 +107,42 @@ class SettingsComponentTest {
 
             assertTrue(graph.tile.added.value)
             assertTrue(settings.state.value.quickSettingsTileAdded)
+        }
+    }
+
+    @Test
+    fun `creating the settings screen does not read power settings`() = runTest {
+        val graph = TestGraph()
+        withComponentContext { _, context ->
+            val settings = graph.settingsFactory.create(context)
+
+            advanceTimeBy(5_000)
+
+            assertEquals(0, graph.power.snapshotReads)
+            assertNull(settings.state.value.reliabilitySnapshot)
+        }
+    }
+
+    @Test
+    fun `pausing the settings component stops polling and resuming restarts it`() = runTest {
+        val graph = TestGraph()
+        withComponentContext { lifecycle, context ->
+            val settings = graph.settingsFactory.create(context)
+            lifecycle.resume()
+            settings.onOpenBatteryReliability()
+
+            lifecycle.pause()
+            val paused = graph.power.snapshotReads
+            advanceTimeBy(5_000)
+            assertEquals(paused, graph.power.snapshotReads)
+
+            graph.power.snapshots.value = powerSnapshot(risk = PowerRiskLevel.High)
+            lifecycle.resume()
+            assertEquals(PowerRiskLevel.High, settings.state.value.reliabilitySnapshot?.riskLevel)
+            val resumed = graph.power.snapshotReads
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(resumed + 3, graph.power.snapshotReads)
         }
     }
 }
