@@ -469,7 +469,11 @@ private const val DroppedNoticeKey = "dropped-notice"
 @Composable
 private fun DroppedNotice(droppedCount: Long) {
     Text(
-        text = stringResource(R.string.logs_dropped_notice, droppedCount),
+        text = if (droppedCount == 1L) {
+            stringResource(R.string.logs_dropped_notice_one)
+        } else {
+            stringResource(R.string.logs_dropped_notice, droppedCount)
+        },
         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier

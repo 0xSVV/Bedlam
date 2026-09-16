@@ -358,10 +358,11 @@ private fun SourceDetails(resolved: ResolvedSource) {
                 val overflow = resolved.cidrs.size - MaxVisibleCidrs
                 if (overflow > 0) {
                     Text(
-                        text = stringResource(
-                            R.string.routing_source_details_more_networks,
-                            overflow,
-                        ),
+                        text = if (overflow == 1) {
+                            stringResource(R.string.routing_source_details_more_networks_one)
+                        } else {
+                            stringResource(R.string.routing_source_details_more_networks, overflow)
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -276,7 +276,8 @@
     <string name="routing_source_details_networks_header">Resolved networks</string>
     <string name="routing_source_details_networks_breakdown">%1$d IPv4 · %2$d IPv6</string>
     <string name="routing_source_details_no_networks">No networks resolved yet.</string>
-    <string name="routing_source_details_more_networks">+%1$d more networks</string>
+    <string name="routing_source_details_more_networks" tools:ignore="PluralsCandidate">+%1$d more networks</string>
+    <string name="routing_source_details_more_networks_one">+1 more network</string>
 
     <string name="app_selection_title">Apps to proxy</string>
     <string name="app_selection_search_hint">Search apps</string>
@@ -320,7 +321,8 @@
     <string name="logs_action_menu_close_cd">Close log actions</string>
     <string name="logs_action_pause_cd">Pause logs</string>
     <string name="logs_action_resume_cd">Resume logs</string>
-    <string name="logs_dropped_notice">%1$d earlier lines dropped</string>
+    <string name="logs_dropped_notice" tools:ignore="PluralsCandidate">%1$d earlier lines dropped</string>
+    <string name="logs_dropped_notice_one">1 earlier line dropped</string>
     <string name="logs_action_share_cd">Share log</string>
     <string name="logs_action_clear_cd">Delete logs</string>
     <string name="logs_empty_idle">Waiting for log output…</string>
