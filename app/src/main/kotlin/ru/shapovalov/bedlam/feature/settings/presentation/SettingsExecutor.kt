@@ -52,15 +52,17 @@ internal class SettingsExecutor(
     private fun restartReliabilityJob() {
         reliabilityJob?.cancel()
         reliabilityJob = when {
-            !foreground -> null
-            reliabilityVisible -> scope.launch {
+            foreground && reliabilityVisible -> scope.launch {
                 while (true) {
                     loadReliabilitySnapshot()
                     delay(reliabilityRefreshMillis)
                 }
             }
 
-            else -> scope.launch { loadReliabilitySnapshot() }
+            foreground || state().reliabilitySnapshot == null ->
+                scope.launch { loadReliabilitySnapshot() }
+
+            else -> null
         }
     }
 

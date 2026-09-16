@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.testing
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import ru.shapovalov.bedlam.core.power.domain.model.AlwaysOnVpnState
@@ -13,6 +14,7 @@ class FakePowerReliabilityRepository(
     val snapshots = MutableStateFlow(initial)
     val confirmed = MutableStateFlow<String?>(null)
     val confirmedFingerprints = mutableListOf<String>()
+    var snapshotGate: CompletableDeferred<Unit>? = null
     var snapshotReads = 0
         private set
 
@@ -20,6 +22,7 @@ class FakePowerReliabilityRepository(
 
     override suspend fun snapshot(): PowerReliabilitySnapshot {
         snapshotReads++
+        snapshotGate?.await()
         return snapshots.value
     }
 

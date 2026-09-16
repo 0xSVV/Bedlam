@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.feature.settings.presentation
 
 import com.arkivanov.essenty.lifecycle.pause
 import com.arkivanov.essenty.lifecycle.resume
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -140,6 +141,27 @@ class SettingsComponentTest {
             lifecycle.resume()
             assertEquals(PowerRiskLevel.Low, settings.state.value.reliabilitySnapshot?.riskLevel)
             assertEquals(2, graph.power.snapshotReads)
+        }
+    }
+
+    @Test
+    fun `pausing before the first read lands still loads one snapshot`() = runTest {
+        val graph = TestGraph()
+        val gate = CompletableDeferred<Unit>()
+        graph.power.snapshotGate = gate
+        graph.power.snapshots.value = powerSnapshot(risk = PowerRiskLevel.High)
+        withComponentContext { lifecycle, context ->
+            val settings = graph.settingsFactory.create(context)
+            lifecycle.resume()
+            lifecycle.pause()
+
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals(PowerRiskLevel.High, settings.state.value.reliabilitySnapshot?.riskLevel)
+
+            val loaded = graph.power.snapshotReads
+            advanceTimeBy(5_000)
+            assertEquals(loaded, graph.power.snapshotReads)
         }
     }
 
