@@ -11,8 +11,8 @@ require (
 	github.com/refraction-networking/utls v1.8.2
 	github.com/sagernet/sing v0.3.8
 	github.com/sagernet/sing-tun v0.3.2
-	golang.org/x/mobile v0.0.0-20260410095206-2cfb76559b7b
-	golang.org/x/sync v0.22.0
+	golang.org/x/mobile v0.0.0-20260908204917-8b95e45f8d3e
+	golang.org/x/sync v0.23.0
 )
 
 require (
@@ -40,14 +40,14 @@ require (
 	github.com/wlynxg/anet v0.0.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
-	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
-	golang.org/x/mod v0.37.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
+	golang.org/x/tools v0.50.0 // indirect
 )
 
 replace github.com/apernet/hysteria/core/v2 => ../upstream/core
