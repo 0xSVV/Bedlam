@@ -53,8 +53,10 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     val spacing = MaterialTheme.spacing
 
     val errorText = state.error?.resolve()
-    LaunchedEffect(errorText) {
+    val sheetOpen = state.importSheet != null
+    LaunchedEffect(errorText, sheetOpen) {
         val msg = errorText ?: return@LaunchedEffect
+        if (sheetOpen) return@LaunchedEffect
         component.onDismissError()
         scope.launch { snackbarHostState.showSnackbar(msg) }
     }
@@ -118,6 +120,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
             seed = seed,
             isImporting = state.isImporting,
             error = state.importError,
+            closing = state.importSheetClosing,
             onDismiss = component::onCloseImport,
             onImport = component::onImportProfile,
         )

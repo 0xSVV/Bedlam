@@ -26,6 +26,7 @@ import ru.shapovalov.bedlam.testing.recordLabels
 import ru.shapovalov.bedlam.testing.testConnected
 import ru.shapovalov.bedlam.testing.testProfile
 import ru.shapovalov.hysteria.ConnectionState
+import ru.shapovalov.hysteria.parseHysteriaUri
 
 @ExtendWith(MainDispatcherExtension::class)
 class DashboardExecutorTest {
@@ -154,6 +155,38 @@ class DashboardExecutorTest {
 
             assertEquals(listOf("Home", "Office"), repository.profiles.value.map { it.name })
             assertEquals("a", repository.active.value)
+        }
+    }
+
+    @Test
+    fun `a successful import slides the sheet away before clearing it`() = runTest {
+        store(DashboardStore.State(importSheet = seed)).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, TEST_LINK, ""))
+
+            assertEquals(seed, store.state.importSheet)
+            assertTrue(store.state.importSheetClosing)
+            assertFalse(store.state.isImporting)
+            assertNull(store.state.error)
+
+            store.accept(DashboardStore.Intent.CloseImport)
+
+            assertNull(store.state.importSheet)
+            assertFalse(store.state.importSheetClosing)
+        }
+    }
+
+    @Test
+    fun `a duplicate import slides the sheet away and names the existing profile`() = runTest {
+        val existing = home.copy(config = parseHysteriaUri(TEST_LINK).config)
+        val repository = FakeProfileRepository(listOf(existing), activeId = "a")
+        store(DashboardStore.State(importSheet = seed), repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, TEST_LINK, ""))
+
+            assertEquals(listOf(existing), repository.profiles.value)
+            assertEquals(seed, store.state.importSheet)
+            assertTrue(store.state.importSheetClosing)
+            assertNull(store.state.importError)
+            assertEquals(DashboardStore.ErrorReason.DuplicateProfile("Home"), store.state.error)
         }
     }
 

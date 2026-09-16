@@ -37,14 +37,24 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             error = errorAfterConnectionChange(msg.state),
         )
 
-        is Msg.ImportSheetOpened -> copy(importSheet = msg.seed, importError = null)
-        Msg.ImportSheetClosed -> copy(importSheet = null, importError = null)
+        is Msg.ImportSheetOpened -> copy(
+            importSheet = msg.seed,
+            importSheetClosing = false,
+            importError = null,
+        )
+
+        Msg.ImportSheetClosed -> copy(importSheet = null, importSheetClosing = false, importError = null)
         Msg.ImportStarted -> copy(isImporting = true, importError = null)
-        Msg.ImportSucceeded -> copy(isImporting = false, importSheet = null, importError = null)
+        Msg.ImportSucceeded -> copy(
+            isImporting = false,
+            importSheetClosing = importSheet != null,
+            importError = null,
+        )
+
         is Msg.ImportFailed -> copy(isImporting = false, importError = msg.message)
         is Msg.ImportRejectedAsDuplicate -> copy(
             isImporting = false,
-            importSheet = null,
+            importSheetClosing = importSheet != null,
             importError = null,
             error = DashboardStore.ErrorReason.DuplicateProfile(msg.name),
         )

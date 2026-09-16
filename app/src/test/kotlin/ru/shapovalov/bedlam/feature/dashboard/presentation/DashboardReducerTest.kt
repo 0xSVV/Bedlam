@@ -145,11 +145,61 @@ class DashboardReducerTest {
     @Test
     fun `closing the sheet clears it and its error`() {
         val state = DashboardReducer.reduceAll(
-            DashboardStore.State(importSheet = seed, importError = "boom"),
+            DashboardStore.State(importSheet = seed, importSheetClosing = true, importError = "boom"),
             Msg.ImportSheetClosed,
         )
 
         assertEquals(DashboardStore.State(), state)
+    }
+
+    @Test
+    fun `a successful import keeps the sheet until it slides away`() {
+        val succeeded = DashboardReducer.reduceAll(
+            DashboardStore.State(importSheet = seed, isImporting = true),
+            Msg.ImportSucceeded,
+        )
+
+        assertEquals(DashboardStore.State(importSheet = seed, importSheetClosing = true), succeeded)
+    }
+
+    @Test
+    fun `a duplicate import slides the sheet away and names the existing profile`() {
+        val rejected = DashboardReducer.reduceAll(
+            DashboardStore.State(importSheet = seed, isImporting = true),
+            Msg.ImportRejectedAsDuplicate("Home"),
+        )
+
+        assertEquals(
+            DashboardStore.State(
+                importSheet = seed,
+                importSheetClosing = true,
+                error = DashboardStore.ErrorReason.DuplicateProfile("Home"),
+            ),
+            rejected,
+        )
+    }
+
+    @Test
+    fun `an import that ends after the sheet was dismissed closes nothing`() {
+        val importing = DashboardStore.State(isImporting = true)
+
+        assertEquals(DashboardStore.State(), DashboardReducer.reduceAll(importing, Msg.ImportSucceeded))
+        assertEquals(
+            DashboardStore.State(error = DashboardStore.ErrorReason.DuplicateProfile("Home")),
+            DashboardReducer.reduceAll(importing, Msg.ImportRejectedAsDuplicate("Home")),
+        )
+    }
+
+    @Test
+    fun `opening the sheet while it slides away keeps it open`() {
+        val other = DashboardStore.ImportSheetSeed("{}", ProfileImportFormat.Json)
+
+        val state = DashboardReducer.reduceAll(
+            DashboardStore.State(importSheet = seed, importSheetClosing = true),
+            Msg.ImportSheetOpened(other),
+        )
+
+        assertEquals(DashboardStore.State(importSheet = other), state)
     }
 
     @Test

@@ -32,6 +32,7 @@ interface DashboardStore :
         val connectionState: ConnectionState = ConnectionState.Disconnected(),
         val connectedSinceMillis: Long? = null,
         val importSheet: ImportSheetSeed? = null,
+        val importSheetClosing: Boolean = false,
         val isImporting: Boolean = false,
         val importError: String? = null,
         val error: ErrorReason? = null,
