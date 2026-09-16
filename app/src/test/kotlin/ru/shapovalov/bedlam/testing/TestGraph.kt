@@ -3,6 +3,8 @@ package ru.shapovalov.bedlam.testing
 import android.content.Context
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.mvikotlin.core.store.StoreFactory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
 import ru.shapovalov.bedlam.core.appfilter.domain.usecase.GetInstalledAppsUseCase
 import ru.shapovalov.bedlam.core.appfilter.domain.usecase.ObserveAppFilterUseCase
@@ -49,6 +51,7 @@ import ru.shapovalov.bedlam.navigation.RootComponentFactory
 
 class TestGraph(
     val storeFactory: StoreFactory = SkippingBootstrapperStoreFactory { it is DashboardBootstrapper },
+    logScope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) {
 
     val client = FakeHysteriaClient()
@@ -117,8 +120,10 @@ class TestGraph(
         )
     )
 
+    val logBuffer by lazy { LogBuffer(client, logScope) }
+
     val logsFactory by lazy {
-        LogsComponentFactory(LogsStoreFactory(storeFactory, LogBuffer(client)))
+        LogsComponentFactory(LogsStoreFactory(storeFactory, logBuffer))
     }
 
     val dashboardFactory by lazy {

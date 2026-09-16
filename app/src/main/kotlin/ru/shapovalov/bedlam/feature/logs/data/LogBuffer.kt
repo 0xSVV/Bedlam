@@ -14,15 +14,22 @@ import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
 import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
 
 @AppScope
-@Inject
-class LogBuffer(client: HysteriaClient) {
+class LogBuffer internal constructor(
+    client: HysteriaClient,
+    scope: CoroutineScope,
+) {
+
+    @Inject
+    constructor(client: HysteriaClient) : this(
+        client = client,
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    )
 
     data class Snapshot(
         val entries: List<LogEntry> = emptyList(),
         val droppedCount: Long = 0L,
     )
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lock = Any()
     private val ring = LogRing(CAPACITY)
     private val _snapshot = MutableStateFlow(Snapshot())
