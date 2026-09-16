@@ -56,8 +56,8 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     val errorText = state.error?.resolve()
     LaunchedEffect(errorText) {
         val msg = errorText ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
         component.onDismissError()
+        scope.launch { snackbarHostState.showSnackbar(msg) }
     }
     val connectionErrorText = (state.connectionState as? ConnectionState.Error)?.let {
         stringResource(R.string.dashboard_connection_error, it.message)
