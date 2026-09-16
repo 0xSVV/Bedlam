@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -61,6 +62,8 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.traversalIndex
@@ -233,13 +236,14 @@ private fun LevelFilterRow(
     modifier: Modifier = Modifier,
 ) {
     FlowRow(
-        modifier = modifier,
+        modifier = modifier.selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
     ) {
         LogLevel.entries.forEach { level ->
             FilterChip(
                 selected = selected == level,
                 onClick = { onSelect(level) },
+                modifier = Modifier.semantics { role = Role.RadioButton },
                 label = {
                     Text(
                         text = level.label(),
