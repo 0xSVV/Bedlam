@@ -42,6 +42,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/check-release-version.sh "$GITHUB_REF_NAME"
 
+      - name: Check Hysteria core pin
+        run: bash .github/scripts/check-core-pin.sh
+
       - uses: ./.github/actions/setup-build
 
       - name: Decode keystore
