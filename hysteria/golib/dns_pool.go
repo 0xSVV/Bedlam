@@ -1,9 +1,11 @@
 package golib
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -29,6 +31,13 @@ type streamPool struct {
 	closed atomic.Bool
 }
 
+type streamResult struct {
+	pooled bool
+	resp   []byte
+	stream string
+	err    error
+}
+
 func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *streamPool {
 	return &streamPool{
 		label: label,
@@ -38,32 +47,95 @@ func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *
 }
 
 func (p *streamPool) exchange(ctx context.Context, query []byte) ([]byte, error) {
-	pooledFailure := ""
+	var failures []streamResult
 	if c := p.take(); c != nil {
-		stream := c.describe()
-		resp, err := p.exchangeOn(ctx, c, query)
-		if err == nil {
+		resp, pooledFailures := p.exchangeOnPooled(ctx, c, query)
+		if pooledFailures == nil {
 			return resp, nil
 		}
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("%s: %s: %w", p.label, stream, err)
+		failures = pooledFailures
+		if ctx.Err() != nil || isTimeoutClass(failures[len(failures)-1].err) {
+			return nil, p.failed(failures)
 		}
-		pooledFailure = fmt.Sprintf("%s failed: %v; ", stream, err)
 	}
+	result := p.exchangeOnNewStream(ctx, query)
+	if result.err != nil {
+		return nil, p.failed(append(failures, result))
+	}
+	return result.resp, nil
+}
+
+func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, callerQuery []byte) ([]byte, []streamResult) {
+	query := bytes.Clone(callerQuery)
+	streamCtx, stopStreams := context.WithCancel(ctx)
+	defer stopStreams()
+	results := make(chan streamResult, 2)
+	stream := pooled.describe()
+	go func() {
+		resp, err := p.exchangeOn(streamCtx, pooled, query)
+		results <- streamResult{pooled: true, resp: resp, stream: stream, err: err}
+	}()
+	hedge := time.NewTimer(hedgeDelay(ctx))
+	defer hedge.Stop()
+	var failures []streamResult
+	for running := 1; running > 0; {
+		select {
+		case <-hedge.C:
+			running++
+			go func() { results <- p.exchangeOnNewStream(streamCtx, query) }()
+		case result := <-results:
+			running--
+			if result.err == nil {
+				return result.resp, nil
+			}
+			if result.pooled {
+				failures = append([]streamResult{result}, failures...)
+			} else {
+				failures = append(failures, result)
+			}
+		}
+	}
+	return nil, failures
+}
+
+func (p *streamPool) exchangeOnNewStream(ctx context.Context, query []byte) streamResult {
 	dialStart := time.Now()
 	conn, err := p.dial(ctx)
 	if err != nil {
-		if pooledFailure != "" {
-			return nil, fmt.Errorf("%s: %s%w", p.label, pooledFailure, err)
-		}
-		return nil, err
+		return streamResult{err: err}
 	}
 	c := &pooledConn{conn: conn, opened: time.Now()}
 	resp, err := p.exchangeOn(ctx, c, query)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %snew stream dialed in %s: %w", p.label, pooledFailure, diagDuration(c.opened.Sub(dialStart)), err)
+		return streamResult{stream: "new stream dialed in " + diagDuration(c.opened.Sub(dialStart)).String(), err: err}
 	}
-	return resp, nil
+	return streamResult{resp: resp}
+}
+
+func (p *streamPool) failed(failures []streamResult) error {
+	last := failures[len(failures)-1]
+	if len(failures) == 1 && last.stream == "" {
+		return last.err
+	}
+	var earlier strings.Builder
+	for _, failure := range failures[:len(failures)-1] {
+		if failure.stream != "" {
+			earlier.WriteString(failure.stream + " failed: ")
+		}
+		earlier.WriteString(failure.err.Error() + "; ")
+	}
+	if last.stream == "" {
+		return fmt.Errorf("%s: %s%w", p.label, earlier.String(), last.err)
+	}
+	return fmt.Errorf("%s: %s%s: %w", p.label, earlier.String(), last.stream, last.err)
+}
+
+func hedgeDelay(ctx context.Context) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return dnsIOTimeout / 2
+	}
+	return time.Until(deadline) / 2
 }
 
 func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte) ([]byte, error) {

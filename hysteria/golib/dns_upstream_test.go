@@ -3,6 +3,8 @@ package golib
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/netip"
 	"sync/atomic"
 	"testing"
@@ -427,5 +429,76 @@ func TestDNSUpstream_allSilentServersFailInBudgetThenRecover(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Errorf("the next query took %v, want it answered at once", elapsed)
+	}
+}
+
+func TestDNSUpstream_singleServerSurvivesAStalePooledStream(t *testing.T) {
+	var stale atomic.Bool
+	srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
+		if stale.Load() && conn == 1 {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	r := newTCPResolver(srv.client(), "1.1.1.1:53")
+	up := &dnsUpstream{resolvers: []dnsResolver{r}, ident: "tcp|1.1.1.1:53"}
+	defer up.close()
+	fillPool(t, r.pool, 1)
+	stale.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	start := time.Now()
+	if _, err := up.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("a lone server whose new streams answer must survive a stale pooled one: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= dnsAttemptTimeout {
+		t.Errorf("query took %v, want it answered inside one %v attempt", elapsed, dnsAttemptTimeout)
+	}
+}
+
+func TestDNSUpstream_slowResolverStillAnswersPastHalfTheAttempt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		servers int
+		pooled  int
+		budget  time.Duration
+		delay   time.Duration
+	}{
+		{"lone server", 1, 2, 3 * time.Second, 1800 * time.Millisecond},
+		{"four servers", 4, 1, dnsQueryTimeout, 1400 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var slow atomic.Bool
+			var resolvers []*tcpResolver
+			up := &dnsUpstream{ident: "tcp|slow"}
+			defer up.close()
+			for i := 0; i < tc.servers; i++ {
+				dial := loopbackTCPDNSServer(t, func(_ int, q []byte) []byte {
+					if slow.Load() {
+						time.Sleep(tc.delay)
+					}
+					return dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1})
+				})
+				r := newTCPResolver(&fakeClient{tcp: func(string) (net.Conn, error) { return dial() }}, fmt.Sprintf("192.0.2.%d:53", i+1))
+				fillPool(t, r.pool, tc.pooled)
+				resolvers = append(resolvers, r)
+				up.resolvers = append(up.resolvers, r)
+			}
+			slow.Store(true)
+
+			ctx, cancel := context.WithTimeout(context.Background(), tc.budget)
+			defer cancel()
+			start := time.Now()
+			if _, err := up.exchange(ctx, dnsQuery("slow.example")); err != nil {
+				t.Fatalf("a resolver that answers every query in %v must still answer: %v", tc.delay, err)
+			}
+			if elapsed := time.Since(start); elapsed > tc.delay+time.Second {
+				t.Errorf("query took %v, want the first server's pooled stream to answer after %v", elapsed, tc.delay)
+			}
+			if held := len(resolvers[0].pool.idle); held != tc.pooled {
+				t.Errorf("first server's pool holds %d streams, want its %d slow but live streams kept", held, tc.pooled)
+			}
+		})
 	}
 }

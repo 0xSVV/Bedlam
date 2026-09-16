@@ -424,11 +424,9 @@ func TestStreamPool_reportsWhetherTheFailedStreamWasPooled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 	_, err := p.exchange(ctx, dnsQuery("example.com"))
-	msg := fmt.Sprint(err)
-	for _, want := range []string{"DNS over TCP 1.1.1.1:53: pooled stream idle 12s (open 45s, answered 1)", "read response length"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("err = %q, want it to contain %q", msg, want)
-		}
+	pattern := `^DNS over TCP 1\.1\.1\.1:53: pooled stream idle 12s \(open 45s, answered 1\) failed: read response length: .*; new stream dialed in \S+: read response length: `
+	if msg := fmt.Sprint(err); !regexp.MustCompile(pattern).MatchString(msg) {
+		t.Errorf("err = %q, want it to match %q", msg, pattern)
 	}
 	if !isTimeoutClass(err) {
 		t.Errorf("err = %v, want it still classified as a timeout", err)
@@ -481,5 +479,59 @@ func TestStreamPool_reportsAClosedPooledStreamBeforeTheRedialError(t *testing.T)
 	msg := fmt.Sprint(err)
 	if !strings.HasPrefix(msg, "DoT dns.test:853: pooled stream idle ") || !strings.Contains(msg, " failed: ") || !strings.HasSuffix(msg, "; redial refused") {
 		t.Errorf("err = %q, want the closed pooled stream reported before the redial error", msg)
+	}
+}
+
+func TestStreamPool_retriesAStalePooledStreamWithinTheAttempt(t *testing.T) {
+	var stale atomic.Bool
+	srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
+		if stale.Load() && conn == 1 {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	p := newStreamPool("test", srv.dial)
+	defer p.close()
+	fillPool(t, p, 1)
+	stale.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	resp, err := p.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("a new stream answers, so the query must succeed: %v", err)
+	}
+	if conn := answerConn(resp); conn != 2 {
+		t.Errorf("answer came from connection %d, want a new connection 2", conn)
+	}
+}
+
+func TestStreamPool_keepsTheRedialErrorAfterAStalePooledStream(t *testing.T) {
+	var stale atomic.Bool
+	srv := newFaultDNSServer(t, func(int, int) streamFault {
+		if stale.Load() {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	errRedial := errors.New("redial refused")
+	p := newStreamPool("DoT dns.test:853", func(ctx context.Context) (net.Conn, error) {
+		if stale.Load() {
+			return nil, errRedial
+		}
+		return srv.dial(ctx)
+	})
+	defer p.close()
+	fillPool(t, p, 1)
+	stale.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	_, err := p.exchange(ctx, dnsQuery("example.com"))
+	if !errors.Is(err, errRedial) {
+		t.Fatalf("err = %v, want the redial error kept", err)
+	}
+	if msg := fmt.Sprint(err); !strings.HasPrefix(msg, "DoT dns.test:853: pooled stream idle ") || !strings.Contains(msg, " failed: read response length: ") {
+		t.Errorf("err = %q, want the stale pooled stream reported before the redial error", msg)
 	}
 }

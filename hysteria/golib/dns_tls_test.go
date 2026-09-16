@@ -379,3 +379,31 @@ func TestTLSResolver_cancelDuringHandshakeReturnsPromptly(t *testing.T) {
 		}
 	}
 }
+
+func TestTLSResolver_retriesAStalePooledStreamWithinTheAttempt(t *testing.T) {
+	cert, pool := testCert(t)
+	var stale atomic.Bool
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	dial := loopbackDoTServer(t, cert, func(conn int, q []byte) []byte {
+		if stale.Load() && conn == 1 {
+			<-release
+			return nil
+		}
+		return echoDoT([4]byte{byte(conn), 0, 0, 0})(q)
+	})
+	r := newTLSResolver(&fakeClient{tcp: func(string) (net.Conn, error) { return dial() }}, "dns.test:853", &tls.Config{RootCAs: pool})
+	defer r.close()
+	fillPool(t, r.pool, 1)
+	stale.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	resp, err := r.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("a new DoT stream answers, so the query must succeed: %v", err)
+	}
+	if conn := answerConn(resp); conn != 2 {
+		t.Errorf("answer came from connection %d, want a new connection 2", conn)
+	}
+}
