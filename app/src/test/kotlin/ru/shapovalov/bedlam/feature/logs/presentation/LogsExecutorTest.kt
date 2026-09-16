@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.feature.logs.presentation
 
 import com.arkivanov.mvikotlin.main.store.DefaultStoreFactory
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -10,7 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
+import org.junit.jupiter.api.extension.RegisterExtension
 import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
 import ru.shapovalov.bedlam.testing.FakeHysteriaClient
 import ru.shapovalov.bedlam.testing.MainDispatcherExtension
@@ -19,8 +20,11 @@ import ru.shapovalov.bedlam.testing.logEntry
 import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
 
 @OptIn(ExperimentalCoroutinesApi::class)
-@ExtendWith(MainDispatcherExtension::class)
 class LogsExecutorTest {
+
+    @JvmField
+    @RegisterExtension
+    val main = MainDispatcherExtension { StandardTestDispatcher() }
 
     private val client = FakeHysteriaClient()
 

@@ -23,6 +23,7 @@ internal class LogsExecutor(
 
             LogsStore.Intent.Clear -> {
                 buffer.clear()
+                dispatch(buffer.snapshot.value.toLiveUpdated())
                 dispatch(Msg.Resumed)
             }
         }
