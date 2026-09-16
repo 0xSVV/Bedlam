@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
 
 const dohFixtureQueryLimit = 512
@@ -380,6 +382,56 @@ func TestHTTPSResolver_malformedQueryIsAStatusError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "Bad Request") {
 		t.Errorf("message %q leaks the response body", err)
+	}
+}
+
+func TestHTTPSResolver_tlsFailureIsNotAStatusError(t *testing.T) {
+	d := newDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	r, err := newHTTPSResolver(d.client(), d.url(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = r.exchange(ctx, dnsQuery("example.com"))
+	var statusErr *dohStatusError
+	var certErr *tls.CertificateVerificationError
+	if !errors.As(err, &certErr) || errors.As(err, &statusErr) || isTimeoutClass(err) {
+		t.Fatalf("err = %v, want a certificate failure", err)
+	}
+	if !strings.Contains(err.Error(), "TLS handshake with "+r.dial) {
+		t.Errorf("message %q does not name the failing stage", err)
+	}
+	if !strings.Contains(err.Error(), "request with a 29-byte query") {
+		t.Errorf("message %q lacks the query size", err)
+	}
+	if d.requests.Load() != 0 {
+		t.Errorf("server saw %d requests", d.requests.Load())
+	}
+}
+
+func TestHTTPSResolver_dialFailureNamesTheStage(t *testing.T) {
+	fc := &fakeClient{tcp: func(string) (net.Conn, error) {
+		return nil, coreErrs.DialError{Message: "TCP relay refused"}
+	}}
+	r, err := newHTTPSResolver(fc, "https://dns.test/dns-query", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = r.exchange(ctx, dnsQuery("example.com"))
+	var dialErr coreErrs.DialError
+	var statusErr *dohStatusError
+	if !errors.As(err, &dialErr) || errors.As(err, &statusErr) || isTimeoutClass(err) {
+		t.Fatalf("err = %v, want the tunnel dial error", err)
+	}
+	if !strings.Contains(err.Error(), "dial dns.test:443") {
+		t.Errorf("message %q does not name the failing stage", err)
 	}
 }
 

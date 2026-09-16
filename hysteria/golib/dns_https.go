@@ -71,12 +71,12 @@ func newHTTPSResolver(c client.Client, rawURL string, base *tls.Config) (*httpsR
 func (r *httpsResolver) dialTLS(ctx context.Context, _, _ string) (net.Conn, error) {
 	raw, err := dialTunnelTCP(ctx, r.client, r.dial)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dial %s: %w", r.dial, err)
 	}
 	tc := tls.Client(raw, r.tlsCfg)
 	if err := tc.HandshakeContext(ctx); err != nil {
 		_ = raw.Close()
-		return nil, err
+		return nil, fmt.Errorf("TLS handshake with %s: %w", r.dial, err)
 	}
 	return tc, nil
 }
@@ -107,7 +107,7 @@ func dohExchange(ctx context.Context, hc *http.Client, url string, query []byte)
 
 	resp, err := hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("DoH %s: %w", url, err)
+		return nil, fmt.Errorf("DoH %s: request with a %d-byte query: %w", url, len(query), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
