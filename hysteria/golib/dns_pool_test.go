@@ -2,11 +2,119 @@ package golib
 
 import (
 	"context"
+	"encoding/binary"
+	"fmt"
 	"net"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type streamFault int
+
+const (
+	faultAnswer streamFault = iota
+	faultAnswerThenClose
+	faultSilent
+	faultHalfLength
+	faultHalfBody
+)
+
+type faultDNSServer struct {
+	ln      net.Listener
+	conns   atomic.Int32
+	queries atomic.Int32
+	release chan struct{}
+}
+
+func newFaultDNSServer(t *testing.T, fault func(conn, query int) streamFault) *faultDNSServer {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &faultDNSServer{ln: ln, release: make(chan struct{})}
+	t.Cleanup(func() {
+		close(s.release)
+		ln.Close()
+	})
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go s.serve(c, int(s.conns.Add(1)), fault)
+		}
+	}()
+	return s
+}
+
+func (s *faultDNSServer) serve(c net.Conn, id int, fault func(conn, query int) streamFault) {
+	defer c.Close()
+	for n := 1; ; n++ {
+		q, err := readDNSFrame(c)
+		if err != nil {
+			return
+		}
+		s.queries.Add(1)
+		resp := dnsResponseFor(q, 60, [4]byte{byte(id), 0, 0, byte(n)})
+		switch fault(id, n) {
+		case faultAnswer:
+			if writeDNSFrame(c, resp) != nil {
+				return
+			}
+			continue
+		case faultAnswerThenClose:
+			_ = writeDNSFrame(c, resp)
+			return
+		case faultHalfLength:
+			_, _ = c.Write([]byte{0x00})
+		case faultHalfBody:
+			frame := make([]byte, 2+len(resp)/2)
+			binary.BigEndian.PutUint16(frame, uint16(len(resp)))
+			copy(frame[2:], resp)
+			_, _ = c.Write(frame)
+		}
+		<-s.release
+		return
+	}
+}
+
+func (s *faultDNSServer) connect(string) (net.Conn, error) {
+	return net.Dial("tcp", s.ln.Addr().String())
+}
+
+func (s *faultDNSServer) dial(context.Context) (net.Conn, error) {
+	return s.connect("")
+}
+
+func (s *faultDNSServer) client() *fakeClient {
+	return &fakeClient{tcp: s.connect}
+}
+
+func answerConn(resp []byte) int {
+	return int(resp[len(resp)-4])
+}
+
+func fillPool(t *testing.T, p *streamPool, n int) {
+	t.Helper()
+	warmed := make([]*pooledConn, 0, n)
+	for i := 0; i < n; i++ {
+		if _, err := p.exchange(context.Background(), dnsQuery(fmt.Sprintf("warm%d.example", i))); err != nil {
+			t.Fatalf("warm-up %d: %v", i, err)
+		}
+		select {
+		case c := <-p.idle:
+			warmed = append(warmed, c)
+		default:
+			t.Fatalf("warm-up %d left no stream in the pool", i)
+		}
+	}
+	for _, c := range warmed {
+		p.idle <- c
+	}
+}
 
 func loopbackTCPDNSServer(t *testing.T, respond func(conn int, query []byte) []byte) func() (net.Conn, error) {
 	t.Helper()
