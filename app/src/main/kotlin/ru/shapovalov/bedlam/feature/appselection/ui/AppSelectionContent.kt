@@ -117,7 +117,7 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
                 .padding(padding)
         ) {
             ModeChips(
-                selected = state.mode,
+                selected = state.mode.takeIf { state.isFilterLoaded },
                 onSelect = component::onModeSelected,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -127,7 +127,7 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
                     ),
             )
             when {
-                isAllMode -> AllModeHint()
+                state.isFilterLoaded && isAllMode -> AllModeHint()
                 state.isLoading -> LoadingBox()
                 else -> AppsList(
                     apps = state.filteredApps,
@@ -238,7 +238,7 @@ private fun AppSelectionTopBar(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ModeChips(
-    selected: AppFilterMode,
+    selected: AppFilterMode?,
     onSelect: (AppFilterMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
