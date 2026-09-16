@@ -100,7 +100,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
     val clipboardLabel = stringResource(R.string.profile_config_clip_label)
     val copiedMessage = stringResource(R.string.profile_config_copy_success)
 
-    BackHandler { component.onBackPressed() }
+    BackHandler(enabled = state.editMode) { component.onBackPressed() }
 
     val saveErrorMessage = state.saveError?.let {
         stringResource(R.string.profile_config_save_error, it)
