@@ -195,6 +195,13 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
             onDismiss = component::onCancelDelete,
         )
     }
+
+    if (state.pendingDiscardConfirmation) {
+        DiscardConfirmationDialog(
+            onConfirm = component::onDiscardChanges,
+            onDismiss = component::onKeepEditing,
+        )
+    }
 }
 
 @Composable
@@ -217,7 +224,7 @@ private fun TopActions(
             Spacer(Modifier.size(0.dp))
         } else {
             Row {
-                TextButton(onClick = component::onDiscardChanges, enabled = !state.isSaving) {
+                TextButton(onClick = component::onCancelEdit, enabled = !state.isSaving) {
                     Text(stringResource(R.string.action_cancel))
                 }
                 TextButton(
@@ -305,6 +312,31 @@ private fun DeleteConfirmationDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun DiscardConfirmationDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.profile_config_discard_title)) },
+        text = { Text(stringResource(R.string.profile_config_discard_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.profile_config_discard_confirm),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.profile_config_discard_keep))
             }
         },
     )
