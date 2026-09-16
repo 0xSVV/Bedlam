@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"regexp"
 	"runtime"
 	"strings"
@@ -715,5 +716,36 @@ func TestStreamPool_closeRacingAReturnedStreamClosesIt(t *testing.T) {
 	}
 	if leaked > 0 {
 		t.Errorf("%d of %d streams returned while the pool closed were left open", leaked, rounds)
+	}
+}
+
+type failingConn struct {
+	net.Conn
+	err error
+}
+
+func (c failingConn) Read([]byte) (int, error)    { return 0, c.err }
+func (c failingConn) Write(b []byte) (int, error) { return len(b), nil }
+func (c failingConn) Close() error                { return nil }
+func (c failingConn) SetDeadline(time.Time) error { return nil }
+
+func TestStreamPool_skipsTheRedialWhenAPooledStreamReachesItsDeadline(t *testing.T) {
+	var dialed atomic.Int32
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+		dialed.Add(1)
+		return nil, errors.New("dial refused")
+	})
+	defer p.close()
+	expired := &net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}
+	p.idle <- &pooledConn{conn: failingConn{err: expired}, opened: time.Now(), last: time.Now()}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := p.exchange(ctx, dnsQuery("example.com"))
+	if !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Errorf("err = %v, want the pooled stream's deadline error", err)
+	}
+	if n := dialed.Load(); n != 0 {
+		t.Errorf("dialled %d streams after the pooled one reached its deadline, want none", n)
 	}
 }
