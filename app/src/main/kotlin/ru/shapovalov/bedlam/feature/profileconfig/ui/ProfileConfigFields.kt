@@ -239,6 +239,53 @@ internal fun <T> numericFieldText(
     parse: (String) -> T?,
 ): String = if (focused || parse(local.ifEmpty { "0" }) == parse(stored)) local else stored
 
+@Composable
+internal fun ListFieldRow(
+    label: String,
+    values: List<String>,
+    editMode: Boolean,
+    onChange: (List<String>) -> Unit,
+    caution: String? = null,
+    showDivider: Boolean = true,
+) {
+    FieldRowFrame(
+        label = label,
+        caution = caution,
+        editMode = editMode,
+        showDivider = showDivider,
+        labelInField = true,
+    ) {
+        AnimatedFieldContent(editMode = editMode) { isEditing ->
+            if (isEditing) {
+                var local by rememberSaveable { mutableStateOf(formatListField(values)) }
+                var focused by remember { mutableStateOf(false) }
+                LaunchedEffect(values, focused) {
+                    local = listFieldText(local, values, focused)
+                }
+                ConfigTextField(
+                    label = label,
+                    value = local,
+                    onValueChange = { entry ->
+                        local = entry
+                        onChange(parseListField(entry))
+                    },
+                    modifier = Modifier.onFocusChanged { focused = it.isFocused },
+                )
+            } else {
+                ReadOnlyValue(value = formatListField(values))
+            }
+        }
+    }
+}
+
+internal fun parseListField(text: String): List<String> =
+    text.split(',', '\n').map(String::trim).filter(String::isNotEmpty)
+
+internal fun formatListField(values: List<String>): String = values.joinToString(", ")
+
+internal fun listFieldText(local: String, stored: List<String>, focused: Boolean): String =
+    if (focused || parseListField(local) == stored) local else formatListField(stored)
+
 internal fun readOnlyFieldText(value: String, masked: Boolean): String =
     if (masked && value.isNotBlank()) MASKED_VALUE else value
 

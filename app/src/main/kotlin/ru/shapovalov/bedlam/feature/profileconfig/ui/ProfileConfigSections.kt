@@ -183,13 +183,12 @@ internal fun RealmSection(
     val realm = draft.realm ?: RealmOptions()
     val caution = stringResource(R.string.profile_config_caution_realm)
     SectionCard(title = stringResource(R.string.profile_config_section_realm)) {
-        TextFieldRow(
+        ListFieldRow(
             label = "stunServers",
-            value = realm.stunServers.joinToString(", "),
+            values = realm.stunServers,
             editMode = editMode,
             caution = caution,
-            onChange = { entry ->
-                val servers = entry.split(',', '\n').map(String::trim).filter(String::isNotEmpty)
+            onChange = { servers ->
                 onDraftChanged(draft.copy(realm = realm.copy(stunServers = servers)))
             },
         )
