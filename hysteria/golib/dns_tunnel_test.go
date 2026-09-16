@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 	"github.com/apernet/hysteria/core/v2/server"
 )
 
@@ -265,5 +267,80 @@ func TestTCPResolver_retriesWhenTheResolverClosesAnIdleStreamThroughTheTunnel(t 
 	}
 	if conn := answerConn(resp); conn != 2 {
 		t.Errorf("answer came from connection %d, want a new connection 2", conn)
+	}
+}
+
+func hangingOutbound(t *testing.T) func(string) (net.Conn, error) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	return func(string) (net.Conn, error) {
+		<-release
+		return nil, errors.New("released")
+	}
+}
+
+func TestTCPResolver_fastOpenReportsAHungServerDialAsAResponseTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		fastOpen bool
+		want     string
+	}{
+		{true, "read response length"},
+		{false, "dial DNS server 8.8.8.8:53"},
+	} {
+		tt := newTestTunnel(t, tc.fastOpen, hangingOutbound(t))
+		r := newTCPResolver(tt, "8.8.8.8:53")
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		start := time.Now()
+		_, err := r.exchange(ctx, dnsQuery("example.com"))
+		elapsed := time.Since(start)
+		cancel()
+		r.close()
+		if !isTimeoutClass(err) || !strings.Contains(fmt.Sprint(err), tc.want) {
+			t.Errorf("fastOpen=%v: err = %v, want a timeout mentioning %q", tc.fastOpen, err, tc.want)
+		}
+		if elapsed > time.Second {
+			t.Errorf("fastOpen=%v: a hung server dial held the query for %v", tc.fastOpen, elapsed)
+		}
+	}
+}
+
+func TestTLSResolver_fastOpenReportsAHungServerDialAsAHandshakeTimeout(t *testing.T) {
+	_, pool := testCert(t)
+	tt := newTestTunnel(t, true, hangingOutbound(t))
+	r := newTLSResolver(tt, "dns.test:853", &tls.Config{RootCAs: pool})
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := r.exchange(ctx, dnsQuery("example.com"))
+	if !isTimeoutClass(err) || !strings.Contains(fmt.Sprint(err), "DoT handshake with dns.test:853") {
+		t.Errorf("err = %v, want a handshake timeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("a hung server dial held the DoT handshake for %v", elapsed)
+	}
+}
+
+func TestTCPResolver_fastOpenReportsARefusedServerDialAsADialError(t *testing.T) {
+	tt := newTestTunnel(t, true, func(string) (net.Conn, error) {
+		return nil, errors.New("connect: connection refused")
+	})
+	r := newTCPResolver(tt, "8.8.8.8:53")
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := r.exchange(ctx, dnsQuery("example.com"))
+	var dialErr coreErrs.DialError
+	if !errors.As(err, &dialErr) || !strings.Contains(fmt.Sprint(err), "read response length") {
+		t.Errorf("err = %v, want a DialError carried by the first read", err)
+	}
+	if isTimeoutClass(err) {
+		t.Errorf("err = %v, a refused dial must not look like a timeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("a refused server dial took %v to surface", elapsed)
 	}
 }
