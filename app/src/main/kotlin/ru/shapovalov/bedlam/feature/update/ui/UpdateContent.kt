@@ -140,7 +140,7 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ReleaseNotesCard(notes: String, modifier: Modifier = Modifier) {
+internal fun ReleaseNotesCard(notes: String, modifier: Modifier = Modifier) {
     val spacing = MaterialTheme.spacing
     ElevatedCard(modifier = modifier, shape = MaterialTheme.shapes.extraLarge) {
         Column(
@@ -164,7 +164,7 @@ private fun ReleaseNotesCard(notes: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun IdleActions(onInstall: () -> Unit, onSkip: () -> Unit) {
+internal fun IdleActions(onInstall: () -> Unit, onSkip: () -> Unit) {
     val spacing = MaterialTheme.spacing
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Button(onClick = onInstall, modifier = Modifier.fillMaxWidth()) {
@@ -179,7 +179,7 @@ private fun IdleActions(onInstall: () -> Unit, onSkip: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun DownloadProgress(phase: UpdateStore.State.Phase.Downloading) {
+internal fun DownloadProgress(phase: UpdateStore.State.Phase.Downloading) {
     val spacing = MaterialTheme.spacing
     val context = LocalContext.current
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -208,7 +208,7 @@ private fun DownloadProgress(phase: UpdateStore.State.Phase.Downloading) {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun InstallingIndicator() {
+internal fun InstallingIndicator() {
     val spacing = MaterialTheme.spacing
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         LoadingIndicator(modifier = Modifier.size(UpdateLoadingIndicatorSize))
@@ -222,7 +222,7 @@ private fun InstallingIndicator() {
 }
 
 @Composable
-private fun FailedActions(message: String, onRetry: () -> Unit, onSkip: () -> Unit) {
+internal fun FailedActions(message: String, onRetry: () -> Unit, onSkip: () -> Unit) {
     val spacing = MaterialTheme.spacing
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
@@ -243,7 +243,7 @@ private fun FailedActions(message: String, onRetry: () -> Unit, onSkip: () -> Un
 }
 
 @Composable
-private fun InstallPermissionActions(onRetry: () -> Unit, onSkip: () -> Unit) {
+internal fun InstallPermissionActions(onRetry: () -> Unit, onSkip: () -> Unit) {
     val spacing = MaterialTheme.spacing
     val context = LocalContext.current
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -278,7 +278,7 @@ private fun InstallPermissionActions(onRetry: () -> Unit, onSkip: () -> Unit) {
 }
 
 @Composable
-private fun BlockedActions(message: String, onSkip: () -> Unit) {
+internal fun BlockedActions(message: String, onSkip: () -> Unit) {
     val spacing = MaterialTheme.spacing
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
