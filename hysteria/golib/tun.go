@@ -12,8 +12,15 @@ import (
 
 	singtun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/buf"
+	"github.com/sagernet/sing/common/canceler"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
+)
+
+const (
+	udpSessionTimeout      = 300 * time.Second
+	udpIdleRefreshInterval = time.Second
+	udpSessionLimit        = 16384
 )
 
 func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string, enableIPv6 bool, dnsJSON string) error {
@@ -47,13 +54,7 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 		return fmt.Errorf("dns upstream: %w", err)
 	}
 
-	tunOpts := singtun.Options{
-		FileDescriptor: int(fd),
-		MTU:            uint32(mtu),
-		Inet4Address:   []netip.Prefix{inet4},
-		Inet6Address:   []netip.Prefix{inet6},
-	}
-
+	tunOpts := tunOptions(fd, mtu, inet4, inet6)
 	tunIface, err := singtun.New(tunOpts)
 	if err != nil {
 		upstream.close()
@@ -62,19 +63,20 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	stack, err := singtun.NewGVisor(singtun.StackOptions{
-		Context:    ctx,
-		Tun:        tunIface,
-		TunOptions: tunOpts,
-		UDPTimeout: 300,
-		Handler:    &tunHandler{session: s, client: c, ipv6Enabled: enableIPv6, dns: upstream},
-		Logger:     &tunLogger{},
-	})
+	handler := &tunHandler{session: s, client: c, ipv6Enabled: enableIPv6, dns: upstream}
+	stack, err := singtun.NewGVisor(tunStackOptions(ctx, tunIface, tunOpts, handler))
 	if err != nil {
 		cancel()
 		tunIface.Close()
 		upstream.close()
 		return fmt.Errorf("create TUN stack: %w", err)
+	}
+
+	if err := tunIface.Start(); err != nil {
+		cancel()
+		tunIface.Close()
+		upstream.close()
+		return fmt.Errorf("start TUN: %w", err)
 	}
 
 	if err := stack.Start(); err != nil {
@@ -93,6 +95,29 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor, ipv6=%v, dns=%s)",
 		fd, mtu, enableIPv6, upstream.id())
 	return nil
+}
+
+func tunOptions(fd int32, mtu int32, inet4, inet6 netip.Prefix) singtun.Options {
+	return singtun.Options{
+		FileDescriptor: int(fd),
+		MTU:            uint32(mtu),
+		Inet4Address:   []netip.Prefix{inet4},
+		Inet6Address:   []netip.Prefix{inet6},
+		DNSMode:        singtun.DNSModeDisabled,
+	}
+}
+
+func tunStackOptions(ctx context.Context, tunIface singtun.Tun, tunOpts singtun.Options, handler singtun.Handler) singtun.StackOptions {
+	return singtun.StackOptions{
+		Context:    ctx,
+		Tun:        tunIface,
+		TunOptions: tunOpts,
+		UDPTimeout: udpSessionTimeout,
+		UDPMapping: singtun.NATMappingAddressAndPortDependent,
+		UDPNATMax:  udpSessionLimit,
+		Handler:    handler,
+		Logger:     &tunLogger{},
+	}
 }
 
 func (h *tunHandler) rejectIPv6(dest M.Socksaddr) bool {
@@ -150,27 +175,44 @@ func (s *Session) StopTUN() error {
 	return err
 }
 
-func (h *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m M.Metadata) error {
+func (h *tunHandler) JudgeFlow(uint8, netip.AddrPort, netip.AddrPort, []byte) singtun.FlowVerdict {
+	return singtun.FlowVerdict{Action: singtun.ActionAccept}
+}
+
+func (h *tunHandler) NewDNSPacket([]byte, M.Socksaddr, M.Socksaddr, N.PacketWriter) {}
+
+func (h *tunHandler) NewConnectionEx(ctx context.Context, conn net.Conn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
+	err := h.newConnection(ctx, conn, source, destination)
+	if onClose != nil {
+		onClose(err)
+	}
+}
+
+func (h *tunHandler) newConnection(ctx context.Context, conn net.Conn, source M.Socksaddr, destination M.Socksaddr) error {
 	defer conn.Close()
 
-	if h.rejectIPv6(m.Destination) {
-		return fmt.Errorf("IPv6 disabled: %s", m.Destination)
+	if err := N.ReportHandshakeSuccess(conn); err != nil {
+		return err
 	}
 
-	if m.Destination.Port == 53 && h.dns != nil {
+	if h.rejectIPv6(destination) {
+		return fmt.Errorf("IPv6 disabled: %s", destination)
+	}
+
+	if destination.Port == 53 && h.dns != nil {
 		return h.serveDNSStream(ctx, conn)
 	}
-	if h.isResolverAddr(m.Destination) {
-		return fmt.Errorf("local resolver refuses %s", m.Destination)
+	if h.isResolverAddr(destination) {
+		return fmt.Errorf("local resolver refuses %s", destination)
 	}
 
-	target := m.Destination.String()
-	log(LogLevelDebug, srcTun, "TCP: %s → %s", m.Source, target)
+	target := destination.String()
+	log(LogLevelDebug, srcTun, "TCP: %s → %s", source, target)
 
 	remote, err := h.client.TCP(target)
 	if err != nil {
 		if tcpDialErrLimiter.allow(target) {
-			log(LogLevelWarn, srcTun, "TCP dial error: %s → %s: %s", m.Source, target, err)
+			log(LogLevelWarn, srcTun, "TCP dial error: %s → %s: %s", source, target, err)
 		}
 		return err
 	}
@@ -203,24 +245,31 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (h *tunHandler) NewPacketConnection(ctx context.Context, conn N.PacketConn, m M.Metadata) error {
+func (h *tunHandler) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
+	err := h.newPacketConnection(ctx, conn, source, destination)
+	if onClose != nil {
+		onClose(err)
+	}
+}
+
+func (h *tunHandler) newPacketConnection(ctx context.Context, conn N.PacketConn, source M.Socksaddr, destination M.Socksaddr) error {
 	defer conn.Close()
 
-	if h.rejectIPv6(m.Destination) {
-		return fmt.Errorf("IPv6 disabled: %s", m.Destination)
+	if h.rejectIPv6(destination) {
+		return fmt.Errorf("IPv6 disabled: %s", destination)
 	}
 
-	dest := m.Destination.String()
-	log(LogLevelDebug, srcTun, "UDP session: %s → %s", m.Source, dest)
+	dest := destination.String()
+	log(LogLevelDebug, srcTun, "UDP session: %s → %s", source, dest)
 
 	// Every DNS query answers from the configured upstream, not just the ones
 	// addressed to the on-TUN resolver: an app with a hard-coded resolver must
 	// not silently get plain DNS when the user picked an encrypted transport.
-	if m.Destination.Port == 53 && h.dns != nil {
+	if destination.Port == 53 && h.dns != nil {
 		return h.serveDNSPackets(ctx, conn, dest)
 	}
 
-	return h.handleUDPRelay(ctx, conn)
+	return h.handleUDPRelay(ctx, conn, destination)
 }
 
 const (
@@ -331,7 +380,7 @@ func logDNSError(upstreamID string, err error) {
 	}
 }
 
-func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) error {
+func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn, origin M.Socksaddr) error {
 	rc, err := h.client.UDP()
 	if err != nil {
 		log(LogLevelWarn, srcTun, "UDP session open failed: %s", err)
@@ -342,21 +391,19 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 	done := make(chan struct{}, 2)
 
 	go func() {
+		refresh := newUDPIdleRefresh(conn)
 		for {
-			data, from, err := rc.Receive()
+			data, _, err := rc.Receive()
 			if err != nil {
 				done <- struct{}{}
 				return
 			}
 			h.session.addRx(len(data))
-			var dest M.Socksaddr
-			if ap, perr := netip.ParseAddrPort(from); perr == nil {
-				dest = M.SocksaddrFromNetIP(ap)
-			}
-			if err := conn.WritePacket(buf.As(data), dest); err != nil {
+			if err := conn.WritePacket(buf.As(data), origin); err != nil {
 				done <- struct{}{}
 				return
 			}
+			refresh.touch(time.Now())
 		}
 	}()
 
@@ -388,8 +435,23 @@ func (h *tunHandler) handleUDPRelay(ctx context.Context, conn N.PacketConn) erro
 	}
 }
 
-func (h *tunHandler) NewError(ctx context.Context, err error) {
-	log(LogLevelDebug, srcTun, "Handler error: %s", err)
+type udpIdleRefresh struct {
+	conn canceler.PacketConn
+	last time.Time
+}
+
+func newUDPIdleRefresh(conn N.PacketConn) *udpIdleRefresh {
+	r := &udpIdleRefresh{}
+	r.conn, _ = conn.(canceler.PacketConn)
+	return r
+}
+
+func (r *udpIdleRefresh) touch(now time.Time) {
+	if r.conn == nil || now.Sub(r.last) < udpIdleRefreshInterval {
+		return
+	}
+	r.last = now
+	r.conn.SetTimeout(udpSessionTimeout)
 }
 
 var (

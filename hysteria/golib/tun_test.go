@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apernet/hysteria/core/v2/client"
+	singtun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/buf"
 	M "github.com/sagernet/sing/common/metadata"
 )
@@ -182,7 +184,7 @@ func TestServeDNSPackets_servfailOnError(t *testing.T) {
 	}
 }
 
-func TestNewPacketConnection_hardcodedResolverUsesTheUpstream(t *testing.T) {
+func TestNewPacketConnectionEx_hardcodedResolverUsesTheUpstream(t *testing.T) {
 	stub := &stubResolver{name: "stub", reply: echoAnswer([4]byte{7, 7, 7, 7})}
 	h := testHandler(t, stub)
 	// A direct dial would mean plaintext DNS to the hard-coded server.
@@ -192,7 +194,7 @@ func TestNewPacketConnection_hardcodedResolverUsesTheUpstream(t *testing.T) {
 	}}
 	pc := newFakePacketConn()
 	dest := M.SocksaddrFrom(netip.MustParseAddr("8.8.8.8"), 53)
-	go h.NewPacketConnection(context.Background(), pc, M.Metadata{Destination: dest})
+	go h.NewPacketConnectionEx(context.Background(), pc, M.Socksaddr{}, dest, nil)
 	defer pc.Close()
 
 	pc.in <- fakePacket{dnsQuery("example.com"), dest}
@@ -212,7 +214,7 @@ func TestNewPacketConnection_hardcodedResolverUsesTheUpstream(t *testing.T) {
 	}
 }
 
-func TestNewConnection_hardcodedResolverUsesTheUpstream(t *testing.T) {
+func TestNewConnectionEx_hardcodedResolverUsesTheUpstream(t *testing.T) {
 	stub := &stubResolver{name: "stub", reply: echoAnswer([4]byte{7, 7, 7, 7})}
 	h := testHandler(t, stub)
 	h.client = &fakeClient{tcp: func(addr string) (net.Conn, error) {
@@ -221,11 +223,7 @@ func TestNewConnection_hardcodedResolverUsesTheUpstream(t *testing.T) {
 	}}
 
 	c, s := net.Pipe()
-	go func() {
-		_ = h.NewConnection(context.Background(), s, M.Metadata{
-			Destination: M.SocksaddrFrom(netip.MustParseAddr("8.8.8.8"), 53),
-		})
-	}()
+	go h.NewConnectionEx(context.Background(), s, M.Socksaddr{}, M.SocksaddrFrom(netip.MustParseAddr("8.8.8.8"), 53), nil)
 	if err := writeDNSFrame(c, dnsQuery("example.com")); err != nil {
 		t.Fatal(err)
 	}
@@ -264,34 +262,28 @@ func TestServeDNSStream_framedRoundTrip(t *testing.T) {
 	}
 }
 
-func TestNewConnection_resolverPorts(t *testing.T) {
+func TestNewConnectionEx_resolverPorts(t *testing.T) {
 	h := testHandler(t, &stubResolver{name: "stub", reply: echoAnswer([4]byte{5, 5, 5, 5})})
 
 	c, s := net.Pipe()
 	errCh := make(chan error, 1)
-	go func() {
-		errCh <- h.NewConnection(context.Background(), s, M.Metadata{
-			Destination: M.SocksaddrFrom(netip.MustParseAddr("172.19.0.2"), 853),
-		})
-	}()
+	go h.NewConnectionEx(context.Background(), s, M.Socksaddr{}, M.SocksaddrFrom(netip.MustParseAddr("172.19.0.2"), 853), func(err error) {
+		errCh <- err
+	})
 	select {
 	case err := <-errCh:
 		if err == nil {
 			t.Fatal("port 853 on the resolver address must be refused")
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("NewConnection hung")
+		t.Fatal("NewConnectionEx hung")
 	}
 	if _, err := c.Read(make([]byte, 1)); err == nil {
 		t.Error("refused connection should be closed")
 	}
 
 	c2, s2 := net.Pipe()
-	go func() {
-		_ = h.NewConnection(context.Background(), s2, M.Metadata{
-			Destination: M.SocksaddrFrom(netip.MustParseAddr("172.19.0.2"), 53),
-		})
-	}()
+	go h.NewConnectionEx(context.Background(), s2, M.Socksaddr{}, M.SocksaddrFrom(netip.MustParseAddr("172.19.0.2"), 53), nil)
 	if err := writeDNSFrame(c2, dnsQuery("example.com")); err != nil {
 		t.Fatal(err)
 	}
@@ -618,4 +610,181 @@ func TestTunHandler_truncatedAnswerIsRetriedOverTCP(t *testing.T) {
 			t.Errorf("attempt %d reached the resolver altered", i)
 		}
 	}
+}
+
+func TestTunStackOptions_keepPerFlowUDPSessions(t *testing.T) {
+	inet4 := netip.MustParsePrefix("172.19.0.1/30")
+	inet6 := netip.MustParsePrefix("fdfe:dcba:9876::1/126")
+	tunOpts := tunOptions(42, 1500, inet4, inet6)
+	if tunOpts.FileDescriptor != 42 || tunOpts.MTU != 1500 {
+		t.Errorf("fd = %d, mtu = %d, want 42 and 1500", tunOpts.FileDescriptor, tunOpts.MTU)
+	}
+	if len(tunOpts.Inet4Address) != 1 || tunOpts.Inet4Address[0] != inet4 ||
+		len(tunOpts.Inet6Address) != 1 || tunOpts.Inet6Address[0] != inet6 {
+		t.Errorf("addresses = %v and %v, want %s and %s", tunOpts.Inet4Address, tunOpts.Inet6Address, inet4, inet6)
+	}
+	if tunOpts.DNSMode != singtun.DNSModeDisabled {
+		t.Errorf("DNS mode = %q, want %q", tunOpts.DNSMode, singtun.DNSModeDisabled)
+	}
+
+	h := &tunHandler{}
+	opts := tunStackOptions(context.Background(), nil, tunOpts, h)
+	if opts.UDPTimeout != 5*time.Minute {
+		t.Errorf("UDP timeout = %s, want 5m0s", opts.UDPTimeout)
+	}
+	if opts.UDPMapping != singtun.NATMappingAddressAndPortDependent {
+		t.Errorf("UDP mapping = %d, want one session per source and destination", opts.UDPMapping)
+	}
+	if opts.UDPNATMax != 16384 {
+		t.Errorf("UDP session limit = %d, want a fixed 16384 rather than one sized from the process RSS", opts.UDPNATMax)
+	}
+	if opts.Handler != singtun.Handler(h) || opts.TunOptions.FileDescriptor != 42 {
+		t.Error("stack options must carry the handler and the TUN options")
+	}
+}
+
+func TestTunHandler_judgeFlowLeavesEveryFlowToTheHandlers(t *testing.T) {
+	h := testHandler(t, &stubResolver{name: "stub", reply: echoAnswer([4]byte{5, 5, 5, 5})})
+	h.ipv6Enabled = false
+	source := netip.MustParseAddrPort("172.19.0.1:40000")
+	cases := []struct {
+		network     uint8
+		destination string
+	}{
+		{6, "203.0.113.7:443"},
+		{17, "172.19.0.2:53"},
+		{6, "172.19.0.2:853"},
+		{17, "[2001:db8::1]:443"},
+		{1, "203.0.113.7:0"},
+	}
+	for _, c := range cases {
+		verdict := h.JudgeFlow(c.network, source, netip.MustParseAddrPort(c.destination), nil)
+		if verdict.Action != singtun.ActionAccept {
+			t.Errorf("protocol %d to %s: action = %d, want accept", c.network, c.destination, verdict.Action)
+		}
+	}
+}
+
+type handshakeConn struct {
+	net.Conn
+	handshakes atomic.Int32
+}
+
+func (c *handshakeConn) HandshakeSuccess() error {
+	c.handshakes.Add(1)
+	return nil
+}
+
+func TestNewConnectionEx_acceptsBeforeDialing(t *testing.T) {
+	h := testHandler(t, &stubResolver{name: "stub", reply: echoAnswer([4]byte{5, 5, 5, 5})})
+	c, s := net.Pipe()
+	defer c.Close()
+	conn := &handshakeConn{Conn: s}
+	dialErr := errors.New("dial refused")
+	h.client = &fakeClient{tcp: func(addr string) (net.Conn, error) {
+		if n := conn.handshakes.Load(); n != 1 {
+			t.Errorf("dialed %s after %d handshakes, want the app's connection accepted first", addr, n)
+		}
+		return nil, dialErr
+	}}
+
+	closed := make(chan error, 1)
+	go h.NewConnectionEx(context.Background(), conn, M.Socksaddr{}, M.SocksaddrFrom(netip.MustParseAddr("203.0.113.7"), 443), func(err error) {
+		closed <- err
+	})
+	select {
+	case err := <-closed:
+		if !errors.Is(err, dialErr) {
+			t.Errorf("onClose got %v, want the dial error", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("NewConnectionEx hung")
+	}
+	if _, err := c.Read(make([]byte, 1)); err == nil {
+		t.Error("the app's connection should be closed after a failed dial")
+	}
+}
+
+type timeoutPacketConn struct {
+	*fakePacketConn
+	mu       sync.Mutex
+	timeouts []time.Duration
+}
+
+func (c *timeoutPacketConn) Timeout() time.Duration { return udpSessionTimeout }
+
+func (c *timeoutPacketConn) SetTimeout(timeout time.Duration) bool {
+	c.mu.Lock()
+	c.timeouts = append(c.timeouts, timeout)
+	c.mu.Unlock()
+	return true
+}
+
+func (c *timeoutPacketConn) recorded() []time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]time.Duration(nil), c.timeouts...)
+}
+
+func udpRelayHandler(t *testing.T) (*tunHandler, *fakeUDPConn) {
+	t.Helper()
+	h := testHandler(t, &stubResolver{name: "stub", reply: echoAnswer([4]byte{5, 5, 5, 5})})
+	uc := newFakeUDPConn(nil)
+	h.client = &fakeClient{udp: func() (client.HyUDPConn, error) { return uc, nil }}
+	return h, uc
+}
+
+func TestNewPacketConnectionEx_repliesComeFromTheAppsDestination(t *testing.T) {
+	h, uc := udpRelayHandler(t)
+	pc := newFakePacketConn()
+	defer pc.Close()
+	dest := M.SocksaddrFrom(netip.MustParseAddr("203.0.113.7"), 3478)
+	go h.NewPacketConnectionEx(context.Background(), pc, M.Socksaddr{}, dest, nil)
+
+	for _, from := range []string{"203.0.113.7:3478", "198.51.100.9:4444", "[::ffff:203.0.113.7]:3478", ""} {
+		uc.recv <- udpMsg{[]byte("pong"), from}
+		select {
+		case p := <-pc.out:
+			if p.addr != dest {
+				t.Errorf("reply the server reported from %q reached the app from %s, want %s", from, p.addr, dest)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("the reply reported from %q never reached the app", from)
+		}
+	}
+}
+
+func TestNewPacketConnectionEx_repliesKeepTheSessionAlive(t *testing.T) {
+	h, uc := udpRelayHandler(t)
+	pc := &timeoutPacketConn{fakePacketConn: newFakePacketConn()}
+	defer pc.Close()
+	dest := M.SocksaddrFrom(netip.MustParseAddr("203.0.113.7"), 3478)
+	go h.NewPacketConnectionEx(context.Background(), pc, M.Socksaddr{}, dest, nil)
+
+	for i := 0; i < 3; i++ {
+		uc.recv <- udpMsg{[]byte("pong"), dest.String()}
+		select {
+		case <-pc.out:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("reply %d never reached the app", i)
+		}
+	}
+	timeouts := pc.recorded()
+	if len(timeouts) == 0 || timeouts[0] != udpSessionTimeout {
+		t.Errorf("SetTimeout calls = %v, want replies to renew the %s idle timeout", timeouts, udpSessionTimeout)
+	}
+}
+
+func TestUDPIdleRefresh_renewsAtMostOncePerInterval(t *testing.T) {
+	pc := &timeoutPacketConn{fakePacketConn: newFakePacketConn()}
+	r := newUDPIdleRefresh(pc)
+	start := time.Now()
+	r.touch(start)
+	r.touch(start.Add(udpIdleRefreshInterval - time.Millisecond))
+	r.touch(start.Add(udpIdleRefreshInterval))
+	if got := pc.recorded(); len(got) != 2 {
+		t.Errorf("SetTimeout calls = %v, want 2 over one refresh interval", got)
+	}
+
+	newUDPIdleRefresh(newFakePacketConn()).touch(start)
 }
