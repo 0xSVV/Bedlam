@@ -22,7 +22,7 @@ class VpnNotificationController(private val context: Context) {
     var connectionName: String = ""
 
     private val rateHistory = RateHistory()
-    private val sparklineRenderer = SparklineRenderer()
+    private val sparklineRenderer = SparklineRenderer(context)
     private val postLock = Any()
 
     @Volatile
