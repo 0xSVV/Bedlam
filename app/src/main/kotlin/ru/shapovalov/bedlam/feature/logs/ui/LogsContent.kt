@@ -230,7 +230,7 @@ private fun LogsActionsMenu(
 }
 
 @Composable
-private fun LevelFilterRow(
+internal fun LevelFilterRow(
     selected: LogLevel,
     onSelect: (LogLevel) -> Unit,
     modifier: Modifier = Modifier,
@@ -262,7 +262,7 @@ private fun LevelFilterRow(
 }
 
 @Composable
-private fun EmptyState(text: String) {
+internal fun EmptyState(text: String) {
     val spacing = MaterialTheme.spacing
     Box(
         modifier = Modifier
@@ -281,7 +281,7 @@ private fun EmptyState(text: String) {
 }
 
 @Composable
-private fun LogList(entries: List<LogEntry>, droppedCount: Long) {
+internal fun LogList(entries: List<LogEntry>, droppedCount: Long) {
     val listState = rememberLazyListState()
     var followTail by rememberSaveable { mutableStateOf(true) }
     val tailIndex = logTailIndex(entries.size, droppedCount)
