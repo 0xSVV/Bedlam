@@ -285,7 +285,7 @@ private fun TopActions(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ProfileActionsToolbar(
+internal fun ProfileActionsToolbar(
     visible: Boolean,
     onDelete: () -> Unit,
     onCopy: () -> Unit,
@@ -381,7 +381,7 @@ private fun DiscardConfirmationDialog(
 }
 
 @Composable
-private fun ConfigBody(
+internal fun ConfigBody(
     draft: HysteriaConfig,
     name: String,
     editMode: Boolean,
@@ -447,14 +447,14 @@ private fun DocsFooter() {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun CenteredSpinner() {
+internal fun CenteredSpinner() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularWavyProgressIndicator()
     }
 }
 
 @Composable
-private fun NotFoundMessage() {
+internal fun NotFoundMessage() {
     val spacing = MaterialTheme.spacing
     Box(
         modifier = Modifier
