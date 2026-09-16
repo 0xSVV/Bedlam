@@ -22,7 +22,15 @@ internal sealed interface Msg {
 
 internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
     override fun DashboardStore.State.reduce(msg: Msg): DashboardStore.State = when (msg) {
-        is Msg.ProfilesLoaded -> copy(profiles = msg.profiles, activeProfileId = msg.activeId)
+        is Msg.ProfilesLoaded -> {
+            val ids = msg.profiles.mapTo(HashSet()) { it.id }
+            copy(
+                profiles = msg.profiles,
+                activeProfileId = msg.activeId,
+                latencies = latencies.filterKeys { it in ids },
+            )
+        }
+
         is Msg.ConnectionChanged -> copy(
             connectionState = msg.state,
             connectedSinceMillis = msg.connectedSinceMillis,
@@ -42,7 +50,9 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
         )
         is Msg.ErrorRaised -> copy(error = msg.reason)
         Msg.ErrorDismissed -> copy(error = null)
-        is Msg.LatencyUpdated -> copy(latencies = latencies + (msg.id to msg.result))
+        is Msg.LatencyUpdated ->
+            if (profiles.none { it.id == msg.id }) this
+            else copy(latencies = latencies + (msg.id to msg.result))
     }
 
     private fun DashboardStore.State.errorAfterConnectionChange(

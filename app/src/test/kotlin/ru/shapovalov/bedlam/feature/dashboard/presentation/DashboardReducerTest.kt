@@ -28,6 +28,29 @@ class DashboardReducerTest {
     }
 
     @Test
+    fun `profiles that disappear lose their latency`() {
+        val state = DashboardReducer.reduceAll(
+            DashboardStore.State(
+                profiles = listOf(home, work),
+                latencies = mapOf("a" to LatencyResult.Success(10), "b" to LatencyResult.Success(20)),
+            ),
+            Msg.ProfilesLoaded(listOf(home), "a"),
+        )
+
+        assertEquals(mapOf("a" to LatencyResult.Success(10)), state.latencies)
+    }
+
+    @Test
+    fun `a latency result for a removed profile is ignored`() {
+        val state = DashboardStore.State(profiles = listOf(home))
+
+        assertEquals(
+            state,
+            DashboardReducer.reduceAll(state, Msg.LatencyUpdated("b", LatencyResult.Success(5))),
+        )
+    }
+
+    @Test
     fun `a connection change stores the state and its start time`() {
         val connected = testConnected(since = 5_000L)
 

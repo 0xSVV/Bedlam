@@ -245,6 +245,24 @@ class DashboardExecutorTest {
     }
 
     @Test
+    fun `a profile deleted during its ping gets no latency`() = runTest {
+        val pinger = FakeProfilePinger()
+        val bootstrapper = TestBootstrapper<Action>()
+        val state = DashboardStore.State(profiles = listOf(home, work))
+        store(state, pinger = pinger, bootstrapper = bootstrapper).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.PingAllProfiles)
+            bootstrapper.send(Action.ProfilesLoaded(listOf(home), null))
+
+            assertEquals(1, pinger.active)
+            assertEquals(mapOf("a" to LatencyResult.Measuring), store.state.latencies)
+
+            pinger.calls.forEach { it.second.complete(LatencyResult.Success(5)) }
+
+            assertEquals(mapOf("a" to LatencyResult.Success(5)), store.state.latencies)
+        }
+    }
+
+    @Test
     fun `ping all keeps one measurement per profile`() = runTest {
         val pinger = FakeProfilePinger()
         val state = DashboardStore.State(profiles = listOf(home, work))

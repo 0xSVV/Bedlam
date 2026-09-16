@@ -24,12 +24,15 @@ internal class DashboardExecutor(
 
     override fun executeAction(action: Action) {
         when (action) {
-            is Action.ProfilesLoaded -> dispatch(
-                Msg.ProfilesLoaded(
-                    action.profiles,
-                    action.activeId
+            is Action.ProfilesLoaded -> {
+                cancelPingsOfRemovedProfiles(action.profiles)
+                dispatch(
+                    Msg.ProfilesLoaded(
+                        action.profiles,
+                        action.activeId
+                    )
                 )
-            )
+            }
 
             is Action.ConnectionStateChanged -> dispatch(
                 Msg.ConnectionChanged(
@@ -121,6 +124,11 @@ internal class DashboardExecutor(
         pingJobs[profile.id] = scope.launch {
             dispatch(Msg.LatencyUpdated(profile.id, pingProfile(profile)))
         }
+    }
+
+    private fun cancelPingsOfRemovedProfiles(profiles: List<Profile>) {
+        val ids = profiles.mapTo(HashSet()) { it.id }
+        (pingJobs.keys - ids).forEach { id -> pingJobs.remove(id)?.cancel() }
     }
 
     private fun pingActiveProfile() {
