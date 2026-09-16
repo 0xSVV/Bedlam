@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.createBitmap
 import ru.shapovalov.bedlam.ui.theme.onSurfaceVariantDark
 import ru.shapovalov.bedlam.ui.theme.onSurfaceVariantLight
 import ru.shapovalov.bedlam.ui.theme.primaryDark
@@ -19,7 +20,7 @@ class SparklineRenderer(
     private val heightPx: Int = HEIGHT_PX,
 ) {
 
-    private val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+    private val bitmap = createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
     private val canvas = Canvas(bitmap)
 
     fun render(samples: RateHistory.Samples, night: Boolean): Bitmap {
