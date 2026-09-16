@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.feature.settings.presentation
 
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineBootstrapper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.power.domain.model.PowerReliabilitySnapshot
 import ru.shapovalov.bedlam.core.power.domain.repository.PowerReliabilityRepository
@@ -25,8 +26,9 @@ internal class SettingsBootstrapper(
             }
         }
         scope.launch {
-            powerReliabilityRepository.observeSnapshot(refreshIntervalMillis).collect {
-                dispatch(Action.ReliabilitySnapshotChanged(it))
+            while (true) {
+                dispatch(Action.ReliabilitySnapshotChanged(powerReliabilityRepository.snapshot()))
+                delay(refreshIntervalMillis)
             }
         }
         scope.launch {
