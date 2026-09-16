@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -29,10 +30,12 @@ class ConnectionButtonMorphTest {
     private class FakeFrameClock : MonotonicFrameClock {
         var frameCount = 0
             private set
+        var beforeEachFrame: () -> Unit = {}
 
         override suspend fun <R> withFrameNanos(onFrame: (frameTimeNanos: Long) -> R): R {
             delay(FrameIntervalMillis)
             frameCount++
+            beforeEachFrame()
             return onFrame(frameCount * FrameIntervalMillis * 1_000_000L)
         }
     }
@@ -72,6 +75,40 @@ class ConnectionButtonMorphTest {
             morph.isMidMorphBetweenLoadingShapes(),
             "no morph between loading shapes within $MaxFramesToReachMidMorph frames",
         )
+    }
+
+    @Test
+    fun `loading keeps morphing past the former five cycle limit`() = runTest {
+        val clock = FakeFrameClock()
+        val morph = ConnectionButtonMorph(resting, loading, connecting = false)
+        var lastShape = morph.fromShape
+        var loadingShapesReached = 0
+        clock.beforeEachFrame = {
+            if (morph.fromShape != lastShape) {
+                lastShape = morph.fromShape
+                if (lastShape in loading) loadingShapesReached++
+            }
+        }
+        val loop = backgroundScope.launch(clock + FakeMotionDurationScale(1f)) {
+            morph.animateLoading()
+        }
+
+        advanceTimeBy(60_000)
+
+        assertTrue(loadingShapesReached > 5 * loading.size, "morphs: $loadingShapesReached")
+        assertTrue(loop.isActive)
+        assertFalse(morph.showIcon)
+    }
+
+    @Test
+    fun `a morph needs at least two distinct loading shapes`() {
+        val onlyShape = loading.first()
+        assertThrows(IllegalArgumentException::class.java) {
+            ConnectionButtonMorph(resting, listOf(onlyShape), connecting = false)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ConnectionButtonMorph(resting, listOf(onlyShape, onlyShape), connecting = false)
+        }
     }
 
     @Test

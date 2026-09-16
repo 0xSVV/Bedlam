@@ -17,6 +17,10 @@ internal class ConnectionButtonMorph(
     private val loadingShapes: List<RoundedPolygon>,
     connecting: Boolean,
 ) {
+    init {
+        require(loadingShapes.distinct().size > 1)
+    }
+
     var fromShape by mutableStateOf(restingShape)
         private set
     var toShape by mutableStateOf(restingShape)
@@ -27,17 +31,14 @@ internal class ConnectionButtonMorph(
     private val progressAnimatable = Animatable(0f)
     val progress: Float get() = progressAnimatable.value
 
-    suspend fun animateLoading() {
+    suspend fun animateLoading(): Nothing {
         showIcon = false
-        repeat(MaxLoadingMorphCycles) {
+        while (true) {
             for (shape in loadingShapes) {
                 morphTo(shape)
                 awaitMotionEnabled()
             }
         }
-        returnToCurrentShape()
-        morphTo(restingShape)
-        showIcon = true
     }
 
     suspend fun settle() {
@@ -71,8 +72,6 @@ internal class ConnectionButtonMorph(
         }
     }
 }
-
-private const val MaxLoadingMorphCycles = 5
 
 private val ConnectionMorphAnimationSpec = spring<Float>(
     dampingRatio = Spring.DampingRatioMediumBouncy,
