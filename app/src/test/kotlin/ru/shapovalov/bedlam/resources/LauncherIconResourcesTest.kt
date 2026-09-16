@@ -51,6 +51,13 @@ class LauncherIconResourcesTest {
         assertEquals(emptySet<String>(), declaredTwice)
     }
 
+    @Test
+    fun `notification icon draws the themed icon paths`() {
+        val themedIconPaths = androidAttributeValues("drawable/ic_launcher_monochrome.xml", "path", "pathData")
+        assertTrue(themedIconPaths.isNotEmpty())
+        assertEquals(themedIconPaths, androidAttributeValues("drawable/ic_stat_bedlam.xml", "path", "pathData"))
+    }
+
     private companion object {
         const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
     }
