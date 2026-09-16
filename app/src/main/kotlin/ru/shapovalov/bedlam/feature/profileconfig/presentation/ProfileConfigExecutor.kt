@@ -22,6 +22,8 @@ internal class ProfileConfigExecutor(
     override fun executeIntent(intent: ProfileConfigStore.Intent) {
         when (intent) {
             ProfileConfigStore.Intent.EnterEditMode -> dispatch(Msg.EditModeEntered)
+            ProfileConfigStore.Intent.LeaveEditMode -> leaveEditMode()
+            ProfileConfigStore.Intent.CancelDiscard -> dispatch(Msg.DiscardCancelled)
             ProfileConfigStore.Intent.DiscardChanges -> dispatch(Msg.ChangesDiscarded)
             is ProfileConfigStore.Intent.UpdateDraft -> dispatch(Msg.DraftUpdated(intent.config))
             is ProfileConfigStore.Intent.UpdateDraftName -> dispatch(Msg.DraftNameUpdated(intent.name))
@@ -31,6 +33,12 @@ internal class ProfileConfigExecutor(
             ProfileConfigStore.Intent.ConfirmDelete -> delete()
             ProfileConfigStore.Intent.DismissError -> dispatch(Msg.ErrorDismissed)
         }
+    }
+
+    private fun leaveEditMode() {
+        val s = state()
+        if (!s.editMode || s.isSaving) return
+        dispatch(if (s.isDirty) Msg.DiscardRequested else Msg.ChangesDiscarded)
     }
 
     private fun save() {

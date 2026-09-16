@@ -8,6 +8,8 @@ internal sealed interface Msg {
     data class ProfileLoaded(val profile: Profile) : Msg
     data object ProfileMissing : Msg
     data object EditModeEntered : Msg
+    data object DiscardRequested : Msg
+    data object DiscardCancelled : Msg
     data object ChangesDiscarded : Msg
     data class DraftUpdated(val config: HysteriaConfig) : Msg
     data class DraftNameUpdated(val name: String) : Msg
@@ -33,11 +35,14 @@ internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
 
         Msg.ProfileMissing -> copy(isLoading = false, notFound = true)
         Msg.EditModeEntered -> copy(editMode = true, saveError = null)
+        Msg.DiscardRequested -> copy(pendingDiscardConfirmation = true)
+        Msg.DiscardCancelled -> copy(pendingDiscardConfirmation = false)
         Msg.ChangesDiscarded -> copy(
             draft = original?.config,
             draftName = original?.name,
             editMode = false,
             saveError = null,
+            pendingDiscardConfirmation = false,
         )
 
         is Msg.DraftUpdated -> copy(draft = msg.config)
@@ -50,6 +55,7 @@ internal object ProfileConfigReducer : Reducer<ProfileConfigStore.State, Msg> {
             editMode = false,
             isSaving = false,
             saveError = null,
+            pendingDiscardConfirmation = false,
         )
 
         is Msg.SaveFailed -> copy(isSaving = false, saveError = msg.message)

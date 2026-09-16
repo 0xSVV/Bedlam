@@ -8,6 +8,8 @@ interface ProfileConfigStore : Store<ProfileConfigStore.Intent, ProfileConfigSto
 
     sealed interface Intent {
         data object EnterEditMode : Intent
+        data object LeaveEditMode : Intent
+        data object CancelDiscard : Intent
         data object DiscardChanges : Intent
         data class UpdateDraft(val config: HysteriaConfig) : Intent
         data class UpdateDraftName(val name: String) : Intent
@@ -29,6 +31,7 @@ interface ProfileConfigStore : Store<ProfileConfigStore.Intent, ProfileConfigSto
         val isDeleting: Boolean = false,
         val notFound: Boolean = false,
         val pendingDeleteConfirmation: Boolean = false,
+        val pendingDiscardConfirmation: Boolean = false,
         val saveError: String? = null,
     ) {
         val isDirty: Boolean

@@ -87,6 +87,33 @@ class ProfileConfigReducerTest {
     }
 
     @Test
+    fun `a discard request waits for confirmation`() {
+        val requested = ProfileConfigReducer.reduceAll(edited, Msg.DiscardRequested)
+        assertEquals(edited.copy(pendingDiscardConfirmation = true), requested)
+
+        val cancelled = ProfileConfigReducer.reduceAll(requested, Msg.DiscardCancelled)
+        assertEquals(edited, cancelled)
+
+        val discarded = ProfileConfigReducer.reduceAll(requested, Msg.ChangesDiscarded)
+        assertEquals(loaded, discarded)
+    }
+
+    @Test
+    fun `a finished save drops a pending discard request`() {
+        val saved = profile.copy(name = "Work")
+
+        val state = ProfileConfigReducer.reduceAll(
+            edited.copy(isSaving = true, pendingDiscardConfirmation = true),
+            Msg.SaveSucceeded(saved),
+        )
+
+        assertEquals(
+            loaded.copy(original = saved, draftName = "Work"),
+            state,
+        )
+    }
+
+    @Test
     fun `save messages track saving and its error`() {
         val saving = ProfileConfigReducer.reduceAll(edited.copy(saveError = "old"), Msg.SaveStarted)
         assertEquals(edited.copy(isSaving = true), saving)

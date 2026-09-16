@@ -54,6 +54,65 @@ class ProfileConfigExecutorTest {
         )
 
     @Test
+    fun `leaving edit mode with unsaved changes asks before discarding`() = runTest {
+        store(edited, FakeProfileRepository(listOf(profile))).disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+
+            assertEquals(edited.copy(pendingDiscardConfirmation = true), store.state)
+        }
+    }
+
+    @Test
+    fun `leaving edit mode without changes needs no confirmation`() = runTest {
+        val repository = FakeProfileRepository(listOf(profile))
+        store(loaded.copy(editMode = true), repository).disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+
+            assertEquals(loaded, store.state)
+        }
+    }
+
+    @Test
+    fun `confirming the discard restores the saved values`() = runTest {
+        store(edited, FakeProfileRepository(listOf(profile))).disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+            store.accept(ProfileConfigStore.Intent.DiscardChanges)
+
+            assertEquals(loaded, store.state)
+        }
+    }
+
+    @Test
+    fun `cancelling the discard keeps the edits`() = runTest {
+        store(edited, FakeProfileRepository(listOf(profile))).disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+            store.accept(ProfileConfigStore.Intent.CancelDiscard)
+
+            assertEquals(edited, store.state)
+        }
+    }
+
+    @Test
+    fun `leaving edit mode while saving is ignored`() = runTest {
+        val saving = edited.copy(isSaving = true)
+        store(saving, FakeProfileRepository(listOf(profile))).disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+
+            assertEquals(saving, store.state)
+        }
+    }
+
+    @Test
+    fun `leaving edit mode in view mode is ignored`() = runTest {
+        val viewing = loaded.copy(draftName = "Work")
+        store(viewing, FakeProfileRepository(listOf(profile))).disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+
+            assertEquals(viewing, store.state)
+        }
+    }
+
+    @Test
     fun `save persists the draft and leaves edit mode`() = runTest {
         val repository = FakeProfileRepository(listOf(profile))
         store(edited.copy(draftName = "  Work "), repository).disposeAfter { store ->
