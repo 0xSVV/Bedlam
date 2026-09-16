@@ -68,6 +68,14 @@ class AssetSelectionTest {
             val onlyMetadata = listOf(asset("output-metadata.json"))
             assertNull(pickAsset(onlyMetadata, "1.4.1", listOf("arm64-v8a")))
         }
+
+        @Test
+        fun `the provenance manifest is never picked`() {
+            val manifest = asset("bedlam-v1.4.1-provenance.json")
+            assertEquals("bedlam-v1.4.1-x86_64.apk", pickAsset(release + manifest, "1.4.1", listOf("x86_64"))?.name)
+            assertNull(pickAsset(listOf(manifest), "1.4.1", listOf("arm64-v8a", "x86_64")))
+            assertNull(pickAsset(listOf(manifest), "1.4.1", emptyList()))
+        }
     }
 
     @Nested
