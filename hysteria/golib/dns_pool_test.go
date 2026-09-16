@@ -362,3 +362,42 @@ func TestTCPResolver_cancelDuringDialReturnsPromptly(t *testing.T) {
 		t.Error("a late stream went into the pool")
 	}
 }
+
+func TestStreamPool_concurrentQueriesKeepTheirAnswers(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
+	p := newStreamPool("test", srv.dial)
+	defer p.close()
+	fillPool(t, p, dnsPoolSize)
+	warmConns := int(srv.conns.Load())
+
+	const rounds, perRound = 4, 2 * dnsPoolSize
+	for round := 0; round < rounds; round++ {
+		var wg sync.WaitGroup
+		for i := round * perRound; i < (round+1)*perRound; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				name := fmt.Sprintf("host%d.example", i)
+				query := dnsQuery(name)
+				binary.BigEndian.PutUint16(query[:2], uint16(0x4000+i))
+				resp, err := p.exchange(context.Background(), query)
+				if err != nil {
+					t.Errorf("%s: %v", name, err)
+					return
+				}
+				got, _ := dnsQuestion(resp)
+				want, _ := dnsQuestion(query)
+				if got != want || binary.BigEndian.Uint16(resp[:2]) != uint16(0x4000+i) {
+					t.Errorf("%s received the answer to another query", name)
+				}
+			}(i)
+		}
+		wg.Wait()
+	}
+	if reused := rounds*perRound - (int(srv.conns.Load()) - warmConns); reused < rounds*dnsPoolSize {
+		t.Errorf("%d of %d queries rode a pooled stream, want at least %d", reused, rounds*perRound, rounds*dnsPoolSize)
+	}
+	if held := len(p.idle); held == 0 || held > dnsPoolSize {
+		t.Errorf("pool holds %d streams after the burst, want between 1 and %d", held, dnsPoolSize)
+	}
+}
