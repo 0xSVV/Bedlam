@@ -224,10 +224,10 @@ private const val ACTION_QUICK_SETTINGS_SETTINGS = "android.settings.QUICK_SETTI
 private fun SettingsRow(
     title: String,
     subtitle: String,
-    subtitleEmphasized: Boolean = false,
-    showNavigationIcon: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    subtitleEmphasized: Boolean = false,
+    showNavigationIcon: Boolean = true,
 ) {
     val spacing = MaterialTheme.spacing
     Row(
