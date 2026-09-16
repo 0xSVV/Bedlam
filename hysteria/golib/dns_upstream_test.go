@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/netip"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -187,6 +188,43 @@ func TestNewDNSUpstream_hostnamePresetsKeepTheHost(t *testing.T) {
 		if h3R.fallback.dial != want.dial {
 			t.Errorf("HTTP/3 %d fallback dial=%q, want %q", i, h3R.fallback.dial, want.dial)
 		}
+	}
+}
+
+func TestDNSUpstream_singleServerFailsWithinTheAttemptCap(t *testing.T) {
+	var answering atomic.Bool
+	lone := &stubResolver{name: "tls|one.one.one.one:853", reply: func(query []byte) ([]byte, error) {
+		if answering.Load() {
+			return echoAnswer([4]byte{1, 1, 1, 1})(query)
+		}
+		time.Sleep(30 * time.Second)
+		return nil, errors.New("unreachable")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{lone}, ident: lone.name}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	start := time.Now()
+	_, err := up.exchange(ctx, dnsQuery("example.com"))
+	elapsed := time.Since(start)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the attempt deadline", err)
+	}
+	if elapsed > dnsAttemptTimeout+time.Second {
+		t.Errorf("a lone blackholed server held the query for %v, want at most %v", elapsed, dnsAttemptTimeout)
+	}
+	if lone.calls.Load() != 1 {
+		t.Errorf("resolver called %d times, want 1", lone.calls.Load())
+	}
+
+	answering.Store(true)
+	next, cancelNext := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancelNext()
+	if _, err := up.exchange(next, dnsQuery("example.com")); err != nil {
+		t.Fatalf("the next query after a total failure: %v", err)
+	}
+	if lone.calls.Load() != 2 {
+		t.Errorf("resolver called %d times, want the lone server tried again", lone.calls.Load())
 	}
 }
 
