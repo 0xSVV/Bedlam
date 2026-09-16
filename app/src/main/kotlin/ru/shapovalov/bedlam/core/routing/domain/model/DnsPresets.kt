@@ -11,6 +11,8 @@ object DnsPresets {
             "2606:4700:4700::1111",
             "2606:4700:4700::1001",
         ),
+        tlsHost = "one.one.one.one",
+        httpsUrl = "https://cloudflare-dns.com/dns-query",
     )
 
     private val GOOGLE = Provider(
@@ -20,6 +22,8 @@ object DnsPresets {
             "2001:4860:4860::8888",
             "2001:4860:4860::8844",
         ),
+        tlsHost = "dns.google",
+        httpsUrl = "https://dns.google/dns-query",
     )
 
     fun cloudflare(transport: DnsTransport): List<String> = CLOUDFLARE.endpoints(transport)
@@ -44,13 +48,18 @@ object DnsPresets {
         else -> DnsTransport.Tls
     }
 
-    private class Provider(val addresses: List<String>) {
+    private class Provider(
+        val addresses: List<String>,
+        private val tlsHost: String,
+        private val httpsUrl: String,
+    ) {
 
         fun endpoints(transport: DnsTransport): List<String> = when (transport) {
             DnsTransport.Udp, DnsTransport.Tcp -> addresses.map { "${endpointHost(it)}:53" }
-            DnsTransport.Tls, DnsTransport.Doq -> addresses.map { "${endpointHost(it)}:853" }
-            DnsTransport.Https, DnsTransport.Http3 ->
-                addresses.map { "https://${endpointHost(it)}/dns-query" }
+            DnsTransport.Doq -> addresses.map { "${endpointHost(it)}:853" }
+            DnsTransport.Tls -> listOf("$tlsHost:853")
+            DnsTransport.Https -> listOf(httpsUrl)
+            DnsTransport.Http3 -> addresses.map { "https://${endpointHost(it)}/dns-query" }
         }
 
         private fun endpointHost(address: String): String =

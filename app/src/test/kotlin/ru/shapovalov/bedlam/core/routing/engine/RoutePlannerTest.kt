@@ -357,12 +357,43 @@ class RoutePlannerTest {
         }
 
         @Test
-        fun `a DoH upstream is claimed by the address in its URL`() {
+        fun `a DoH preset is claimed by its provider addresses`() {
             val plan = planner().plan(
                 RoutingConfig(dnsMode = DnsMode.Cloudflare, dnsTransport = DnsTransport.Https),
                 AppFilter(),
             )
-            assertTrue(plan.claimedV4.any { it == Cidr.parse("1.1.1.1/32") })
+            assertEquals(
+                DnsUpstream(DnsTransport.Https, listOf("https://cloudflare-dns.com/dns-query")),
+                plan.dnsUpstream,
+            )
+            assertTrue(plan.claimedV4.containsAll(cloudflareV4))
+            assertTrue(plan.claimedV6.containsAll(cloudflareV6))
+        }
+
+        @Test
+        fun `a DoT preset is claimed by its provider addresses`() {
+            val plan = planner().plan(
+                RoutingConfig(dnsMode = DnsMode.Google, dnsTransport = DnsTransport.Tls),
+                AppFilter(),
+            )
+            assertEquals(DnsUpstream(DnsTransport.Tls, listOf("dns.google:853")), plan.dnsUpstream)
+            assertTrue(plan.claimedV4.containsAll(googleV4))
+            assertTrue(plan.claimedV6.containsAll(googleV6))
+        }
+
+        @Test
+        fun `an unusable encrypted custom list falls back to the Cloudflare host`() {
+            val dot = planner().plan(customDnsConfig(DnsTransport.Tls, "not a host"), AppFilter())
+            assertEquals(DnsUpstream(DnsTransport.Tls, listOf("one.one.one.one:853")), dot.dnsUpstream)
+
+            val doq = planner().plan(customDnsConfig(DnsTransport.Doq, "nope!"), AppFilter())
+            assertEquals(DnsUpstream(DnsTransport.Tls, listOf("one.one.one.one:853")), doq.dnsUpstream)
+
+            val doh = planner().plan(customDnsConfig(DnsTransport.Https), AppFilter())
+            assertEquals(
+                DnsUpstream(DnsTransport.Https, listOf("https://cloudflare-dns.com/dns-query")),
+                doh.dnsUpstream,
+            )
         }
 
         @Test

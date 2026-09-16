@@ -1,6 +1,8 @@
 package ru.shapovalov.bedlam.core.routing.domain.model
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.shapovalov.hysteria.api.DnsTransport
@@ -21,17 +23,21 @@ class DnsPresetsTest {
     }
 
     @Test
-    fun `presets pick the port and scheme of the transport`() {
+    fun `plain presets keep four numeric endpoints on port 53`() {
         assertEquals(
             listOf("1.1.1.1:53", "1.0.0.1:53", "[2606:4700:4700::1111]:53", "[2606:4700:4700::1001]:53"),
             DnsPresets.cloudflare(DnsTransport.Udp),
         )
-        assertEquals(DnsPresets.cloudflare(DnsTransport.Udp), DnsPresets.cloudflare(DnsTransport.Tcp))
-        assertEquals(DnsPresets.cloudflare(DnsTransport.Https), DnsPresets.cloudflare(DnsTransport.Http3))
         assertEquals(
-            listOf("8.8.8.8:853", "8.8.4.4:853", "[2001:4860:4860::8888]:853", "[2001:4860:4860::8844]:853"),
-            DnsPresets.google(DnsTransport.Tls),
+            listOf("8.8.8.8:53", "8.8.4.4:53", "[2001:4860:4860::8888]:53", "[2001:4860:4860::8844]:53"),
+            DnsPresets.google(DnsTransport.Tcp),
         )
+        assertEquals(DnsPresets.cloudflare(DnsTransport.Udp), DnsPresets.cloudflare(DnsTransport.Tcp))
+        assertEquals(DnsPresets.google(DnsTransport.Udp), DnsPresets.google(DnsTransport.Tcp))
+    }
+
+    @Test
+    fun `http3 presets keep the four numeric urls`() {
         assertEquals(
             listOf(
                 "https://1.1.1.1/dns-query",
@@ -39,8 +45,32 @@ class DnsPresetsTest {
                 "https://[2606:4700:4700::1111]/dns-query",
                 "https://[2606:4700:4700::1001]/dns-query",
             ),
-            DnsPresets.cloudflare(DnsTransport.Https),
+            DnsPresets.cloudflare(DnsTransport.Http3),
         )
+        assertEquals(
+            listOf(
+                "https://8.8.8.8/dns-query",
+                "https://8.8.4.4/dns-query",
+                "https://[2001:4860:4860::8888]/dns-query",
+                "https://[2001:4860:4860::8844]/dns-query",
+            ),
+            DnsPresets.google(DnsTransport.Http3),
+        )
+    }
+
+    @Test
+    fun `dns over tls and https presets name the provider host`() {
+        assertEquals(listOf("one.one.one.one:853"), DnsPresets.cloudflare(DnsTransport.Tls))
+        assertEquals(listOf("dns.google:853"), DnsPresets.google(DnsTransport.Tls))
+        assertEquals(listOf("https://cloudflare-dns.com/dns-query"), DnsPresets.cloudflare(DnsTransport.Https))
+        assertEquals(listOf("https://dns.google/dns-query"), DnsPresets.google(DnsTransport.Https))
+        assertNotEquals(DnsPresets.cloudflare(DnsTransport.Https), DnsPresets.cloudflare(DnsTransport.Http3))
+        assertNotEquals(DnsPresets.google(DnsTransport.Https), DnsPresets.google(DnsTransport.Http3))
+        for (transport in listOf(DnsTransport.Tls, DnsTransport.Https)) {
+            for (server in DnsPresets.cloudflare(transport) + DnsPresets.google(transport)) {
+                assertNull(DnsServer.literalHostOf(server), server)
+            }
+        }
     }
 
     @Test
