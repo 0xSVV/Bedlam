@@ -64,10 +64,15 @@
     <string name="import_error_failed">Failed to import profile</string>
 
     <string name="settings_about_title">About</string>
-    <string name="settings_about_subtitle">Version %1$s · GPL-3.0 · tap to copy</string>
-    <string name="settings_about_copied">Version copied</string>
-    <string name="settings_about_source_title">Source code</string>
-    <string name="settings_about_source_subtitle">github.com/0xSVV/Bedlam</string>
+    <string name="settings_about_subtitle">Version %1$s · GitHub · License · README</string>
+    <string name="settings_about_version_app">App %1$s</string>
+    <string name="settings_about_version_hysteria">Hysteria %1$s</string>
+    <string name="settings_about_copy_versions">Copy versions</string>
+    <string name="settings_about_copied">Versions copied</string>
+    <string name="settings_about_github_title">GitHub</string>
+    <string name="settings_about_github_subtitle">github.com/0xSVV/Bedlam</string>
+    <string name="settings_about_license_title">License</string>
+    <string name="settings_about_license_subtitle">GPL-3.0-or-later</string>
     <string name="settings_apps_title">Apps to proxy</string>
     <string name="settings_apps_subtitle">Choose which apps route through the tunnel</string>
 

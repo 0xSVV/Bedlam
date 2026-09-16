@@ -48,6 +48,22 @@ class SettingsComponentTest {
     }
 
     @Test
+    fun `opening about pushes the about screen and back returns to the root`() = runTest {
+        val graph = TestGraph()
+        withComponentContext { lifecycle, context ->
+            val settings = graph.settingsFactory.create(context)
+            lifecycle.resume()
+
+            settings.onOpenAbout()
+            assertEquals(Child.About, settings.activeChild())
+            assertEquals(2, settings.childStack.value.items.size)
+
+            settings.onBack()
+            assertEquals(Child.Root, settings.activeChild())
+        }
+    }
+
+    @Test
     fun `back returns to the settings root`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->

@@ -59,6 +59,8 @@ class SettingsComponent(
                     }
                     Child.BatteryReliability
                 }
+
+                Config.About -> Child.About
             }
         },
     )
@@ -84,6 +86,10 @@ class SettingsComponent(
         navigation.pushNew(Config.BatteryReliability)
     }
 
+    fun onOpenAbout() {
+        navigation.pushNew(Config.About)
+    }
+
     fun onSetQuickSettingsTileAdded(added: Boolean) {
         store.accept(SettingsStore.Intent.SetQuickSettingsTileAdded(added))
     }
@@ -97,6 +103,7 @@ class SettingsComponent(
         data class AppSelection(val component: AppSelectionComponent) : Child
         data class Routing(val component: RoutingComponent) : Child
         data object BatteryReliability : Child
+        data object About : Child
     }
 
     @Serializable
@@ -112,5 +119,8 @@ class SettingsComponent(
 
         @Serializable
         data object BatteryReliability : Config
+
+        @Serializable
+        data object About : Config
     }
 }

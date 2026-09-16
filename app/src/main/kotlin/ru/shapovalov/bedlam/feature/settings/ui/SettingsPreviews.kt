@@ -10,6 +10,7 @@ import ru.shapovalov.bedlam.core.power.domain.model.PowerReliabilitySnapshot
 import ru.shapovalov.bedlam.core.power.domain.model.PowerRiskLevel
 import ru.shapovalov.bedlam.core.power.domain.model.PowerVendor
 import ru.shapovalov.bedlam.core.power.domain.model.StandbyBucket
+import ru.shapovalov.bedlam.ui.markdown.MarkdownParser
 import ru.shapovalov.bedlam.ui.theme.BedlamTheme
 
 @Preview(name = "Light", showBackground = true, widthDp = 360, heightDp = 640)
@@ -31,6 +32,16 @@ private annotation class SettingsScreenPreviews
     uiMode = Configuration.UI_MODE_NIGHT_YES,
 )
 private annotation class ReliabilityScreenPreviews
+
+@Preview(name = "Light", showBackground = true, widthDp = 360, heightDp = 1000)
+@Preview(
+    name = "Dark",
+    showBackground = true,
+    widthDp = 360,
+    heightDp = 1000,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+private annotation class AboutScreenPreviews
 
 private const val PreviewFingerprint = "preview/fingerprint"
 
@@ -80,6 +91,7 @@ private fun SettingsRootPreview(
             onOpenAppSelection = {},
             onOpenRouting = {},
             onOpenBatteryReliability = {},
+            onOpenAbout = {},
             quickSettingsTileAdded = quickSettingsTileAdded,
             onQuickSettingsTileAdded = {},
             reliabilitySnapshot = reliabilitySnapshot,
@@ -93,6 +105,43 @@ private fun SettingsRootPreview(
 private fun SettingsRootLoadingPreview() {
     SettingsRootPreview(quickSettingsTileAdded = true, reliabilitySnapshot = null)
 }
+
+@AboutScreenPreviews
+@Composable
+private fun AboutPreview() {
+    SettingsPreview {
+        AboutPage(
+            appVersion = "1.6.0",
+            hysteriaVersion = "2.12.3",
+            readme = MarkdownParser().parse(PreviewReadme),
+            onBack = {},
+            onOpenUrl = {},
+            onCopyVersions = {},
+        )
+    }
+}
+
+private val PreviewReadme = """
+    # Bedlam
+
+    Hysteria 2 Android client, built directly on the **protocol core**. See [Hysteria 2](https://github.com/apernet/hysteria).
+
+    ## What it does
+
+    - Realm rendezvous mode: give a `realm://` address to reach a peer behind NAT.
+    - Per-app allow and block lists, and rule-based split tunnelling.
+
+    | Output | versionCode |
+    |---|---|
+    | universal | base |
+    | arm64-v8a | base × 10 + 2 |
+
+    ```sh
+    ./gradlew assembleDebug
+    ```
+
+    > GeoIP is deliberately out of scope.
+""".trimIndent()
 
 @SettingsScreenPreviews
 @Composable
