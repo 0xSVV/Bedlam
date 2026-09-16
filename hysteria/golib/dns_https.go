@@ -9,7 +9,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
@@ -35,8 +37,34 @@ type httpsResolver struct {
 	url    string
 	dial   string
 	tlsCfg *tls.Config
-	rt     *http.Transport
-	hc     *http.Client
+	active atomic.Pointer[dohTransport]
+}
+
+type dohTransport struct {
+	rt *http.Transport
+	hc *http.Client
+}
+
+type dohConn struct {
+	net.Conn
+	owner    *dohTransport
+	reads    atomic.Uint64
+	inflight atomic.Int32
+	retired  atomic.Bool
+}
+
+func (c *dohConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 {
+		c.reads.Add(1)
+	}
+	return n, err
+}
+
+func (c *dohConn) release() {
+	if c.inflight.Add(-1) == 0 && c.retired.Load() {
+		_ = c.Close()
+	}
 }
 
 func newHTTPSResolver(c client.Client, rawURL string, base *tls.Config) (*httpsResolver, error) {
@@ -50,8 +78,16 @@ func newHTTPSResolver(c client.Client, rawURL string, base *tls.Config) (*httpsR
 		dial:   dial,
 		tlsCfg: dnsTLSConfig(base, host, []string{"h2", "http/1.1"}),
 	}
-	r.rt = &http.Transport{
-		DialTLSContext:        r.dialTLS,
+	r.active.Store(r.newTransport())
+	return r, nil
+}
+
+func (r *httpsResolver) newTransport() *dohTransport {
+	t := &dohTransport{}
+	t.rt = &http.Transport{
+		DialTLSContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return r.dialTLS(ctx, t)
+		},
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          2,
 		MaxIdleConnsPerHost:   2,
@@ -59,21 +95,21 @@ func newHTTPSResolver(c client.Client, rawURL string, base *tls.Config) (*httpsR
 		ResponseHeaderTimeout: dnsIOTimeout,
 		DisableCompression:    true,
 	}
-	r.hc = &http.Client{
-		Transport: r.rt,
+	t.hc = &http.Client{
+		Transport: t.rt,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-	return r, nil
+	return t
 }
 
-func (r *httpsResolver) dialTLS(ctx context.Context, _, _ string) (net.Conn, error) {
+func (r *httpsResolver) dialTLS(ctx context.Context, owner *dohTransport) (net.Conn, error) {
 	raw, err := dialTunnelTCP(ctx, r.client, r.dial)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", r.dial, err)
 	}
-	tc := tls.Client(raw, r.tlsCfg)
+	tc := tls.Client(&dohConn{Conn: raw, owner: owner}, r.tlsCfg)
 	if err := tc.HandshakeContext(ctx); err != nil {
 		_ = raw.Close()
 		return nil, fmt.Errorf("TLS handshake with %s: %w", r.dial, err)
@@ -82,12 +118,41 @@ func (r *httpsResolver) dialTLS(ctx context.Context, _, _ string) (net.Conn, err
 }
 
 func (r *httpsResolver) exchange(ctx context.Context, query []byte) ([]byte, error) {
-	return dohExchange(ctx, r.hc, r.url, query)
+	var conn *dohConn
+	var readsBefore uint64
+	trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+		if conn != nil {
+			conn.release()
+			conn = nil
+		}
+		if tc, ok := info.Conn.(*tls.Conn); ok {
+			if c, ok := tc.NetConn().(*dohConn); ok {
+				c.inflight.Add(1)
+				conn, readsBefore = c, c.reads.Load()
+			}
+		}
+	}}
+	resp, err := dohExchange(httptrace.WithClientTrace(ctx, trace), r.active.Load().hc, r.url, query)
+	if conn != nil {
+		if err != nil && isTimeoutClass(err) && conn.reads.Load() == readsBefore {
+			r.retire(conn)
+		}
+		conn.release()
+	}
+	return resp, err
+}
+
+func (r *httpsResolver) retire(c *dohConn) {
+	if r.active.Load() == c.owner {
+		r.active.CompareAndSwap(c.owner, r.newTransport())
+	}
+	c.retired.Store(true)
+	c.owner.rt.CloseIdleConnections()
 }
 
 func (r *httpsResolver) id() string { return "https|" + r.url }
 
-func (r *httpsResolver) close() { r.rt.CloseIdleConnections() }
+func (r *httpsResolver) close() { r.active.Load().rt.CloseIdleConnections() }
 
 func dohExchange(ctx context.Context, hc *http.Client, url string, query []byte) ([]byte, error) {
 	if len(query) < 12 {

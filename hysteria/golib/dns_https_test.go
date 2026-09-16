@@ -492,3 +492,292 @@ func TestDNSUpstream_http413EverywhereKeepsTheStatus(t *testing.T) {
 		}
 	}
 }
+
+type mutingListener struct {
+	net.Listener
+	mu    sync.Mutex
+	conns []*mutableConn
+}
+
+type mutableConn struct {
+	net.Conn
+	muted atomic.Bool
+}
+
+func (l *mutingListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	mc := &mutableConn{Conn: c}
+	l.mu.Lock()
+	l.conns = append(l.conns, mc)
+	l.mu.Unlock()
+	return mc, nil
+}
+
+func (l *mutingListener) muteAccepted() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, c := range l.conns {
+		c.muted.Store(true)
+	}
+}
+
+func (c *mutableConn) Read(b []byte) (int, error) {
+	for {
+		n, err := c.Conn.Read(b)
+		if n == 0 || err != nil || !c.muted.Load() {
+			return n, err
+		}
+	}
+}
+
+func (c *mutableConn) Write(b []byte) (int, error) {
+	if c.muted.Load() {
+		return len(b), nil
+	}
+	return c.Conn.Write(b)
+}
+
+type stallingListener struct {
+	net.Listener
+	stalled atomic.Bool
+	resumed chan struct{}
+	once    sync.Once
+}
+
+type stallingConn struct {
+	net.Conn
+	l *stallingListener
+}
+
+func newStallingListener(l net.Listener) *stallingListener {
+	return &stallingListener{Listener: l, resumed: make(chan struct{})}
+}
+
+func (l *stallingListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return stallingConn{Conn: c, l: l}, nil
+}
+
+func (l *stallingListener) resume() { l.once.Do(func() { close(l.resumed) }) }
+
+func (c stallingConn) Write(b []byte) (int, error) {
+	if c.l.stalled.Load() {
+		<-c.l.resumed
+	}
+	return c.Conn.Write(b)
+}
+
+type lateCloseConn struct {
+	net.Conn
+}
+
+func (c lateCloseConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if err != nil {
+		time.Sleep(50 * time.Millisecond)
+	}
+	return n, err
+}
+
+func TestDNSUpstream_loneDoHServerRedialsOnceItsConnectionGoesSilent(t *testing.T) {
+	d := newUnstartedDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	ln := &mutingListener{Listener: d.srv.Listener}
+	d.srv.Listener = ln
+	d.srv.StartTLS()
+	var dials atomic.Int32
+	fc := d.client()
+	inner := fc.tcp
+	fc.tcp = func(addr string) (net.Conn, error) {
+		dials.Add(1)
+		c, err := inner(addr)
+		if err != nil {
+			return nil, err
+		}
+		return lateCloseConn{c}, nil
+	}
+	r, err := newHTTPSResolver(fc, d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := &dnsUpstream{resolvers: []dnsResolver{r}, ident: r.id()}
+	defer up.close()
+	if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err != nil {
+		t.Fatalf("warm-up: %v", err)
+	}
+	ln.muteAccepted()
+	waiting := make(chan struct{})
+	go func() {
+		defer close(waiting)
+		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+		defer cancel()
+		_, _ = up.exchange(ctx, dnsQuery("example.com"))
+	}()
+	defer func() { <-waiting }()
+
+	failed := 0
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		_, err := up.exchange(ctx, dnsQuery("example.com"))
+		cancel()
+		if err == nil {
+			break
+		}
+		if failed++; failed == 4 {
+			t.Fatalf("%d lookups in a row failed after the connection went silent, with %d dials; last: %v", failed, dials.Load(), err)
+		}
+		if !isTimeoutClass(err) {
+			t.Errorf("lookup %d: err = %v, want a timeout", failed, err)
+		}
+	}
+	if failed != 1 {
+		t.Errorf("%d lookups failed, want only the one that found the connection silent", failed)
+	}
+	if got := dials.Load(); got != 2 {
+		t.Errorf("dialed %d times, want the warm-up connection and one redial", got)
+	}
+}
+
+func TestHTTPSResolver_keepsALiveConnectionWhenOneQueryTimesOut(t *testing.T) {
+	held := make(chan struct{}, 2)
+	release := make(chan struct{})
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		q, _ := io.ReadAll(req.Body)
+		if name, _ := dnsQuestion(q); strings.Contains(name, "slow") {
+			held <- struct{}{}
+			select {
+			case <-release:
+			case <-req.Context().Done():
+				return
+			}
+		}
+		w.Header().Set("Content-Type", dohContentType)
+		_, _ = w.Write(dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}))
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	var dials atomic.Int32
+	addr := srv.Listener.Addr().String()
+	fc := &fakeClient{tcp: func(string) (net.Conn, error) {
+		dials.Add(1)
+		return net.Dial("tcp", addr)
+	}}
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	r, err := newHTTPSResolver(fc, srv.URL+"/dns-query", &tls.Config{RootCAs: pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	if _, err := r.exchange(context.Background(), dnsQuery("warm.example")); err != nil {
+		t.Fatalf("warm-up: %v", err)
+	}
+
+	pending := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := r.exchange(ctx, dnsQuery("slow.example"))
+		pending <- err
+	}()
+	<-held
+	expiring := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, err := r.exchange(ctx, dnsQuery("slower.example"))
+		expiring <- err
+	}()
+	<-held
+	if _, err := r.exchange(context.Background(), dnsQuery("fast.example")); err != nil {
+		t.Fatalf("a query the server answers at once: %v", err)
+	}
+	if err := <-expiring; !isTimeoutClass(err) {
+		t.Fatalf("err = %v, want the held query to time out", err)
+	}
+	close(release)
+	if err := <-pending; err != nil {
+		t.Errorf("a query in flight on the connection that kept answering failed: %v", err)
+	}
+	if got := dials.Load(); got != 1 {
+		t.Errorf("dialed %d times, want the connection kept", got)
+	}
+}
+
+func TestHTTPSResolver_retiredConnectionFinishesTheQueriesStillOnIt(t *testing.T) {
+	held := make(chan struct{}, 1)
+	arrived := make(chan struct{}, 1)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		q, _ := io.ReadAll(req.Body)
+		name, _ := dnsQuestion(q)
+		switch {
+		case strings.Contains(name, "slow"):
+			held <- struct{}{}
+			<-req.Context().Done()
+			return
+		case strings.Contains(name, "late"):
+			arrived <- struct{}{}
+		}
+		w.Header().Set("Content-Type", dohContentType)
+		_, _ = w.Write(dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}))
+	}))
+	ln := newStallingListener(srv.Listener)
+	srv.Listener = ln
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	t.Cleanup(ln.resume)
+	var dials atomic.Int32
+	addr := srv.Listener.Addr().String()
+	fc := &fakeClient{tcp: func(string) (net.Conn, error) {
+		dials.Add(1)
+		return net.Dial("tcp", addr)
+	}}
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	r, err := newHTTPSResolver(fc, srv.URL+"/dns-query", &tls.Config{RootCAs: pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	if _, err := r.exchange(context.Background(), dnsQuery("warm.example")); err != nil {
+		t.Fatalf("warm-up: %v", err)
+	}
+	ln.stalled.Store(true)
+
+	expired := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, err := r.exchange(ctx, dnsQuery("slow.example"))
+		expired <- err
+	}()
+	<-held
+	answered := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := r.exchange(ctx, dnsQuery("late.example"))
+		answered <- err
+	}()
+	<-arrived
+	if err := <-expired; !isTimeoutClass(err) {
+		t.Fatalf("err = %v, want the query the server sat on to time out", err)
+	}
+	ln.resume()
+	if err := <-answered; err != nil {
+		t.Errorf("a query sent before the connection was retired failed although the server answered it: %v", err)
+	}
+	if _, err := r.exchange(context.Background(), dnsQuery("next.example")); err != nil {
+		t.Fatalf("a lookup after the retire: %v", err)
+	}
+	if got := dials.Load(); got != 2 {
+		t.Errorf("dialed %d times, want the connection that went quiet replaced once", got)
+	}
+}
