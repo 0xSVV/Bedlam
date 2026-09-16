@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -27,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -69,7 +67,7 @@ internal fun ProfilesCard(
                 )
                 IconButton(onClick = onPingAll) {
                     Icon(
-                        Icons.Default.Refresh,
+                        painterResource(R.drawable.ic_refresh),
                         contentDescription = stringResource(R.string.dashboard_ping_all_cd),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(SmallIconSize),
@@ -158,7 +156,7 @@ private fun ProfileRow(
         }
         IconButton(onClick = onOpenConfig) {
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                painterResource(R.drawable.ic_keyboard_arrow_right),
                 contentDescription = stringResource(R.string.profile_config_open_cd),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )

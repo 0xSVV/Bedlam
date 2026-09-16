@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.GenericShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ElevatedAssistChip
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -172,7 +170,7 @@ internal fun ConnectionHero(
             ) {
                 Icon(
                     painter = painterResource(
-                        if (isConnected) R.drawable.ic_pause else R.drawable.ic_power
+                        if (isConnected) R.drawable.ic_pause else R.drawable.ic_power_settings_new
                     ),
                     contentDescription = null,
                     modifier = Modifier.size(FloatingActionButtonDefaults.LargeIconSize),
@@ -197,7 +195,7 @@ internal fun ConnectionHero(
             },
             trailingIcon = {
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    painterResource(R.drawable.ic_keyboard_arrow_right),
                     contentDescription = null,
                     modifier = Modifier.size(ChipTrailingIconSize),
                 )
