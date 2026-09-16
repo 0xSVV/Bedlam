@@ -69,7 +69,7 @@ internal fun ProfilesCard(
                 IconButton(onClick = onPingAll) {
                     Icon(
                         Icons.Default.Refresh,
-                        contentDescription = null,
+                        contentDescription = stringResource(R.string.dashboard_ping_all_cd),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(SmallIconSize),
                     )

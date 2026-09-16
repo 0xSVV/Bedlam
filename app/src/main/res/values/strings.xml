@@ -408,4 +408,6 @@
     <string name="profile_config_reconnect_hint">Saved. Reconnect to use the new settings.</string>
 
     <string name="logs_empty_filtered">The %1$s filter hides every line</string>
+
+    <string name="dashboard_ping_all_cd">Measure latency of all profiles</string>
 </resources>
