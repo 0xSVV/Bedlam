@@ -70,7 +70,7 @@ class RoutePlanner(
         // server, so it stays a direct resolver: advertised to Android as-is
         // and left to the LAN bypass, exactly as before the tunnel took over.
         val lanDns = lanDnsServers(config, transport)
-        val dnsUpstream = resolveDnsUpstream(config, transport, lanDns)
+        val upstream = resolveDnsUpstream(config, transport, lanDns)
 
         val dnsServers = listOf(resolverV4) +
                 (if (ipv6Enabled) listOf(resolverV6) else emptyList()) +
@@ -81,7 +81,7 @@ class RoutePlanner(
         // to it. Upstream resolvers are claimed too: an app with a hard-coded
         // resolver must still reach the TUN even when a direct-route source
         // covers that address, or its DNS would leave in plaintext.
-        val upstreamRoutes = upstreamHostRoutes(dnsUpstream.servers)
+        val upstreamRoutes = upstreamHostRoutes(upstream.routeAddresses)
         val resolverRoutesV4 = listOf(Cidr.parseV4("$resolverV4/32")) +
                 upstreamRoutes.filterIsInstance<Cidr.V4>()
         val resolverRoutesV6 = if (ipv6Enabled) {
@@ -97,7 +97,7 @@ class RoutePlanner(
                 excludedV4 = excludedV4,
                 excludedV6 = excludedV6,
                 dnsServers = dnsServers,
-                dnsUpstream = dnsUpstream,
+                dnsUpstream = upstream.dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
                 mtu = RoutingConfig.resolveMtu(config.mtu),
@@ -115,7 +115,7 @@ class RoutePlanner(
                 excludedV4 = emptyList(),
                 excludedV6 = emptyList(),
                 dnsServers = dnsServers,
-                dnsUpstream = dnsUpstream,
+                dnsUpstream = upstream.dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
                 mtu = RoutingConfig.resolveMtu(config.mtu),
@@ -127,27 +127,49 @@ class RoutePlanner(
         config: RoutingConfig,
         transport: DnsTransport,
         lanDns: List<String>,
-    ): DnsUpstream {
-        val servers = when (config.dnsMode) {
-            DnsMode.System -> systemDnsServers()
+    ): ResolvedUpstream = when (config.dnsMode) {
+        DnsMode.System -> serverListUpstream(
+            transport,
+            systemDnsServers()
                 .sortedBy { ':' in it }
-                .mapNotNull { DnsServer.normalizeOrNull(it, transport) }
+                .mapNotNull { DnsServer.normalizeOrNull(it, transport) },
+        )
 
-            DnsMode.Cloudflare -> DnsPresets.cloudflare(transport)
-            DnsMode.Google -> DnsPresets.google(transport)
-            DnsMode.Custom -> config.customDns
+        DnsMode.Cloudflare -> cloudflareUpstream(transport)
+        DnsMode.Google -> googleUpstream(transport)
+        DnsMode.Custom -> serverListUpstream(
+            transport,
+            config.customDns
                 .mapNotNull { DnsServer.normalizeOrNull(it, transport) }
                 .filterNot { normalized ->
                     DnsServer.literalHostOf(normalized)?.let { it in lanDns } == true
-                }
+                },
+        )
+    }
+
+    private fun serverListUpstream(transport: DnsTransport, servers: List<String>): ResolvedUpstream {
+        if (servers.isNotEmpty()) {
+            return ResolvedUpstream(
+                dnsUpstream = DnsUpstream(transport, servers),
+                routeAddresses = servers.mapNotNull { DnsServer.literalHostOf(it) },
+            )
         }
-        if (servers.isNotEmpty()) return DnsUpstream(transport, servers)
         // No usable server. The preset has to answer, and Cloudflare publishes
         // no DNS over QUIC endpoint, so that transport falls back over TLS on
         // the same port rather than to an upstream that cannot reply at all.
         val fallback = if (transport == DnsTransport.Doq) DnsTransport.Tls else transport
-        return DnsUpstream(fallback, DnsPresets.cloudflare(fallback))
+        return cloudflareUpstream(fallback)
     }
+
+    private fun cloudflareUpstream(transport: DnsTransport): ResolvedUpstream = ResolvedUpstream(
+        dnsUpstream = DnsUpstream(transport, DnsPresets.cloudflare(transport)),
+        routeAddresses = DnsPresets.cloudflareAddresses(),
+    )
+
+    private fun googleUpstream(transport: DnsTransport): ResolvedUpstream = ResolvedUpstream(
+        dnsUpstream = DnsUpstream(transport, DnsPresets.google(transport)),
+        routeAddresses = DnsPresets.googleAddresses(),
+    )
 
     private fun lanDnsServers(config: RoutingConfig, transport: DnsTransport): List<String> {
         if (config.dnsMode != DnsMode.Custom) return emptyList()
@@ -158,9 +180,8 @@ class RoutePlanner(
             .distinct()
     }
 
-    private fun upstreamHostRoutes(servers: List<String>): List<Cidr> =
-        servers
-            .mapNotNull { DnsServer.literalHostOf(it) }
+    private fun upstreamHostRoutes(addresses: List<String>): List<Cidr> =
+        addresses
             .distinct()
             .mapNotNull { Cidr.parseOrNull(hostRoute(it)) }
             .filterNot(::isLanAddress)
@@ -171,6 +192,11 @@ class RoutePlanner(
         is Cidr.V4 -> LanRanges.IPV4.any { CidrMath.contains(it, c) }
         is Cidr.V6 -> LanRanges.IPV6.any { CidrMath.contains(it, c) }
     }
+
+    private class ResolvedUpstream(
+        val dnsUpstream: DnsUpstream,
+        val routeAddresses: List<String>,
+    )
 
     companion object {
         private const val TAG = "RoutePlanner"
