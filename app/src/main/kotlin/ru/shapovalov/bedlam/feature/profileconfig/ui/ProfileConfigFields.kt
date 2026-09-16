@@ -84,26 +84,15 @@ internal fun TextFieldRow(
 ) {
     var revealed by rememberSaveable { mutableStateOf(false) }
     val masked = secret && !revealed
+    val canReveal = secret && value.isNotBlank()
     FieldRowFrame(
         label = label,
         caution = caution,
         editMode = editMode,
         showDivider = showDivider,
-        labelTrailing = if (secret && value.isNotBlank()) {
-            {
-                TextButton(onClick = { revealed = !revealed }) {
-                    Text(
-                        text = stringResource(
-                            if (revealed) {
-                                R.string.profile_config_action_hide
-                            } else {
-                                R.string.profile_config_action_reveal
-                            },
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-            }
+        labelInField = true,
+        labelTrailing = if (canReveal) {
+            { RevealToggle(revealed = revealed, onToggle = { revealed = !revealed }) }
         } else {
             null
         },
@@ -111,6 +100,7 @@ internal fun TextFieldRow(
         AnimatedFieldContent(editMode = editMode) { isEditing ->
             if (isEditing) {
                 ConfigTextField(
+                    label = label,
                     value = value,
                     onValueChange = onChange,
                     singleLine = singleLine,
@@ -118,6 +108,11 @@ internal fun TextFieldRow(
                         PasswordVisualTransformation()
                     } else {
                         VisualTransformation.None
+                    },
+                    trailingIcon = if (canReveal) {
+                        { RevealToggle(revealed = revealed, onToggle = { revealed = !revealed }) }
+                    } else {
+                        null
                     },
                 )
             } else {
@@ -128,6 +123,22 @@ internal fun TextFieldRow(
 }
 
 private const val MASKED_VALUE = "••••••••"
+
+@Composable
+private fun RevealToggle(revealed: Boolean, onToggle: () -> Unit) {
+    TextButton(onClick = onToggle) {
+        Text(
+            text = stringResource(
+                if (revealed) {
+                    R.string.profile_config_action_hide
+                } else {
+                    R.string.profile_config_action_reveal
+                },
+            ),
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+}
 
 @Composable
 internal fun IntFieldRow(
@@ -189,6 +200,7 @@ private fun <T> NumericFieldRow(
         caution = caution,
         editMode = editMode,
         showDivider = showDivider,
+        labelInField = true,
     ) {
         AnimatedFieldContent(editMode = editMode) { isEditing ->
             if (isEditing) {
@@ -198,6 +210,7 @@ private fun <T> NumericFieldRow(
                     local = numericFieldText(local, text, focused, parse)
                 }
                 ConfigTextField(
+                    label = label,
                     value = local,
                     onValueChange = { entry ->
                         local = entry
@@ -274,16 +287,20 @@ internal fun SwitchRow(
 
 @Composable
 private fun ConfigTextField(
+    label: String,
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    trailingIcon: (@Composable () -> Unit)? = null,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
+        label = { Text(text = label, fontFamily = FontFamily.Monospace) },
+        trailingIcon = trailingIcon,
         singleLine = singleLine,
         visualTransformation = visualTransformation,
         minLines = if (singleLine) 1 else 3,
@@ -308,36 +325,49 @@ private fun ConfigTextField(
             focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.0f),
             unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.0f),
             cursorColor = MaterialTheme.colorScheme.primary,
+            focusedLabelColor = MaterialTheme.colorScheme.primary,
+            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
         modifier = modifier.fillMaxWidth(),
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun FieldRowFrame(
     label: String,
     caution: String?,
     editMode: Boolean,
     showDivider: Boolean,
+    labelInField: Boolean = false,
     labelTrailing: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
+    val motion = MaterialTheme.motionScheme
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.large, vertical = spacing.small),
     ) {
-        if (labelTrailing != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FieldLabel(label, modifier = Modifier.weight(1f))
-                labelTrailing()
+        AnimatedVisibility(
+            visible = !(editMode && labelInField),
+            enter = fadeIn(motion.defaultEffectsSpec()) +
+                    expandVertically(motion.fastSpatialSpec()),
+            exit = fadeOut(motion.defaultEffectsSpec()) +
+                    shrinkVertically(motion.fastSpatialSpec()),
+        ) {
+            if (labelTrailing != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FieldLabel(label, modifier = Modifier.weight(1f))
+                    labelTrailing()
+                }
+            } else {
+                FieldLabel(label)
             }
-        } else {
-            FieldLabel(label)
         }
         content()
         AnimatedHint(hint = caution, visible = editMode && !caution.isNullOrBlank())
