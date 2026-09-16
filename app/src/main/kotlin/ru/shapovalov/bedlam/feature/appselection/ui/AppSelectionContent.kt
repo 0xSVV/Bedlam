@@ -142,7 +142,7 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun AppSelectionTopBar(
+internal fun AppSelectionTopBar(
     searchVisible: Boolean,
     query: String,
     onQueryChange: (String) -> Unit,
@@ -237,7 +237,7 @@ private fun AppSelectionTopBar(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ModeChips(
+internal fun ModeChips(
     selected: AppFilterMode?,
     onSelect: (AppFilterMode) -> Unit,
     modifier: Modifier = Modifier,
@@ -273,14 +273,14 @@ private fun ModeChips(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun LoadingBox() {
+internal fun LoadingBox() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularWavyProgressIndicator()
     }
 }
 
 @Composable
-private fun AllModeHint() {
+internal fun AllModeHint() {
     Box(
         modifier = Modifier
             .fillMaxSize()
