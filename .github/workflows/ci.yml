@@ -35,3 +35,13 @@ jobs:
 
       - name: Release build (R8 smoke, unsigned)
         run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Provenance manifest (unsigned)
+        run: bash .github/scripts/write-provenance.sh build/release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: provenance
+          path: build/release/*-provenance.json
+          if-no-files-found: error
+          retention-days: 14
