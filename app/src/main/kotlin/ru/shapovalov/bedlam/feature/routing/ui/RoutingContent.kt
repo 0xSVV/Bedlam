@@ -15,10 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.routing.data.RoutePresets
@@ -78,7 +75,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                 navigationIcon = {
                     IconButton(onClick = component::onBackPressed) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            painterResource(R.drawable.ic_arrow_back),
                             contentDescription = stringResource(R.string.action_back),
                         )
                     }
@@ -89,7 +86,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                         enabled = !state.isRefreshing && state.config.sources.isNotEmpty(),
                     ) {
                         Icon(
-                            Icons.Default.Refresh,
+                            painterResource(R.drawable.ic_refresh),
                             contentDescription = stringResource(R.string.routing_refresh_cd),
                         )
                     }
@@ -225,7 +222,7 @@ internal fun SourcesHeaderCard(
                 }
                 IconButton(onClick = onAdd) {
                     Icon(
-                        Icons.Default.Add,
+                        painterResource(R.drawable.ic_add),
                         contentDescription = stringResource(R.string.routing_sources_add_cd),
                     )
                 }

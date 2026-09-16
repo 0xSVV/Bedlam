@@ -22,11 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -49,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -149,7 +145,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
         SwipeToDismissBoxValue.StartToEnd -> SwipeBgSpec(
             bg = MaterialTheme.colorScheme.tertiaryContainer,
             fg = MaterialTheme.colorScheme.onTertiaryContainer,
-            icon = if (currentlyEnabled) Icons.Default.Clear else Icons.Default.Check,
+            iconRes = if (currentlyEnabled) R.drawable.ic_close else R.drawable.ic_check,
             label = stringResource(
                 if (currentlyEnabled) R.string.routing_swipe_disable else R.string.routing_swipe_enable
             ),
@@ -159,7 +155,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
         SwipeToDismissBoxValue.EndToStart -> SwipeBgSpec(
             bg = MaterialTheme.colorScheme.errorContainer,
             fg = MaterialTheme.colorScheme.onErrorContainer,
-            icon = Icons.Default.Delete,
+            iconRes = R.drawable.ic_delete,
             label = stringResource(R.string.routing_sources_delete_cd),
             align = Alignment.CenterEnd,
         )
@@ -174,7 +170,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
         contentAlignment = spec.align,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(spec.icon, contentDescription = null, tint = spec.fg)
+            Icon(painterResource(spec.iconRes), contentDescription = null, tint = spec.fg)
             Spacer(Modifier.width(spacing.small))
             Text(spec.label, style = MaterialTheme.typography.labelLarge, color = spec.fg)
         }
@@ -184,7 +180,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
 private data class SwipeBgSpec(
     val bg: Color,
     val fg: Color,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val iconRes: Int,
     val label: String,
     val align: Alignment,
 )
@@ -280,7 +276,7 @@ internal fun SourceRowContent(
             }
             Spacer(Modifier.width(spacing.small))
             Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
+                painter = painterResource(R.drawable.ic_keyboard_arrow_down),
                 contentDescription = stringResource(
                     if (expanded) R.string.routing_source_details_collapse_cd
                     else R.string.routing_source_details_expand_cd
