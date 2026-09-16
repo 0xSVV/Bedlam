@@ -9,14 +9,58 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
+
+const dohFixtureQueryLimit = 512
 
 type dohServer struct {
 	srv      *httptest.Server
 	requests atomic.Int32
 	proto    atomic.Int32
+	maxBody  atomic.Int32
+	delay    atomic.Int64
+
+	mu     sync.Mutex
+	bodies [][]byte
+}
+
+func (d *dohServer) record(q []byte) {
+	d.mu.Lock()
+	d.bodies = append(d.bodies, append([]byte(nil), q...))
+	d.mu.Unlock()
+}
+
+func (d *dohServer) lastBody() []byte {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.bodies) == 0 {
+		return nil
+	}
+	return d.bodies[len(d.bodies)-1]
+}
+
+func rejectOversizeDoH(w http.ResponseWriter, q []byte, limit int32) bool {
+	if limit <= 0 || len(q) <= int(limit) {
+		return false
+	}
+	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+	w.WriteHeader(http.StatusRequestEntityTooLarge)
+	_, _ = io.WriteString(w, "<html><body>413 Request Entity Too Large</body></html>")
+	return true
+}
+
+func rejectUnparsableDoH(w http.ResponseWriter, q []byte) bool {
+	if _, ok := dnsQuestion(q); ok {
+		return false
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
+	w.WriteHeader(http.StatusBadRequest)
+	_, _ = io.WriteString(w, "Bad Request")
+	return true
 }
 
 func newDoHServer(t *testing.T, ip [4]byte, status int) *dohServer {
@@ -32,6 +76,17 @@ func newDoHServer(t *testing.T, ip [4]byte, status int) *dohServer {
 			t.Errorf("content-type = %q", ct)
 		}
 		q, err := io.ReadAll(r.Body)
+		d.record(q)
+		if wait := time.Duration(d.delay.Load()); wait > 0 {
+			select {
+			case <-time.After(wait):
+			case <-r.Context().Done():
+				return
+			}
+		}
+		if rejectOversizeDoH(w, q, d.maxBody.Load()) {
+			return
+		}
 		if err != nil || len(q) < 12 {
 			t.Errorf("bad body: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -39,6 +94,9 @@ func newDoHServer(t *testing.T, ip [4]byte, status int) *dohServer {
 		}
 		if binary.BigEndian.Uint16(q[:2]) != 0 {
 			t.Errorf("wire ID = %#x, want 0", binary.BigEndian.Uint16(q[:2]))
+		}
+		if rejectUnparsableDoH(w, q) {
+			return
 		}
 		if status != http.StatusOK {
 			w.WriteHeader(status)

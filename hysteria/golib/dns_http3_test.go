@@ -46,7 +46,26 @@ type doh3Server struct {
 	pool     *x509.CertPool
 	requests atomic.Int32
 	proto    atomic.Int32
+	maxBody  atomic.Int32
 	srv      *http3.Server
+
+	mu     sync.Mutex
+	bodies [][]byte
+}
+
+func (d *doh3Server) record(q []byte) {
+	d.mu.Lock()
+	d.bodies = append(d.bodies, append([]byte(nil), q...))
+	d.mu.Unlock()
+}
+
+func (d *doh3Server) lastBody() []byte {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.bodies) == 0 {
+		return nil
+	}
+	return d.bodies[len(d.bodies)-1]
 }
 
 func newDoH3Server(t *testing.T, ip [4]byte) *doh3Server {
@@ -63,12 +82,19 @@ func newDoH3Server(t *testing.T, ip [4]byte) *doh3Server {
 			d.requests.Add(1)
 			d.proto.Store(int32(r.ProtoMajor))
 			q, err := io.ReadAll(r.Body)
+			d.record(q)
+			if rejectOversizeDoH(w, q, d.maxBody.Load()) {
+				return
+			}
 			if err != nil || len(q) < 12 || r.Method != http.MethodPost {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			if binary.BigEndian.Uint16(q[:2]) != 0 {
 				t.Errorf("wire ID = %#x, want 0", binary.BigEndian.Uint16(q[:2]))
+			}
+			if rejectUnparsableDoH(w, q) {
+				return
 			}
 			resp := dnsResponse("example.com", 60, ip)
 			resp[0], resp[1] = 0, 0

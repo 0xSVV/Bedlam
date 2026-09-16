@@ -316,6 +316,31 @@ func withEDNS(query []byte, udpSize uint16, do bool) []byte {
 	return append(out, opt...)
 }
 
+func withPadding(query []byte, total int) []byte {
+	pad := total - len(query) - 15
+	if pad < 0 {
+		panic("withPadding: total is smaller than the query")
+	}
+	out := append([]byte(nil), query...)
+	binary.BigEndian.PutUint16(out[10:12], binary.BigEndian.Uint16(out[10:12])+1)
+	out = append(out, 0x00)
+	out = binary.BigEndian.AppendUint16(out, 41)
+	out = binary.BigEndian.AppendUint16(out, 1232)
+	out = binary.BigEndian.AppendUint32(out, 0)
+	out = binary.BigEndian.AppendUint16(out, uint16(4+pad))
+	out = binary.BigEndian.AppendUint16(out, 12)
+	out = binary.BigEndian.AppendUint16(out, uint16(pad))
+	return append(out, make([]byte, pad)...)
+}
+
+func nonDNSPayload(n int) []byte {
+	out := make([]byte, n)
+	for i := range out {
+		out[i] = byte(i*131 + 7)
+	}
+	return out
+}
+
 func TestEdnsOptions(t *testing.T) {
 	if _, _, ok := ednsOptions(dnsQuery("example.com")); ok {
 		t.Error("a query without an OPT record must report none")
