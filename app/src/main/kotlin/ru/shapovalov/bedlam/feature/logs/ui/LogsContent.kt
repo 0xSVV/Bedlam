@@ -42,6 +42,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
@@ -108,12 +110,16 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
         }
 
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         LogsActionsMenu(
             isPaused = state.isPaused,
             onTogglePause = component::onTogglePause,
             onClear = component::onClear,
             onShare = {
-                context.shareLog(state.visibleEntries, state.minLevel, state.droppedCount)
+                val entries = state.visibleEntries
+                val minLevel = state.minLevel
+                val droppedCount = state.droppedCount
+                scope.launch { context.shareLog(entries, minLevel, droppedCount) }
             },
             modifier = Modifier.align(Alignment.BottomEnd),
         )
