@@ -15,7 +15,6 @@ class LogsStoreFactory(
         by storeFactory.create(
             name = "LogsStore",
             initialState = LogsStore.State(),
-            bootstrapper = LogsBootstrapper(buffer),
             executorFactory = { LogsExecutor(buffer) },
             reducer = LogsReducer,
         ) {}

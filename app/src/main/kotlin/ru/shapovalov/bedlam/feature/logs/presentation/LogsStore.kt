@@ -6,6 +6,7 @@ import ru.shapovalov.hysteria.api.HysteriaClient
 interface LogsStore : Store<LogsStore.Intent, LogsStore.State, Nothing> {
 
     sealed interface Intent {
+        data class SetForeground(val foreground: Boolean) : Intent
         data class ChangeMinLevel(val level: HysteriaClient.LogLevel) : Intent
         data object TogglePaused : Intent
         data object Clear : Intent

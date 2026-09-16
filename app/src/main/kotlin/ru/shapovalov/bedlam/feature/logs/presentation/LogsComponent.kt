@@ -1,6 +1,8 @@
 package ru.shapovalov.bedlam.feature.logs.presentation
 
 import com.arkivanov.decompose.ComponentContext
+import com.arkivanov.essenty.lifecycle.doOnPause
+import com.arkivanov.essenty.lifecycle.doOnResume
 import com.arkivanov.mvikotlin.core.instancekeeper.getStore
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +18,11 @@ class LogsComponent(
     private val scope = componentScope()
 
     val state: StateFlow<LogsStore.State> = store.stateFlow(scope)
+
+    init {
+        lifecycle.doOnResume { store.accept(LogsStore.Intent.SetForeground(true)) }
+        lifecycle.doOnPause { store.accept(LogsStore.Intent.SetForeground(false)) }
+    }
 
     fun onChangeMinLevel(level: HysteriaClient.LogLevel) =
         store.accept(LogsStore.Intent.ChangeMinLevel(level))
