@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/apernet/quic-go"
 )
 
 type streamFault int
@@ -728,6 +730,27 @@ func (c failingConn) Read([]byte) (int, error)    { return 0, c.err }
 func (c failingConn) Write(b []byte) (int, error) { return len(b), nil }
 func (c failingConn) Close() error                { return nil }
 func (c failingConn) SetDeadline(time.Time) error { return nil }
+
+func TestStreamPool_redialsStreamsAQUICIdleTimeoutClosed(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
+	p := newStreamPool("test", srv.dial)
+	defer p.close()
+	for i := 0; i < dnsPoolSize; i++ {
+		p.idle <- &pooledConn{conn: failingConn{err: &quic.IdleTimeoutError{}}, opened: time.Now(), last: time.Now()}
+	}
+
+	for i := 0; i < dnsPoolSize; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, err := p.exchange(ctx, dnsQuery("example.com"))
+		cancel()
+		if err != nil {
+			t.Fatalf("lookup %d: a new stream answers, so a pooled one the idle timeout closed must not fail the query: %v", i, err)
+		}
+	}
+	if dialed := srv.conns.Load(); dialed != dnsPoolSize {
+		t.Errorf("dialled %d streams, want one per closed pooled stream", dialed)
+	}
+}
 
 func TestStreamPool_skipsTheRedialWhenAPooledStreamReachesItsDeadline(t *testing.T) {
 	var dialed atomic.Int32

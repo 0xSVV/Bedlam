@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -57,7 +58,7 @@ func (p *streamPool) exchange(ctx context.Context, query []byte) ([]byte, error)
 			return resp, nil
 		}
 		failures = pooledFailures
-		if ctx.Err() != nil || isTimeoutClass(failures[len(failures)-1].err) {
+		if ctx.Err() != nil || deadlineExpired(failures[len(failures)-1].err) {
 			return nil, p.failed(failures)
 		}
 	}
@@ -156,6 +157,10 @@ func (p *streamPool) failed(failures []streamResult) error {
 		return fmt.Errorf("%s: %s%w", p.label, earlier.String(), last.err)
 	}
 	return fmt.Errorf("%s: %s%s: %w", p.label, earlier.String(), last.stream, last.err)
+}
+
+func deadlineExpired(err error) bool {
+	return errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func hedgeDelay(ctx context.Context) time.Duration {
