@@ -53,10 +53,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -64,13 +63,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
 import ru.shapovalov.bedlam.core.appfilter.domain.model.InstalledApp
-import ru.shapovalov.bedlam.core.util.toBitmap
+import ru.shapovalov.bedlam.feature.appselection.presentation.AppIconCache
 import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
 import ru.shapovalov.bedlam.ui.theme.spacing
 
@@ -135,6 +132,7 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
                 else -> AppsList(
                     apps = state.filteredApps,
                     selected = state.selectedPackages,
+                    iconCache = component.iconCache,
                     onToggle = component::onTogglePackage,
                 )
             }
@@ -302,6 +300,7 @@ private fun AllModeHint() {
 private fun AppsList(
     apps: List<InstalledApp>,
     selected: Set<String>,
+    iconCache: AppIconCache,
     onToggle: (String) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -309,6 +308,7 @@ private fun AppsList(
             AppRow(
                 app = app,
                 isSelected = app.packageName in selected,
+                iconCache = iconCache,
                 onToggle = { onToggle(app.packageName) },
                 modifier = Modifier.animateItem(),
             )
@@ -321,17 +321,17 @@ private fun AppsList(
 private fun AppRow(
     app: InstalledApp,
     isSelected: Boolean,
+    iconCache: AppIconCache,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val iconBitmap by produceState<ImageBitmap?>(initialValue = null, key1 = app.packageName) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                context.packageManager.getApplicationIcon(app.packageName).toBitmap()
-                    .asImageBitmap()
-            }.getOrNull()
-        }
+    val iconSizePx = with(LocalDensity.current) { AppIconSize.roundToPx() }
+    val icon by produceState(
+        initialValue = iconCache.cached(app.packageName, iconSizePx),
+        app.packageName,
+        iconSizePx,
+    ) {
+        value = iconCache.load(app.packageName, iconSizePx)
     }
 
     ListItem(
@@ -358,9 +358,9 @@ private fun AppRow(
         },
         leadingContent = {
             Box(modifier = Modifier.size(AppIconSize), contentAlignment = Alignment.Center) {
-                iconBitmap?.let { bitmap ->
+                icon?.let { bitmap ->
                     Image(
-                        bitmap = bitmap,
+                        bitmap = remember(bitmap) { bitmap.asImageBitmap() },
                         contentDescription = null,
                         modifier = Modifier.size(AppIconSize),
                     )

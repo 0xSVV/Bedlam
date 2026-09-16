@@ -6,6 +6,7 @@ import com.arkivanov.mvikotlin.core.store.StoreFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
+import ru.shapovalov.bedlam.core.appfilter.data.AppIconLoader
 import ru.shapovalov.bedlam.core.appfilter.domain.usecase.GetInstalledAppsUseCase
 import ru.shapovalov.bedlam.core.appfilter.domain.usecase.ObserveAppFilterUseCase
 import ru.shapovalov.bedlam.core.appfilter.domain.usecase.SetAppFilterModeUseCase
@@ -76,7 +77,8 @@ class TestGraph(
             GetInstalledAppsUseCase(installedApps),
             SetAppFilterModeUseCase(appFilter),
             ToggleAppFilterPackageUseCase(appFilter),
-        )
+        ),
+        AppIconLoader(android),
     )
 
     val routingFactory = RoutingComponentFactory(

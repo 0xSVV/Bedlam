@@ -1,15 +1,18 @@
 package ru.shapovalov.bedlam.feature.appselection.presentation
 
 import com.arkivanov.decompose.ComponentContext
+import com.arkivanov.essenty.instancekeeper.getOrCreate
 import com.arkivanov.mvikotlin.core.instancekeeper.getStore
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
 import kotlinx.coroutines.flow.StateFlow
+import ru.shapovalov.bedlam.core.appfilter.data.AppIconLoader
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
 import ru.shapovalov.bedlam.core.util.componentScope
 
 class AppSelectionComponent(
     componentContext: ComponentContext,
     storeFactory: AppSelectionStoreFactory,
+    iconLoader: AppIconLoader,
     private val onBack: OnBack,
 ) : ComponentContext by componentContext {
 
@@ -17,6 +20,7 @@ class AppSelectionComponent(
     private val scope = componentScope()
 
     val state: StateFlow<AppSelectionStore.State> = store.stateFlow(scope)
+    val iconCache: AppIconCache = instanceKeeper.getOrCreate { AppIconCache(iconLoader) }
 
     fun onModeSelected(mode: AppFilterMode) =
         store.accept(AppSelectionStore.Intent.ChangeMode(mode))
