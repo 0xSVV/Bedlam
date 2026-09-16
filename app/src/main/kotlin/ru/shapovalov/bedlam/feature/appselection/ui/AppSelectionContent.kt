@@ -334,6 +334,7 @@ private fun AppRow(
         value = iconCache.load(app.packageName, iconSizePx)
     }
 
+    @Suppress("DEPRECATION")
     ListItem(
         headlineContent = {
             Text(
