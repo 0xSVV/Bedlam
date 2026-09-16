@@ -32,6 +32,7 @@ type streamPool struct {
 }
 
 type streamResult struct {
+	conn   *pooledConn
 	pooled bool
 	resp   []byte
 	stream string
@@ -62,6 +63,7 @@ func (p *streamPool) exchange(ctx context.Context, query []byte) ([]byte, error)
 	if result.err != nil {
 		return nil, p.failed(append(failures, result))
 	}
+	p.put(result.conn)
 	return result.resp, nil
 }
 
@@ -73,11 +75,12 @@ func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, c
 	stream := pooled.describe()
 	go func() {
 		resp, err := p.exchangeOn(streamCtx, pooled, query)
-		results <- streamResult{pooled: true, resp: resp, stream: stream, err: err}
+		results <- streamResult{conn: pooled, pooled: true, resp: resp, stream: stream, err: err}
 	}()
 	hedge := time.NewTimer(hedgeDelay(ctx))
 	defer hedge.Stop()
 	var failures []streamResult
+	pooledPending := true
 	for running := 1; running > 0; {
 		select {
 		case <-hedge.C:
@@ -85,14 +88,25 @@ func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, c
 			go func() { results <- p.exchangeOnNewStream(streamCtx, query) }()
 		case result := <-results:
 			running--
-			if result.err == nil {
-				return result.resp, nil
-			}
 			if result.pooled {
-				failures = append([]streamResult{result}, failures...)
-			} else {
-				failures = append(failures, result)
+				pooledPending = false
 			}
+			if result.err != nil {
+				if result.pooled {
+					failures = append([]streamResult{result}, failures...)
+				} else {
+					failures = append(failures, result)
+				}
+				continue
+			}
+			if !result.pooled && (pooledPending || isTimeoutClass(failures[0].err)) {
+				p.drain()
+			}
+			p.put(result.conn)
+			if running > 0 {
+				go p.reclaim(results, running)
+			}
+			return result.resp, nil
 		}
 	}
 	return nil, failures
@@ -109,7 +123,15 @@ func (p *streamPool) exchangeOnNewStream(ctx context.Context, query []byte) stre
 	if err != nil {
 		return streamResult{stream: "new stream dialed in " + diagDuration(c.opened.Sub(dialStart)).String(), err: err}
 	}
-	return streamResult{resp: resp}
+	return streamResult{conn: c, resp: resp}
+}
+
+func (p *streamPool) reclaim(results <-chan streamResult, pending int) {
+	for ; pending > 0; pending-- {
+		if result := <-results; result.err == nil {
+			p.put(result.conn)
+		}
+	}
 }
 
 func (p *streamPool) failed(failures []streamResult) error {
@@ -152,7 +174,6 @@ func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte
 	_ = c.conn.SetDeadline(time.Time{})
 	c.last = time.Now()
 	c.answered++
-	p.put(c)
 	return resp, nil
 }
 
@@ -198,6 +219,10 @@ func (p *streamPool) put(c *pooledConn) {
 
 func (p *streamPool) close() {
 	p.closed.Store(true)
+	p.drain()
+}
+
+func (p *streamPool) drain() {
 	for {
 		select {
 		case c := <-p.idle:

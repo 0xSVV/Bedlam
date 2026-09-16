@@ -502,3 +502,32 @@ func TestDNSUpstream_slowResolverStillAnswersPastHalfTheAttempt(t *testing.T) {
 		})
 	}
 }
+
+func TestDNSUpstream_staleStreamsCostOneSlowQueryNotFour(t *testing.T) {
+	var stale atomic.Bool
+	srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
+		if stale.Load() && conn <= dnsPoolSize {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	r := newTCPResolver(srv.client(), "1.1.1.1:53")
+	up := &dnsUpstream{resolvers: []dnsResolver{r}, ident: "tcp|1.1.1.1:53"}
+	defer up.close()
+	fillPool(t, r.pool, dnsPoolSize)
+	stale.Store(true)
+
+	for i := 0; i < dnsPoolSize; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		start := time.Now()
+		_, err := up.exchange(ctx, dnsQuery(fmt.Sprintf("q%d.example", i)))
+		elapsed := time.Since(start)
+		cancel()
+		if err != nil {
+			t.Fatalf("query %d: %v", i, err)
+		}
+		if i > 0 && elapsed > 300*time.Millisecond {
+			t.Errorf("query %d took %v, want only the first query to wait on a stale stream", i, elapsed)
+		}
+	}
+}

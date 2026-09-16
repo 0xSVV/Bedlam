@@ -535,3 +535,53 @@ func TestStreamPool_keepsTheRedialErrorAfterAStalePooledStream(t *testing.T) {
 		t.Errorf("err = %q, want the stale pooled stream reported before the redial error", msg)
 	}
 }
+
+func TestStreamPool_dropsIdleStreamsWhenAStaleOneTimesOut(t *testing.T) {
+	var stale atomic.Bool
+	srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
+		if stale.Load() && conn <= 3 {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	p := newStreamPool("test", srv.dial)
+	defer p.close()
+	fillPool(t, p, 3)
+	stale.Store(true)
+	before := srv.queries.Load()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := p.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	if held := len(p.idle); held != 1 {
+		t.Errorf("pool holds %d streams, want only the new one", held)
+	}
+	if sent := srv.queries.Load() - before; sent != 2 {
+		t.Errorf("server saw %d queries, want the stale attempt and its retry only", sent)
+	}
+}
+
+func TestStreamPool_keepsIdleStreamsWhenTheRetryAlsoTimesOut(t *testing.T) {
+	var dead atomic.Bool
+	srv := newFaultDNSServer(t, func(int, int) streamFault {
+		if dead.Load() {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	p := newStreamPool("test", srv.dial)
+	defer p.close()
+	fillPool(t, p, 3)
+	dead.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := p.exchange(ctx, dnsQuery("example.com")); err == nil {
+		t.Fatal("every stream is silent, so the query must fail")
+	}
+	if held := len(p.idle); held != 2 {
+		t.Errorf("pool holds %d streams, want the 2 untouched ones kept for a tunnel replacement to fail fast", held)
+	}
+}
