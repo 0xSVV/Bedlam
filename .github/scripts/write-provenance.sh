@@ -36,6 +36,17 @@ module_dir() {
   (cd hysteria/golib && go list -m -f '{{.Dir}}' "$1")
 }
 
+submodule_source() {
+  local dir="$1" name="$2" physical expected
+  [ -n "$dir" ] || return 1
+  expected=$(cd "hysteria/upstream/$name" && pwd -P) || return 1
+  physical=$(cd "$dir" && pwd -P) || return 1
+  [ "$physical" = "$expected" ] || return 1
+  echo "${physical#"$repo_root"/}"
+}
+
+repo_root=$(pwd -P)
+
 stage="${1:?usage: write-provenance.sh <stage-dir>}"
 case "${RELEASE_BUILD:-false}" in
   true) release_build=true ;;
@@ -92,6 +103,10 @@ mobile_version=$(cd hysteria/golib && go list -m -f '{{.Version}}' golang.org/x/
 golib_dir=$(module_dir bedlam/golib)
 core_dir=$(module_dir github.com/apernet/hysteria/core/v2)
 extras_dir=$(module_dir github.com/apernet/hysteria/extras/v2)
+core_source=$(submodule_source "$core_dir" core) \
+  || fail "Go resolves the Hysteria core to ${core_dir:-no directory}, not the submodule's hysteria/upstream/core"
+extras_source=$(submodule_source "$extras_dir" extras) \
+  || fail "Go resolves the Hysteria extras to ${extras_dir:-no directory}, not the submodule's hysteria/upstream/extras"
 
 declare -A tool_module tool_built_by
 for tool in gomobile gobind; do
@@ -269,6 +284,8 @@ jq -n \
   --arg coreGitlink "$(git rev-parse HEAD:hysteria/upstream)" \
   --arg coreHead "$(git -C hysteria/upstream rev-parse HEAD)" \
   --argjson coreTags "$(json_strings "${core_tags[@]}")" \
+  --arg coreDir "$core_source" \
+  --arg extrasDir "$extras_source" \
   --arg go "$go_version" \
   --arg golangOrgXMobile "$mobile_version" \
   --arg ndk "$ndk_revision" \
@@ -299,7 +316,7 @@ jq -n \
   '{
     schemaVersion: 1,
     app: {repository: $repository, commit: $commit, ref: $ref, versionName: $versionName, versionCode: $versionCode, trackedTreeClean: $trackedTreeClean},
-    hysteriaCore: {url: $coreUrl, gitlink: $coreGitlink, head: $coreHead, tags: $coreTags, clean: true},
+    hysteriaCore: {url: $coreUrl, gitlink: $coreGitlink, head: $coreHead, tags: $coreTags, clean: true, coreDir: $coreDir, extrasDir: $extrasDir},
     toolchain: {go: $go, golangOrgXMobile: $golangOrgXMobile, gomobile: {module: $gomobile, builtBy: $gomobileBuiltBy}, gobind: {module: $gobind, builtBy: $gobindBuiltBy}, ndk: $ndk, java: $java, javaVendor: $javaVendor, gradle: $gradle, androidGradlePlugin: $androidGradlePlugin, kotlin: $kotlin, verifierBuildTools: $verifierBuildTools, runnerImage: {os: $runnerImageOs, version: $runnerImageVersion}},
     build: {workflow: $workflow, run: $run, builtAt: $builtAt},
     golib: {file: "hysteria/libs/golib.aar", size: $aarSize, sha256: $aarSha256, libraries: $aarLibraries},

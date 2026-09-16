@@ -32,6 +32,21 @@ submodule_head=$(git -C "$submodule" rev-parse HEAD)
 changes=$(git -C "$submodule" status --porcelain --untracked-files=all --ignored --ignore-submodules=none)
 [ -z "$changes" ] || fail "$submodule has local changes: $(head -5 <<< "$changes" | paste -sd' ')"
 
+go_mod=hysteria/golib/go.mod
+expected_replacements="github.com/apernet/hysteria/core/v2 => ../upstream/core
+github.com/apernet/hysteria/extras/v2 => ../upstream/extras"
+replacements=$(tr '\r' ' ' < "$go_mod" | awk '
+  { sub(/\/\/.*/, ""); gsub(/[()"]/, " ") }
+  $1 == "replace" { $1 = ""; $0 = $0 }
+  { $1 = $1 }
+  / => / && ($1 ~ /^github\.com\/apernet\/hysteria\/(core|extras)\/v2$/ || $1 ~ /\\/)
+' | sort || true)
+[ "$replacements" = "$expected_replacements" ] \
+  || fail "$go_mod must replace the Hysteria core and extras with ../upstream/core and ../upstream/extras only, it has [$(paste -sd';' <<< "$replacements")]"
+for work in hysteria/golib/go.work hysteria/go.work go.work; do
+  [ ! -e "$work" ] || fail "Go would build hysteria/golib in workspace mode from $work, which can override $go_mod"
+done
+
 url=$(git config -f .gitmodules "submodule.$submodule.url")
 patterns=()
 for tag in "${expected_tags[@]}"; do
