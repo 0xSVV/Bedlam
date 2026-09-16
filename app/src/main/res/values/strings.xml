@@ -213,9 +213,9 @@
     <string name="routing_mtu_label">MTU</string>
     <string name="routing_mtu_auto_placeholder">Auto (%1$d)</string>
     <string name="routing_mtu_auto_suffix">auto</string>
-    <string name="routing_mtu_auto_hint">Auto uses %1$d bytes. IPv6 does not allow less</string>
+    <string name="routing_mtu_auto_hint" tools:ignore="PluralsCandidate">Auto uses %1$d bytes. IPv6 does not allow less</string>
     <string name="routing_mtu_hint">The largest packet that the tunnel interface accepts</string>
-    <string name="routing_mtu_range_error">The MTU must be from %1$d to %2$d bytes</string>
+    <string name="routing_mtu_range_error" tools:ignore="PluralsCandidate">The MTU must be from %1$d to %2$d bytes</string>
     <string name="routing_dns_title">DNS</string>
     <string name="routing_dns_system">System</string>
     <string name="routing_dns_cloudflare">Cloudflare</string>
@@ -371,8 +371,8 @@
     <string name="profile_config_caution_quic">Tuning these can break the connection</string>
     <string name="profile_config_value_unset">unset</string>
     <string name="profile_config_value_default_seconds">default %1$ds</string>
-    <string name="profile_config_hint_quic_idle">0 uses the default of %1$d seconds. The tunnel uses the smaller of this value and the server value</string>
-    <string name="profile_config_hint_quic_keepalive">0 uses the default of %1$d seconds</string>
+    <string name="profile_config_hint_quic_idle" tools:ignore="PluralsCandidate">0 uses the default of %1$d seconds. The tunnel uses the smaller of this value and the server value</string>
+    <string name="profile_config_hint_quic_keepalive" tools:ignore="PluralsCandidate">0 uses the default of %1$d seconds</string>
     <string name="profile_config_caution_congestion">Unsupported algorithm or BBR profile may be rejected</string>
     <string name="profile_config_caution_bandwidth">Misreporting causes congestion-control issues</string>
     <string name="profile_config_caution_hop">Hop intervals must agree with the server</string>
