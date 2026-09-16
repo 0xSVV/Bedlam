@@ -112,7 +112,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
     }
 
     LaunchedEffect(state.notFound) {
-        if (state.notFound) component.onBackPressed()
+        if (state.notFound) component.onClose()
     }
 
     Scaffold(
@@ -129,7 +129,10 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = component::onBackPressed) {
+                    IconButton(
+                        onClick = component::onBackPressed,
+                        enabled = !state.isSaving,
+                    ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.action_back),

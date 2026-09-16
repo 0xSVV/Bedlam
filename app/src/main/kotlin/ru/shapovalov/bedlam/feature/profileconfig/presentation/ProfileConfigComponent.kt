@@ -34,7 +34,15 @@ class ProfileConfigComponent(
     fun onCancelDelete() = store.accept(ProfileConfigStore.Intent.CancelDelete)
     fun onConfirmDelete() = store.accept(ProfileConfigStore.Intent.ConfirmDelete)
     fun onDismissError() = store.accept(ProfileConfigStore.Intent.DismissError)
-    fun onBackPressed() = onBack.invoke()
+    fun onClose() = onBack.invoke()
+
+    fun onBackPressed() {
+        if (store.state.editMode) {
+            store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+        } else {
+            onBack.invoke()
+        }
+    }
 
     fun interface OnBack {
         fun invoke()
