@@ -98,3 +98,8 @@ jobs:
           files: build/release/*
           body_path: release-notes/${{ steps.version.outputs.name }}.md
           fail_on_unmatched_files: true
+
+      - name: Check uploaded assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/check-release-assets.sh "$GITHUB_REF_NAME" build/release
