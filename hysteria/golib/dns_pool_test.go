@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -679,5 +680,40 @@ func TestStreamPool_stopsTheLosingStreamOnceAnotherAnswers(t *testing.T) {
 	case <-(<-dialer.opened).closed:
 	case <-time.After(200 * time.Millisecond):
 		t.Error("the stale pooled stream kept reading after the new stream answered")
+	}
+}
+
+type closeRecordingConn struct {
+	net.Conn
+	closed atomic.Bool
+}
+
+func (c *closeRecordingConn) Close() error {
+	c.closed.Store(true)
+	return nil
+}
+
+func TestStreamPool_closeRacingAReturnedStreamClosesIt(t *testing.T) {
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("the race needs two threads")
+	}
+	const rounds = 200000
+	leaked := 0
+	for i := 0; i < rounds; i++ {
+		p := newStreamPool("test", nil)
+		conn := &closeRecordingConn{}
+		returned := make(chan struct{})
+		go func() {
+			p.put(&pooledConn{conn: conn, last: time.Now()})
+			close(returned)
+		}()
+		p.close()
+		<-returned
+		if !conn.closed.Load() {
+			leaked++
+		}
+	}
+	if leaked > 0 {
+		t.Errorf("%d of %d streams returned while the pool closed were left open", leaked, rounds)
 	}
 }

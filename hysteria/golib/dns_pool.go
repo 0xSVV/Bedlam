@@ -228,6 +228,9 @@ func (p *streamPool) put(c *pooledConn) {
 	}
 	select {
 	case p.idle <- c:
+		if p.closed.Load() {
+			p.drain()
+		}
 	default:
 		_ = c.conn.Close()
 	}
