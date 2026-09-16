@@ -1,23 +1,44 @@
 name: Set up build toolchain
-description: Java, Go, gomobile, Android NDK, and Gradle for building Bedlam.
+description: Java, Go, gomobile, Android NDK, and Gradle for building Bedlam, at the Go and NDK versions in .github/toolchain.env and the gomobile version that hysteria/golib/go.mod selects.
 runs:
   using: composite
   steps:
+    - name: Read toolchain pins
+      id: pins
+      shell: bash
+      run: |
+        go_version=$(sed -n 's/^GO_VERSION=//p' .github/toolchain.env)
+        ndk_version=$(sed -n 's/^NDK_VERSION=//p' .github/toolchain.env)
+        if [ -z "$go_version" ] || [ -z "$ndk_version" ]; then
+          echo "::error::GO_VERSION and NDK_VERSION must be set in .github/toolchain.env"
+          exit 1
+        fi
+        echo "go=$go_version" >> "$GITHUB_OUTPUT"
+        echo "ndk=$ndk_version" >> "$GITHUB_OUTPUT"
+        echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
     - uses: actions/setup-java@v4
       with:
         distribution: temurin
         java-version: "21"
     - uses: actions/setup-go@v5
       with:
-        go-version: "1.25"
+        go-version: ${{ steps.pins.outputs.go }}
         cache-dependency-path: hysteria/golib/go.sum
-    - name: Install gomobile and gobind
+    - name: Install gomobile and gobind at the go.mod version
       shell: bash
+      working-directory: hysteria/golib
       run: |
-        go install golang.org/x/mobile/cmd/gomobile@latest
-        go install golang.org/x/mobile/cmd/gobind@latest
+        mobile_version=$(go list -m -f '{{.Version}}' golang.org/x/mobile)
+        go install "golang.org/x/mobile/cmd/gomobile@$mobile_version" "golang.org/x/mobile/cmd/gobind@$mobile_version"
         echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-    - name: Point Gradle at the runner NDK
+    - name: Point Gradle at the pinned NDK
       shell: bash
-      run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+      env:
+        NDK_VERSION: ${{ steps.pins.outputs.ndk }}
+      run: |
+        ndk="$ANDROID_HOME/ndk/$NDK_VERSION"
+        if [ ! -f "$ndk/source.properties" ]; then
+          (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+        fi
+        echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
     - uses: gradle/actions/setup-gradle@v4
