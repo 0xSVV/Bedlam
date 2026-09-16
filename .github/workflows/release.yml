@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
+      BEDLAM_CERT_SHA256: 53dc7856de56620d6428a344662ee0b3c3bf5d09faa16312534945044ba2d109
       HAS_SIGNING_SECRETS: ${{ secrets.BEDLAM_STORE_BASE64 != '' && secrets.BEDLAM_STORE_PASSWORD != '' && secrets.BEDLAM_KEY_ALIAS != '' && secrets.BEDLAM_KEY_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v4
@@ -83,11 +84,17 @@ jobs:
           printf '%s' "$BEDLAM_STORE_BASE64" | base64 -d > "$ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE"
           ./gradlew :app:assembleRelease -x :hysteria:buildGolib --stacktrace
 
+      - name: Verify the APKs and write the provenance manifest
+        env:
+          RELEASE_BUILD: "true"
+          EXPECTED_TAG: ${{ github.ref_name }}
+          EXPECTED_CERT_SHA256: ${{ env.BEDLAM_CERT_SHA256 }}
+          GOLIB_SHA256: ${{ steps.golib.outputs.sha256 }}
+        run: bash .github/scripts/write-provenance.sh build/release
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            app/build/outputs/apk/release/bedlam-*.apk
-            app/build/outputs/apk/release/output-metadata.json
+          files: build/release/*
           body_path: release-notes/${{ steps.version.outputs.name }}.md
           fail_on_unmatched_files: true
