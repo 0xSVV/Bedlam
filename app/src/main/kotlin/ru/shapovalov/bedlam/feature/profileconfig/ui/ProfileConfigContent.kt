@@ -107,8 +107,8 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
     }
     LaunchedEffect(saveErrorMessage) {
         val msg = saveErrorMessage ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
         component.onDismissError()
+        scope.launch { snackbarHostState.showSnackbar(msg) }
     }
 
     LaunchedEffect(state.notFound) {
