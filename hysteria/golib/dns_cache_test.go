@@ -1,8 +1,15 @@
 package golib
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -314,6 +321,223 @@ func withEDNS(query []byte, udpSize uint16, do bool) []byte {
 	opt = binary.BigEndian.AppendUint32(opt, ttl)
 	opt = binary.BigEndian.AppendUint16(opt, 0)
 	return append(out, opt...)
+}
+
+func withPadding(query []byte, total int) []byte {
+	pad := total - len(query) - 15
+	if pad < 0 {
+		panic("withPadding: total is smaller than the query")
+	}
+	out := append([]byte(nil), query...)
+	binary.BigEndian.PutUint16(out[10:12], binary.BigEndian.Uint16(out[10:12])+1)
+	out = append(out, 0x00)
+	out = binary.BigEndian.AppendUint16(out, 41)
+	out = binary.BigEndian.AppendUint16(out, 1232)
+	out = binary.BigEndian.AppendUint32(out, 0)
+	out = binary.BigEndian.AppendUint16(out, uint16(4+pad))
+	out = binary.BigEndian.AppendUint16(out, 12)
+	out = binary.BigEndian.AppendUint16(out, uint16(pad))
+	return append(out, make([]byte, pad)...)
+}
+
+func nonDNSPayload(n int) []byte {
+	out := make([]byte, n)
+	for i := range out {
+		out[i] = byte(i*131 + 7)
+	}
+	return out
+}
+
+func TestDNSCacheResolve_forwardsValidQueriesUnchanged(t *testing.T) {
+	c := newDNSCache()
+	var mu sync.Mutex
+	var seen [][]byte
+	r := &stubResolver{name: "https|fixture", reply: func(q []byte) ([]byte, error) {
+		mu.Lock()
+		seen = append(seen, append([]byte(nil), q...))
+		mu.Unlock()
+		resp := dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1})
+		resp[10], resp[11] = 0, 0
+		return resp, nil
+	}}
+	queries := [][]byte{
+		withEDNS(dnsQuery("a.example"), 512, false),
+		withEDNS(dnsQuery("b.example"), 4096, true),
+		withPadding(dnsQuery("c.example"), 128),
+		withPadding(dnsQuery("d.example"), 1400),
+		append(dnsQuery("e.example"), 0, 0, 0, 0),
+	}
+	for _, q := range queries {
+		if _, err := c.resolve(context.Background(), r, q, nil); err != nil {
+			t.Fatalf("%d-byte query: %v", len(q), err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != len(queries) {
+		t.Fatalf("resolver saw %d queries, want %d", len(seen), len(queries))
+	}
+	for i, q := range queries {
+		if !bytes.Equal(seen[i], q) {
+			t.Errorf("query %d reached the resolver altered", i)
+		}
+	}
+}
+
+func TestValidDNSQuery_acceptsQueries(t *testing.T) {
+	checkingDisabled := dnsQuery("example.com")
+	checkingDisabled[3] |= 0x10
+	cases := []struct {
+		name  string
+		query []byte
+	}{
+		{"plain", dnsQuery("example.com")},
+		{"mixed case", dnsQuery("ExAmPlE.CoM")},
+		{"checking disabled", checkingDisabled},
+		{"EDNS with DO", withEDNS(dnsQuery("example.com"), 1232, true)},
+		{"padded to 128", withPadding(dnsQuery("example.com"), 128)},
+		{"padded to 4096", withPadding(dnsQuery("example.com"), 4096)},
+		{"trailing bytes", append(dnsQuery("example.com"), 0, 0, 0, 0)},
+	}
+	for _, c := range cases {
+		if !validDNSQuery(c.query) {
+			t.Errorf("%s: rejected", c.name)
+		}
+	}
+}
+
+func TestValidDNSQuery_rejectsNonQueries(t *testing.T) {
+	q := dnsQuery("example.com")
+	mutate := func(f func([]byte) []byte) []byte { return f(append([]byte(nil), q...)) }
+	cases := []struct {
+		name    string
+		payload []byte
+	}{
+		{"empty", nil},
+		{"shorter than a header", q[:11]},
+		{"header only", q[:12]},
+		{"no question", mutate(func(b []byte) []byte { b[5] = 0; return b })},
+		{"two questions", mutate(func(b []byte) []byte { b[5] = 2; return b })},
+		{"cut question", q[:len(q)-1]},
+		{"reserved label type", mutate(func(b []byte) []byte { b[12] = 0x40; return b })},
+		{"response", dnsResponse("example.com", 60, [4]byte{1, 1, 1, 1})},
+		{"missing additional record", mutate(func(b []byte) []byte { b[11] = 1; return b })},
+		{"record overruns the payload", mutate(func(b []byte) []byte {
+			e := withEDNS(b, 1232, false)
+			e[len(e)-2], e[len(e)-1] = 0xff, 0xff
+			return e
+		})},
+		{"garbage record counts", mutate(func(b []byte) []byte { b[6], b[7] = 0x12, 0x34; return b })},
+		{"148 bytes of non-DNS", nonDNSPayload(148)},
+		{"1400 bytes of non-DNS", nonDNSPayload(1400)},
+	}
+	for _, c := range cases {
+		if validDNSQuery(c.payload) {
+			t.Errorf("%s: accepted", c.name)
+		}
+	}
+}
+
+func TestDNSCacheResolve_refusesNonDNSPayloads(t *testing.T) {
+	c := newDNSCache()
+	r := &stubResolver{name: "tcp|1.1.1.1:53", reply: echoAnswer([4]byte{1, 1, 1, 1})}
+	twoQuestions := dnsQuery("example.com")
+	twoQuestions[5] = 2
+	var tunnelled int
+	count := func(tx, rx int) { tunnelled += tx + rx }
+
+	for _, payload := range [][]byte{nonDNSPayload(1400), nonDNSPayload(8), twoQuestions} {
+		_, err := c.resolve(context.Background(), r, payload, count)
+		if !errors.Is(err, errDNSQueryInvalid) {
+			t.Errorf("%d bytes: err = %v, want errDNSQueryInvalid", len(payload), err)
+		}
+		if err != nil && !strings.Contains(err.Error(), fmt.Sprintf("(%d bytes)", len(payload))) {
+			t.Errorf("err %q lacks the payload size", err)
+		}
+	}
+	if r.calls.Load() != 0 {
+		t.Errorf("resolver called %d times for payloads that are not DNS queries", r.calls.Load())
+	}
+	if tunnelled != 0 {
+		t.Errorf("counted %d tunnel bytes for refused payloads", tunnelled)
+	}
+}
+
+func TestDNSCacheResolve_nonDNSPayloadReachesNoTransport(t *testing.T) {
+	answerQueries := func(received *atomic.Int32) func(q []byte) []byte {
+		return func(q []byte) []byte {
+			received.Add(1)
+			if _, ok := dnsQuestion(q); !ok {
+				return nil
+			}
+			resp := dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1})
+			resp[10], resp[11] = 0, 0
+			return resp
+		}
+	}
+
+	var tcpFrames atomic.Int32
+	tcp := newTCPResolver(&fakeClient{tcp: func(string) (net.Conn, error) {
+		return pipeDNSServer(t, answerQueries(&tcpFrames)), nil
+	}}, "192.0.2.53:53")
+
+	var udpFallbackFrames atomic.Int32
+	udpWithoutRelay := newUDPResolver(&fakeClient{tcp: func(string) (net.Conn, error) {
+		return pipeDNSServer(t, answerQueries(&udpFallbackFrames)), nil
+	}}, "192.0.2.53:53")
+
+	cert, pool := testCert(t)
+	var dotFrames atomic.Int32
+	dotAnswer := answerQueries(&dotFrames)
+	dotDial := loopbackDoTServer(t, cert, func(_ int, q []byte) []byte { return dotAnswer(q) })
+	dot := newTLSResolver(&fakeClient{tcp: func(string) (net.Conn, error) { return dotDial() }}, "dns.test:853", &tls.Config{RootCAs: pool})
+
+	dohFixture := newDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	dohFixture.maxBody.Store(dohFixtureQueryLimit)
+	doh, err := newHTTPSResolver(dohFixture.client(), dohFixture.url(), &tls.Config{RootCAs: dohFixture.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doh3Fixture := newDoH3Server(t, [4]byte{1, 1, 1, 1})
+	doh3Fixture.maxBody.Store(dohFixtureQueryLimit)
+	doh3Client, _ := doh3Fixture.client(t)
+	doh3, err := newH3Resolver(doh3Client, doh3Fixture.url(), &tls.Config{RootCAs: doh3Fixture.pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	transports := []struct {
+		resolver dnsResolver
+		received func() int32
+	}{
+		{tcp, tcpFrames.Load},
+		{udpWithoutRelay, udpFallbackFrames.Load},
+		{dot, dotFrames.Load},
+		{doh, dohFixture.requests.Load},
+		{doh3, doh3Fixture.requests.Load},
+	}
+	for _, tr := range transports {
+		t.Cleanup(tr.resolver.close)
+		c := newDNSCache()
+		for _, junk := range [][]byte{nonDNSPayload(300), nonDNSPayload(1400)} {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_, err := c.resolve(ctx, tr.resolver, junk, nil)
+			cancel()
+			if !errors.Is(err, errDNSQueryInvalid) {
+				t.Errorf("%s: %d bytes of non-DNS: err = %v, want errDNSQueryInvalid", tr.resolver.id(), len(junk), err)
+			}
+		}
+		if n := tr.received(); n != 0 {
+			t.Errorf("%s: the upstream received %d non-DNS payloads", tr.resolver.id(), n)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := c.resolve(ctx, tr.resolver, dnsQuery("example.com"), nil)
+		cancel()
+		if err != nil {
+			t.Errorf("%s: a real query after the refusals: %v", tr.resolver.id(), err)
+		}
+	}
 }
 
 func TestEdnsOptions(t *testing.T) {

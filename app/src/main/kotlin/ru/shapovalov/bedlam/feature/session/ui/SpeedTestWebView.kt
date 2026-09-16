@@ -89,7 +89,7 @@ internal fun SpeedTestWebView(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SpeedTestError(onRetry: () -> Unit, modifier: Modifier = Modifier) {
+internal fun SpeedTestError(onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val spacing = MaterialTheme.spacing
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,

@@ -12,7 +12,6 @@ interface DashboardStore :
     sealed interface Intent {
         data object ToggleConnection : Intent
         data class SelectProfile(val id: String) : Intent
-        data class DeleteProfile(val id: String) : Intent
         data class OpenImport(val prefill: String) : Intent
         data object CloseImport : Intent
         data class ImportProfile(
@@ -32,6 +31,7 @@ interface DashboardStore :
         val connectionState: ConnectionState = ConnectionState.Disconnected(),
         val connectedSinceMillis: Long? = null,
         val importSheet: ImportSheetSeed? = null,
+        val importSheetClosing: Boolean = false,
         val isImporting: Boolean = false,
         val importError: String? = null,
         val error: ErrorReason? = null,
@@ -45,6 +45,8 @@ interface DashboardStore :
     sealed interface ErrorReason {
         data object NoActiveProfile : ErrorReason
         data class DuplicateProfile(val name: String) : ErrorReason
+        data class ConnectionFailed(val message: String) : ErrorReason
+        data class ImportFailed(val message: String) : ErrorReason
     }
 
     sealed interface Label {

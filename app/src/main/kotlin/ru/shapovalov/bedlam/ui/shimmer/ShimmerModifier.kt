@@ -9,6 +9,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.GlobalPositionAwareModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.platform.LocalDensity
 
 @Composable
@@ -33,6 +34,12 @@ private data class ShimmerElement(
     override fun update(node: ShimmerNode) {
         node.area = area
         node.effect = effect
+    }
+
+    override fun InspectorInfo.inspectableProperties() {
+        name = "shimmer"
+        properties["area"] = area
+        properties["effect"] = effect
     }
 }
 

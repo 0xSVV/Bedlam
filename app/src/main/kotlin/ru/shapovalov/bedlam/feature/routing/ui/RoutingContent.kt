@@ -6,16 +6,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -31,9 +31,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.routing.data.RoutePresets
@@ -46,8 +48,8 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
-    var showAddSource by remember { mutableStateOf(false) }
-    var showPresets by remember { mutableStateOf(false) }
+    var showAddSource by rememberSaveable { mutableStateOf(false) }
+    var showPresets by rememberSaveable { mutableStateOf(false) }
 
     val presetStatuses = remember(state.config.sources) {
         val existingAsns = state.config.sources
@@ -61,6 +63,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
         topBar = {
             TopAppBar(
                 title = {
@@ -72,7 +75,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                 navigationIcon = {
                     IconButton(onClick = component::onBackPressed) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            painterResource(R.drawable.ic_arrow_back),
                             contentDescription = stringResource(R.string.action_back),
                         )
                     }
@@ -83,7 +86,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                         enabled = !state.isRefreshing && state.config.sources.isNotEmpty(),
                     ) {
                         Icon(
-                            Icons.Default.Refresh,
+                            painterResource(R.drawable.ic_refresh),
                             contentDescription = stringResource(R.string.routing_refresh_cd),
                         )
                     }
@@ -191,7 +194,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SourcesHeaderCard(
+internal fun SourcesHeaderCard(
     modifier: Modifier = Modifier,
     onAdd: () -> Unit,
     onPresets: () -> Unit,
@@ -219,7 +222,7 @@ private fun SourcesHeaderCard(
                 }
                 IconButton(onClick = onAdd) {
                     Icon(
-                        Icons.Default.Add,
+                        painterResource(R.drawable.ic_add),
                         contentDescription = stringResource(R.string.routing_sources_add_cd),
                     )
                 }
@@ -238,7 +241,7 @@ private fun SourcesHeaderCard(
 }
 
 @Composable
-private fun EmptySourcesRow(modifier: Modifier = Modifier) {
+internal fun EmptySourcesRow(modifier: Modifier = Modifier) {
     ElevatedCard(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
         Text(
             text = stringResource(R.string.routing_sources_empty),

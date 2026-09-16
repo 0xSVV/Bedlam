@@ -3,7 +3,10 @@ package golib
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/netip"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -40,6 +43,7 @@ func TestNormalizeDNSServer(t *testing.T) {
 		{"tcp", "dns.example", "", true},
 		{"udp", "dns.example:53", "", true},
 		{"tls", "dns.google", "dns.google:853", false},
+		{"tls", "one.one.one.one:853", "one.one.one.one:853", false},
 		{"tls", "1.1.1.1", "1.1.1.1:853", false},
 		{"tls", "1.1.1.1:8853", "1.1.1.1:8853", false},
 		{"tls", "2001:4860:4860::8888", "[2001:4860:4860::8888]:853", false},
@@ -56,6 +60,7 @@ func TestNormalizeDNSServer(t *testing.T) {
 		{"https", "[2001:4860:4860::8888]:8443", "", true},
 		{"https", "1.1.1.1:53", "", true},
 		{"https", "https://dns.google/dns-query", "https://dns.google/dns-query", false},
+		{"https", "https://cloudflare-dns.com/dns-query", "https://cloudflare-dns.com/dns-query", false},
 		{"https", "https://dns.google", "https://dns.google/dns-query", false},
 		{"https", "https://dns.google/", "https://dns.google/dns-query", false},
 		{"https", "https://[2001:4860:4860::8888]/", "https://[2001:4860:4860::8888]/dns-query", false},
@@ -127,6 +132,101 @@ func TestNewDNSUpstream_buildsAndIdentifies(t *testing.T) {
 	}
 	if up.isListenAddr(netip.MustParseAddr("172.19.0.1")) {
 		t.Error("interface address must not be a listen address")
+	}
+}
+
+func TestNewDNSUpstream_hostnamePresetsKeepTheHost(t *testing.T) {
+	build := func(transport, servers string) *dnsUpstream {
+		t.Helper()
+		cfg, err := parseDNSUpstream(`{"transport":"` + transport + `","servers":[` + servers + `],"listen":["172.19.0.2","fdfe:dcba:9876::2"]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		up, err := newDNSUpstream(&fakeClient{}, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(up.close)
+		return up
+	}
+
+	dot := build("tls", `"one.one.one.one:853"`)
+	if dot.id() != "tls|one.one.one.one:853" {
+		t.Errorf("DoT id = %q", dot.id())
+	}
+	tlsR := dot.resolvers[0].(*tlsResolver)
+	if tlsR.server != "one.one.one.one:853" || tlsR.tlsCfg.ServerName != "one.one.one.one" {
+		t.Errorf("DoT server=%q sni=%q", tlsR.server, tlsR.tlsCfg.ServerName)
+	}
+	if tlsR.tlsCfg.InsecureSkipVerify || tlsR.tlsCfg.RootCAs == nil {
+		t.Error("DoT to a hostname must verify the certificate against the system roots")
+	}
+
+	doh := build("https", `"https://cloudflare-dns.com/dns-query"`)
+	if doh.id() != "https|https://cloudflare-dns.com/dns-query" {
+		t.Errorf("DoH id = %q", doh.id())
+	}
+	httpsR := doh.resolvers[0].(*httpsResolver)
+	if httpsR.url != "https://cloudflare-dns.com/dns-query" || httpsR.dial != "cloudflare-dns.com:443" || httpsR.tlsCfg.ServerName != "cloudflare-dns.com" {
+		t.Errorf("DoH url=%q dial=%q sni=%q", httpsR.url, httpsR.dial, httpsR.tlsCfg.ServerName)
+	}
+	if httpsR.tlsCfg.InsecureSkipVerify || httpsR.tlsCfg.RootCAs == nil {
+		t.Error("DoH to a hostname must verify the certificate against the system roots")
+	}
+
+	doh3 := build("http3", `"https://1.1.1.1/dns-query","https://[2606:4700:4700::1111]/dns-query"`)
+	numeric := []struct {
+		dial string
+		name string
+	}{
+		{"1.1.1.1:443", "1.1.1.1"},
+		{"[2606:4700:4700::1111]:443", "2606:4700:4700::1111"},
+	}
+	for i, want := range numeric {
+		h3R := doh3.resolvers[i].(*h3Resolver)
+		if h3R.dial != want.dial || h3R.tlsCfg.ServerName != want.name {
+			t.Errorf("HTTP/3 %d dial=%q sni=%q, want %q and %q", i, h3R.dial, h3R.tlsCfg.ServerName, want.dial, want.name)
+		}
+		if h3R.fallback.dial != want.dial {
+			t.Errorf("HTTP/3 %d fallback dial=%q, want %q", i, h3R.fallback.dial, want.dial)
+		}
+	}
+}
+
+func TestDNSUpstream_singleServerFailsWithinTheAttemptCap(t *testing.T) {
+	var answering atomic.Bool
+	lone := &stubResolver{name: "tls|one.one.one.one:853", reply: func(query []byte) ([]byte, error) {
+		if answering.Load() {
+			return echoAnswer([4]byte{1, 1, 1, 1})(query)
+		}
+		time.Sleep(30 * time.Second)
+		return nil, errors.New("unreachable")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{lone}, ident: lone.name}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	start := time.Now()
+	_, err := up.exchange(ctx, dnsQuery("example.com"))
+	elapsed := time.Since(start)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the attempt deadline", err)
+	}
+	if elapsed > dnsAttemptTimeout+time.Second {
+		t.Errorf("a lone blackholed server held the query for %v, want at most %v", elapsed, dnsAttemptTimeout)
+	}
+	if lone.calls.Load() != 1 {
+		t.Errorf("resolver called %d times, want 1", lone.calls.Load())
+	}
+
+	answering.Store(true)
+	next, cancelNext := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancelNext()
+	if _, err := up.exchange(next, dnsQuery("example.com")); err != nil {
+		t.Fatalf("the next query after a total failure: %v", err)
+	}
+	if lone.calls.Load() != 2 {
+		t.Errorf("resolver called %d times, want the lone server tried again", lone.calls.Load())
 	}
 }
 
@@ -261,5 +361,173 @@ func TestDNSUpstream_stopsWhenContextDone(t *testing.T) {
 	}
 	if b.calls.Load() != 0 {
 		t.Errorf("resolver b called after cancellation")
+	}
+}
+
+func TestDNSUpstream_failsOverPastASilentServer(t *testing.T) {
+	silent := newFaultDNSServer(t, func(int, int) streamFault { return faultSilent })
+	healthy := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
+	up := &dnsUpstream{
+		resolvers: []dnsResolver{newTCPResolver(silent.client(), "1.1.1.1:53"), newTCPResolver(healthy.client(), "1.0.0.1:53")},
+		ident:     "tcp|1.1.1.1:53,1.0.0.1:53",
+	}
+	defer up.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	start := time.Now()
+	if _, err := up.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("the second server answers, so the query must succeed: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
+		t.Errorf("failover took %v, want the silent server cut off at its share of the budget", elapsed)
+	}
+	if up.preferred.Load() != 1 {
+		t.Errorf("preferred = %d, want the healthy server", up.preferred.Load())
+	}
+	if silent.queries.Load() != 1 {
+		t.Errorf("silent server saw %d queries, want 1", silent.queries.Load())
+	}
+}
+
+func TestDNSUpstream_allSilentServersFailInBudgetThenRecover(t *testing.T) {
+	var down atomic.Bool
+	down.Store(true)
+	fault := func(int, int) streamFault {
+		if down.Load() {
+			return faultSilent
+		}
+		return faultAnswer
+	}
+	a, b := newFaultDNSServer(t, fault), newFaultDNSServer(t, fault)
+	up := &dnsUpstream{
+		resolvers: []dnsResolver{newTCPResolver(a.client(), "1.1.1.1:53"), newTCPResolver(b.client(), "1.0.0.1:53")},
+		ident:     "tcp|1.1.1.1:53,1.0.0.1:53",
+	}
+	defer up.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	start := time.Now()
+	_, err := up.exchange(ctx, dnsQuery("example.com"))
+	cancel()
+	if !isTimeoutClass(err) {
+		t.Fatalf("err = %v, want a timeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > 3500*time.Millisecond {
+		t.Errorf("a total failure took %v, want it within the 3s query budget", elapsed)
+	}
+	if a.queries.Load() != 1 || b.queries.Load() != 1 {
+		t.Errorf("servers saw %d and %d queries, want each tried once", a.queries.Load(), b.queries.Load())
+	}
+
+	down.Store(false)
+	ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	start = time.Now()
+	if _, err := up.exchange(ctx, dnsQuery("example.org")); err != nil {
+		t.Fatalf("the next query once the servers answer: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("the next query took %v, want it answered at once", elapsed)
+	}
+}
+
+func TestDNSUpstream_singleServerSurvivesAStalePooledStream(t *testing.T) {
+	var stale atomic.Bool
+	srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
+		if stale.Load() && conn == 1 {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	r := newTCPResolver(srv.client(), "1.1.1.1:53")
+	up := &dnsUpstream{resolvers: []dnsResolver{r}, ident: "tcp|1.1.1.1:53"}
+	defer up.close()
+	fillPool(t, r.pool, 1)
+	stale.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	start := time.Now()
+	if _, err := up.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("a lone server whose new streams answer must survive a stale pooled one: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= dnsAttemptTimeout {
+		t.Errorf("query took %v, want it answered inside one %v attempt", elapsed, dnsAttemptTimeout)
+	}
+}
+
+func TestDNSUpstream_slowResolverStillAnswersPastHalfTheAttempt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		servers int
+		pooled  int
+		budget  time.Duration
+		delay   time.Duration
+	}{
+		{"lone server", 1, 2, 3 * time.Second, 1800 * time.Millisecond},
+		{"four servers", 4, 1, dnsQueryTimeout, 1400 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var slow atomic.Bool
+			var resolvers []*tcpResolver
+			up := &dnsUpstream{ident: "tcp|slow"}
+			defer up.close()
+			for i := 0; i < tc.servers; i++ {
+				dial := loopbackTCPDNSServer(t, func(_ int, q []byte) []byte {
+					if slow.Load() {
+						time.Sleep(tc.delay)
+					}
+					return dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1})
+				})
+				r := newTCPResolver(&fakeClient{tcp: func(string) (net.Conn, error) { return dial() }}, fmt.Sprintf("192.0.2.%d:53", i+1))
+				fillPool(t, r.pool, tc.pooled)
+				resolvers = append(resolvers, r)
+				up.resolvers = append(up.resolvers, r)
+			}
+			slow.Store(true)
+
+			ctx, cancel := context.WithTimeout(context.Background(), tc.budget)
+			defer cancel()
+			start := time.Now()
+			if _, err := up.exchange(ctx, dnsQuery("slow.example")); err != nil {
+				t.Fatalf("a resolver that answers every query in %v must still answer: %v", tc.delay, err)
+			}
+			if elapsed := time.Since(start); elapsed > tc.delay+time.Second {
+				t.Errorf("query took %v, want the first server's pooled stream to answer after %v", elapsed, tc.delay)
+			}
+			if held := len(resolvers[0].pool.idle); held != tc.pooled {
+				t.Errorf("first server's pool holds %d streams, want its %d slow but live streams kept", held, tc.pooled)
+			}
+		})
+	}
+}
+
+func TestDNSUpstream_staleStreamsCostOneSlowQueryNotFour(t *testing.T) {
+	var stale atomic.Bool
+	srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
+		if stale.Load() && conn <= dnsPoolSize {
+			return faultSilent
+		}
+		return faultAnswer
+	})
+	r := newTCPResolver(srv.client(), "1.1.1.1:53")
+	up := &dnsUpstream{resolvers: []dnsResolver{r}, ident: "tcp|1.1.1.1:53"}
+	defer up.close()
+	fillPool(t, r.pool, dnsPoolSize)
+	stale.Store(true)
+
+	for i := 0; i < dnsPoolSize; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		start := time.Now()
+		_, err := up.exchange(ctx, dnsQuery(fmt.Sprintf("q%d.example", i)))
+		elapsed := time.Since(start)
+		cancel()
+		if err != nil {
+			t.Fatalf("query %d: %v", i, err)
+		}
+		if i > 0 && elapsed > 300*time.Millisecond {
+			t.Errorf("query %d took %v, want only the first query to wait on a stale stream", i, elapsed)
+		}
 	}
 }

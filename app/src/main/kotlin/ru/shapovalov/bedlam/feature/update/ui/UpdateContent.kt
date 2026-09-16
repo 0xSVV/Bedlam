@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -33,18 +31,23 @@ import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.formatBytes
+import ru.shapovalov.bedlam.core.util.openUrl
 import ru.shapovalov.bedlam.feature.update.presentation.UpdateComponent
 import ru.shapovalov.bedlam.feature.update.presentation.UpdateStore
+import ru.shapovalov.bedlam.ui.markdown.MarkdownBlockContent
+import ru.shapovalov.bedlam.ui.markdown.markdownBlockSpacing
 import ru.shapovalov.bedlam.ui.theme.spacing
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -52,6 +55,7 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
+    val context = LocalContext.current
 
     BackHandler { component.onBack() }
 
@@ -72,7 +76,7 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Default.Refresh,
+                painter = painterResource(R.drawable.ic_refresh),
                 contentDescription = null,
                 modifier = Modifier.size(UpdateBadgeIconSize),
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -97,6 +101,7 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(spacing.large))
         ReleaseNotesCard(
             notes = state.update.releaseNotes,
+            onOpenUrl = remember(context) { { url: String -> context.openUrl(url) } },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -140,8 +145,13 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ReleaseNotesCard(notes: String, modifier: Modifier = Modifier) {
+internal fun ReleaseNotesCard(
+    notes: String,
+    onOpenUrl: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val spacing = MaterialTheme.spacing
+    val blocks = remember(notes) { releaseNotesBlocks(notes) }
     ElevatedCard(modifier = modifier, shape = MaterialTheme.shapes.extraLarge) {
         Column(
             modifier = Modifier
@@ -153,18 +163,29 @@ private fun ReleaseNotesCard(notes: String, modifier: Modifier = Modifier) {
                 text = stringResource(R.string.update_whats_new),
                 style = MaterialTheme.typography.titleMediumEmphasized,
             )
-            Spacer(Modifier.height(spacing.small))
-            Text(
-                text = notes.ifBlank { stringResource(R.string.update_notes_empty) },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (blocks.isEmpty()) {
+                Spacer(Modifier.height(spacing.small))
+                Text(
+                    text = stringResource(R.string.update_notes_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            blocks.forEachIndexed { index, block ->
+                MarkdownBlockContent(
+                    block = block,
+                    onOpenUrl = onOpenUrl,
+                    modifier = Modifier.padding(
+                        top = if (index == 0) spacing.small else markdownBlockSpacing(block),
+                    ),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun IdleActions(onInstall: () -> Unit, onSkip: () -> Unit) {
+internal fun IdleActions(onInstall: () -> Unit, onSkip: () -> Unit) {
     val spacing = MaterialTheme.spacing
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Button(onClick = onInstall, modifier = Modifier.fillMaxWidth()) {
@@ -179,7 +200,7 @@ private fun IdleActions(onInstall: () -> Unit, onSkip: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun DownloadProgress(phase: UpdateStore.State.Phase.Downloading) {
+internal fun DownloadProgress(phase: UpdateStore.State.Phase.Downloading) {
     val spacing = MaterialTheme.spacing
     val context = LocalContext.current
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -208,7 +229,7 @@ private fun DownloadProgress(phase: UpdateStore.State.Phase.Downloading) {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun InstallingIndicator() {
+internal fun InstallingIndicator() {
     val spacing = MaterialTheme.spacing
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         LoadingIndicator(modifier = Modifier.size(UpdateLoadingIndicatorSize))
@@ -222,7 +243,7 @@ private fun InstallingIndicator() {
 }
 
 @Composable
-private fun FailedActions(message: String, onRetry: () -> Unit, onSkip: () -> Unit) {
+internal fun FailedActions(message: String, onRetry: () -> Unit, onSkip: () -> Unit) {
     val spacing = MaterialTheme.spacing
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
@@ -243,7 +264,7 @@ private fun FailedActions(message: String, onRetry: () -> Unit, onSkip: () -> Un
 }
 
 @Composable
-private fun InstallPermissionActions(onRetry: () -> Unit, onSkip: () -> Unit) {
+internal fun InstallPermissionActions(onRetry: () -> Unit, onSkip: () -> Unit) {
     val spacing = MaterialTheme.spacing
     val context = LocalContext.current
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -278,7 +299,7 @@ private fun InstallPermissionActions(onRetry: () -> Unit, onSkip: () -> Unit) {
 }
 
 @Composable
-private fun BlockedActions(message: String, onSkip: () -> Unit) {
+internal fun BlockedActions(message: String, onSkip: () -> Unit) {
     val spacing = MaterialTheme.spacing
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(

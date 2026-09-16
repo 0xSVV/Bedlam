@@ -7,6 +7,7 @@ internal sealed interface Msg {
     data class LiveUpdated(
         val entries: List<HysteriaClient.LogEntry>,
         val droppedCount: Long,
+        val firstIndex: Long,
     ) : Msg
     data class MinLevelChanged(val level: HysteriaClient.LogLevel) : Msg
     data class Paused(val snapshot: List<HysteriaClient.LogEntry>) : Msg
@@ -15,15 +16,35 @@ internal sealed interface Msg {
 
 internal object LogsReducer : Reducer<LogsStore.State, Msg> {
     override fun LogsStore.State.reduce(msg: Msg): LogsStore.State = when (msg) {
-        is Msg.LiveUpdated ->
-            copy(liveEntries = msg.entries, droppedCount = msg.droppedCount).withVisibleEntries()
+        is Msg.LiveUpdated -> copy(
+            liveEntries = msg.entries,
+            liveFirstIndex = msg.firstIndex,
+            droppedCount = msg.droppedCount,
+            visibleEntries = if (isPaused) visibleEntries else visibleAfter(msg),
+        )
         is Msg.MinLevelChanged -> copy(minLevel = msg.level).withVisibleEntries()
         is Msg.Paused -> copy(pausedSnapshot = msg.snapshot).withVisibleEntries()
         Msg.Resumed -> copy(pausedSnapshot = null).withVisibleEntries()
     }
 }
 
-private fun LogsStore.State.withVisibleEntries(): LogsStore.State = copy(
-    visibleEntries = (pausedSnapshot ?: liveEntries)
-        .filter { it.level.ordinal >= minLevel.ordinal },
-)
+private fun LogsStore.State.withVisibleEntries(): LogsStore.State =
+    copy(visibleEntries = (pausedSnapshot ?: liveEntries).atLeast(minLevel))
+
+private fun LogsStore.State.visibleAfter(
+    update: Msg.LiveUpdated,
+): List<HysteriaClient.LogEntry> {
+    val entries = update.entries
+    val onlyAppended = update.firstIndex == liveFirstIndex && entries.size >= liveEntries.size
+    return when {
+        minLevel == HysteriaClient.LogLevel.DEBUG -> entries
+        !onlyAppended -> entries.atLeast(minLevel)
+        entries.size == liveEntries.size -> visibleEntries
+        else -> visibleEntries + entries.subList(liveEntries.size, entries.size).atLeast(minLevel)
+    }
+}
+
+private fun List<HysteriaClient.LogEntry>.atLeast(
+    level: HysteriaClient.LogLevel,
+): List<HysteriaClient.LogEntry> =
+    if (level == HysteriaClient.LogLevel.DEBUG) this else filter { it.level >= level }

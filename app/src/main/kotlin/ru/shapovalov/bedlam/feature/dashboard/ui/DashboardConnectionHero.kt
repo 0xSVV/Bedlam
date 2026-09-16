@@ -3,11 +3,9 @@ package ru.shapovalov.bedlam.feature.dashboard.ui
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -18,8 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.GenericShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ElevatedAssistChip
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -35,26 +31,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
-import androidx.graphics.shapes.RoundedPolygon
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.formatDuration
@@ -76,48 +75,19 @@ internal fun ConnectionHero(
             connectionState is ConnectionState.Reconnecting
     val isError = connectionState is ConnectionState.Error
 
-    val restingButtonShape = MaterialShapes.Square
-    val loadingButtonShapes = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
-    var fromButtonShape by remember { mutableStateOf(restingButtonShape) }
-    var toButtonShape by remember { mutableStateOf(restingButtonShape) }
-    var showButtonIcon by remember { mutableStateOf(!isConnecting) }
-    val buttonMorphProgress = remember { Animatable(0f) }
-    val morph = remember(fromButtonShape, toButtonShape) {
-        Morph(fromButtonShape, toButtonShape)
+    val buttonMorph = remember {
+        ConnectionButtonMorph(
+            restingShape = MaterialShapes.Square,
+            loadingShapes = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons,
+            connecting = isConnecting,
+        )
+    }
+    val morph = remember(buttonMorph.fromShape, buttonMorph.toShape) {
+        Morph(buttonMorph.fromShape, buttonMorph.toShape)
     }
 
     LaunchedEffect(isConnecting) {
-        suspend fun returnToCurrentShape() {
-            if (fromButtonShape != toButtonShape && buttonMorphProgress.value > 0f) {
-                buttonMorphProgress.animateTo(0f, ConnectionMorphAnimationSpec)
-                toButtonShape = fromButtonShape
-                buttonMorphProgress.snapTo(0f)
-            }
-        }
-
-        suspend fun morphTo(nextShape: RoundedPolygon) {
-            if (fromButtonShape == nextShape) return
-            toButtonShape = nextShape
-            buttonMorphProgress.snapTo(0f)
-            buttonMorphProgress.animateTo(1f, ConnectionMorphAnimationSpec)
-            fromButtonShape = nextShape
-            toButtonShape = nextShape
-            buttonMorphProgress.snapTo(0f)
-        }
-
-        if (isConnecting) {
-            showButtonIcon = false
-            repeat(MaxLoadingMorphCycles) {
-                loadingButtonShapes.forEach { morphTo(it) }
-            }
-            returnToCurrentShape()
-            morphTo(restingButtonShape)
-            showButtonIcon = true
-        } else {
-            showButtonIcon = true
-            returnToCurrentShape()
-            morphTo(restingButtonShape)
-        }
+        if (isConnecting) buttonMorph.animateLoading() else buttonMorph.settle()
     }
 
     val connectionButtonColor by animateColorAsState(
@@ -138,14 +108,15 @@ internal fun ConnectionHero(
         label = "connection-button-content-color",
     )
 
-    val elapsedSeconds = remember(connectedSinceMillis) { mutableLongStateOf(0L) }
-    LaunchedEffect(connectedSinceMillis) {
-        if (connectedSinceMillis == null) {
-            elapsedSeconds.longValue = 0L
-        } else {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val elapsedSeconds = remember(connectedSinceMillis) {
+        mutableLongStateOf(connectedSinceMillis?.let(::secondsSince) ?: 0L)
+    }
+    LaunchedEffect(connectedSinceMillis, lifecycleOwner) {
+        if (connectedSinceMillis == null) return@LaunchedEffect
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                elapsedSeconds.longValue =
-                    (SystemClock.elapsedRealtime() - connectedSinceMillis) / 1000
+                elapsedSeconds.longValue = secondsSince(connectedSinceMillis)
                 delay(1000)
             }
         }
@@ -178,23 +149,27 @@ internal fun ConnectionHero(
                 else -> R.string.action_connect
             }
         )
+        val stateText = connectionState.displayText()
         ConnectionFab(
             morph = morph,
-            progress = { buttonMorphProgress.value },
+            progress = { buttonMorph.progress },
             containerColor = connectionButtonColor,
             onClick = onToggle,
             modifier = Modifier
                 .size(ConnectionFabContainerSize)
-                .semantics { contentDescription = toggleCd },
+                .semantics {
+                    contentDescription = toggleCd
+                    stateDescription = stateText
+                },
         ) {
             AnimatedVisibility(
-                visible = showButtonIcon,
+                visible = buttonMorph.showIcon,
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
                 Icon(
                     painter = painterResource(
-                        if (isConnected) R.drawable.ic_pause else R.drawable.ic_power
+                        if (isConnected) R.drawable.ic_pause else R.drawable.ic_power_settings_new
                     ),
                     contentDescription = null,
                     modifier = Modifier.size(FloatingActionButtonDefaults.LargeIconSize),
@@ -213,13 +188,13 @@ internal fun ConnectionHero(
             onClick = onOpenSession,
             label = {
                 Text(
-                    text = connectionState.displayText(),
+                    text = stateText,
                     style = MaterialTheme.typography.labelLargeEmphasized,
                 )
             },
             trailingIcon = {
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    painterResource(R.drawable.ic_keyboard_arrow_right),
                     contentDescription = null,
                     modifier = Modifier.size(ChipTrailingIconSize),
                 )
@@ -228,7 +203,13 @@ internal fun ConnectionHero(
                 labelColor = chipLabelColor,
                 trailingIconContentColor = chipLabelColor,
             ),
-            modifier = Modifier.semantics { contentDescription = openSessionCd },
+            modifier = Modifier.semantics {
+                onClick(label = openSessionCd) {
+                    onOpenSession()
+                    true
+                }
+                liveRegion = LiveRegionMode.Polite
+            },
         )
         if (!hasActiveProfile && connectionState is ConnectionState.Disconnected) {
             Spacer(Modifier.height(spacing.small))
@@ -262,7 +243,7 @@ private fun ConnectionFab(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val morphClip = remember(morph) {
+    val morphShape = remember(morph) {
         GenericShape { size, _ ->
             val p = morph.toPath(progress = progress())
             p.transform(Matrix().apply { scale(x = size.width, y = size.height) })
@@ -272,18 +253,12 @@ private fun ConnectionFab(
     }
     Box(
         modifier = modifier
-            .shadow(ConnectionFabShadowElevation, MaterialTheme.shapes.extraLarge, clip = false)
-            .drawWithContent {
-                val path = morph.toPath(progress = progress())
-                path.transform(Matrix().apply { scale(x = size.width, y = size.height) })
-                path.translate(size.center - path.getBounds().center)
-                drawPath(path, color = containerColor)
-                drawContent()
-            }
-            .clip(morphClip)
+            .shadow(ConnectionFabShadowElevation, morphShape)
+            .background(containerColor)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(),
+                role = Role.Button,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
@@ -305,13 +280,8 @@ private fun ConnectionState.displayText(): String = when (this) {
     is ConnectionState.Error -> stringResource(R.string.dashboard_state_error)
 }
 
-private const val MaxLoadingMorphCycles = 5
-
-private val ConnectionMorphAnimationSpec = spring<Float>(
-    dampingRatio = Spring.DampingRatioMediumBouncy,
-    stiffness = Spring.StiffnessLow,
-    visibilityThreshold = 0.1f,
-)
+private fun secondsSince(elapsedRealtimeMillis: Long): Long =
+    (SystemClock.elapsedRealtime() - elapsedRealtimeMillis) / 1000
 
 private val ConnectionFabContainerSize = 96.dp
 private val ConnectionFabShadowElevation = 6.dp

@@ -4,6 +4,7 @@ import com.arkivanov.mvikotlin.core.store.Reducer
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.hysteria.ConnectionState
+import ru.shapovalov.hysteria.isActiveTunnel
 
 internal sealed interface Msg {
     data class ProfilesLoaded(val profiles: List<Profile>, val activeId: String?) : Msg
@@ -21,25 +22,62 @@ internal sealed interface Msg {
 
 internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
     override fun DashboardStore.State.reduce(msg: Msg): DashboardStore.State = when (msg) {
-        is Msg.ProfilesLoaded -> copy(profiles = msg.profiles, activeProfileId = msg.activeId)
+        is Msg.ProfilesLoaded -> {
+            val ids = msg.profiles.mapTo(HashSet()) { it.id }
+            copy(
+                profiles = msg.profiles,
+                activeProfileId = msg.activeId,
+                latencies = latencies.filterKeys { it in ids },
+            )
+        }
+
         is Msg.ConnectionChanged -> copy(
             connectionState = msg.state,
             connectedSinceMillis = msg.connectedSinceMillis,
+            error = errorAfterConnectionChange(msg.state),
         )
 
-        is Msg.ImportSheetOpened -> copy(importSheet = msg.seed, importError = null)
-        Msg.ImportSheetClosed -> copy(importSheet = null, importError = null)
+        is Msg.ImportSheetOpened -> copy(
+            importSheet = msg.seed,
+            importSheetClosing = false,
+            importError = null,
+        )
+
+        Msg.ImportSheetClosed -> copy(importSheet = null, importSheetClosing = false, importError = null)
         Msg.ImportStarted -> copy(isImporting = true, importError = null)
-        Msg.ImportSucceeded -> copy(isImporting = false, importSheet = null, importError = null)
-        is Msg.ImportFailed -> copy(isImporting = false, importError = msg.message)
+        Msg.ImportSucceeded -> copy(
+            isImporting = false,
+            importSheetClosing = importSheet != null,
+            importError = null,
+        )
+
+        is Msg.ImportFailed ->
+            if (importSheet != null) {
+                copy(isImporting = false, importError = msg.message)
+            } else {
+                copy(isImporting = false, error = DashboardStore.ErrorReason.ImportFailed(msg.message))
+            }
+
         is Msg.ImportRejectedAsDuplicate -> copy(
             isImporting = false,
-            importSheet = null,
+            importSheetClosing = importSheet != null,
             importError = null,
             error = DashboardStore.ErrorReason.DuplicateProfile(msg.name),
         )
         is Msg.ErrorRaised -> copy(error = msg.reason)
         Msg.ErrorDismissed -> copy(error = null)
-        is Msg.LatencyUpdated -> copy(latencies = latencies + (msg.id to msg.result))
+        is Msg.LatencyUpdated ->
+            if (profiles.none { it.id == msg.id }) this
+            else copy(latencies = latencies + (msg.id to msg.result))
+    }
+
+    private fun DashboardStore.State.errorAfterConnectionChange(
+        next: ConnectionState,
+    ): DashboardStore.ErrorReason? = when {
+        next is ConnectionState.Error && connectionState.isActiveTunnel ->
+            DashboardStore.ErrorReason.ConnectionFailed(next.message)
+
+        next !is ConnectionState.Error && error is DashboardStore.ErrorReason.ConnectionFailed -> null
+        else -> error
     }
 }

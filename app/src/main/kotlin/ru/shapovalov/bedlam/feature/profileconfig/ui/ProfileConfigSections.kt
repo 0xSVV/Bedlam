@@ -107,6 +107,7 @@ internal fun TlsSection(
             editMode = editMode,
             singleLine = false,
             caution = stringResource(R.string.profile_config_caution_tls_client),
+            secret = true,
             onChange = { onDraftChanged(draft.copy(tls = tls.copy(tlsClientKey = it))) },
         )
         TextFieldRow(
@@ -144,6 +145,7 @@ internal fun ObfuscationSection(
             editMode = editMode,
             caution = caution,
             showDivider = isGecko,
+            secret = true,
             onChange = { onDraftChanged(draft.copy(obfuscation = obfs.copy(obfuscationPassword = it))) },
         )
         AnimatedVisibility(visible = isGecko) {
@@ -181,13 +183,12 @@ internal fun RealmSection(
     val realm = draft.realm ?: RealmOptions()
     val caution = stringResource(R.string.profile_config_caution_realm)
     SectionCard(title = stringResource(R.string.profile_config_section_realm)) {
-        TextFieldRow(
+        ListFieldRow(
             label = "stunServers",
-            value = realm.stunServers.joinToString(", "),
+            values = realm.stunServers,
             editMode = editMode,
             caution = caution,
-            onChange = { entry ->
-                val servers = entry.split(',', '\n').map(String::trim).filter(String::isNotEmpty)
+            onChange = { servers ->
                 onDraftChanged(draft.copy(realm = realm.copy(stunServers = servers)))
             },
         )

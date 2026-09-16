@@ -64,10 +64,15 @@
     <string name="import_error_failed">Failed to import profile</string>
 
     <string name="settings_about_title">About</string>
-    <string name="settings_about_subtitle">Version %1$s · GPL-3.0 · tap to copy</string>
-    <string name="settings_about_copied">Version copied</string>
-    <string name="settings_about_source_title">Source code</string>
-    <string name="settings_about_source_subtitle">github.com/0xSVV/Bedlam</string>
+    <string name="settings_about_subtitle">Version %1$s · GitHub · License · README</string>
+    <string name="settings_about_version_app">App %1$s</string>
+    <string name="settings_about_version_hysteria">Hysteria %1$s</string>
+    <string name="settings_about_copy_versions">Copy versions</string>
+    <string name="settings_about_copied">Versions copied</string>
+    <string name="settings_about_github_title">GitHub</string>
+    <string name="settings_about_github_subtitle">github.com/0xSVV/Bedlam</string>
+    <string name="settings_about_license_title">License</string>
+    <string name="settings_about_license_subtitle">GPL-3.0-or-later</string>
     <string name="settings_apps_title">Apps to proxy</string>
     <string name="settings_apps_subtitle">Choose which apps route through the tunnel</string>
 
@@ -75,7 +80,6 @@
     <string name="settings_routing_subtitle">LAN bypass, IPv6, DNS, direct routes by IP/ASN/domain</string>
 
     <string name="settings_quick_tile_title">Quick settings tile</string>
-    <string name="settings_quick_tile_subtitle_enabled">Added</string>
     <string name="settings_quick_tile_subtitle_disabled">Tap to add a system shade toggle</string>
     <string name="settings_quick_tile_subtitle_manual">Open quick settings edit mode to add Bedlam</string>
     <string name="settings_quick_tile_manual_hint">Open quick settings edit mode and add Bedlam</string>
@@ -194,7 +198,6 @@
         <item>Enable Always-on VPN if you want automatic restart after boot</item>
         <item>Keep Bedlam notifications allowed while the tunnel is active</item>
     </string-array>
-    <string name="action_got_it">Got it</string>
 
     <string name="action_back">Back</string>
     <string name="action_save">Save</string>
@@ -215,9 +218,9 @@
     <string name="routing_mtu_label">MTU</string>
     <string name="routing_mtu_auto_placeholder">Auto (%1$d)</string>
     <string name="routing_mtu_auto_suffix">auto</string>
-    <string name="routing_mtu_auto_hint">Auto uses %1$d bytes. IPv6 does not allow less</string>
+    <string name="routing_mtu_auto_hint" tools:ignore="PluralsCandidate">Auto uses %1$d bytes. IPv6 does not allow less</string>
     <string name="routing_mtu_hint">The largest packet that the tunnel interface accepts</string>
-    <string name="routing_mtu_range_error">The MTU must be from %1$d to %2$d bytes</string>
+    <string name="routing_mtu_range_error" tools:ignore="PluralsCandidate">The MTU must be from %1$d to %2$d bytes</string>
     <string name="routing_dns_title">DNS</string>
     <string name="routing_dns_system">System</string>
     <string name="routing_dns_cloudflare">Cloudflare</string>
@@ -278,7 +281,8 @@
     <string name="routing_source_details_networks_header">Resolved networks</string>
     <string name="routing_source_details_networks_breakdown">%1$d IPv4 · %2$d IPv6</string>
     <string name="routing_source_details_no_networks">No networks resolved yet.</string>
-    <string name="routing_source_details_more_networks">+%1$d more networks</string>
+    <string name="routing_source_details_more_networks" tools:ignore="PluralsCandidate">+%1$d more networks</string>
+    <string name="routing_source_details_more_networks_one">+1 more network</string>
 
     <string name="app_selection_title">Apps to proxy</string>
     <string name="app_selection_search_hint">Search apps</string>
@@ -302,12 +306,8 @@
     <string name="session_disconnected_body">Connect first. These addresses are looked up through the tunnel, so there is nothing to report while it is down.</string>
     <string name="session_stale_explainer">Last reading through the tunnel. The tunnel is reconnecting, so this may be out of date.</string>
     <string name="session_ip_explainer">Reported by public lookup services through the active tunnel. IPv6 appears only when this route supports it.</string>
-    <string name="session_section_addresses">Addresses</string>
-    <string name="session_section_network">Network</string>
-    <string name="session_section_location">Location</string>
     <string name="session_value_unavailable">Unavailable</string>
     <string name="session_value_unknown">Unknown</string>
-    <string name="session_ipv6_unavailable">No IPv6 response from this route.</string>
 
     <string name="session_field_ipv4">IPv4</string>
     <string name="session_field_ipv6">IPv6</string>
@@ -318,7 +318,6 @@
     <string name="session_field_region">Region</string>
     <string name="session_field_latitude">Latitude</string>
     <string name="session_field_longitude">Longitude</string>
-    <string name="session_field_coordinates">Coordinates</string>
 
     <string name="session_speed_test_title">Speed Test</string>
     <string name="session_speed_test_subtitle">Test your Internet connection.</string>
@@ -327,7 +326,8 @@
     <string name="logs_action_menu_close_cd">Close log actions</string>
     <string name="logs_action_pause_cd">Pause logs</string>
     <string name="logs_action_resume_cd">Resume logs</string>
-    <string name="logs_dropped_notice">%1$d earlier lines dropped</string>
+    <string name="logs_dropped_notice" tools:ignore="PluralsCandidate">%1$d earlier lines dropped</string>
+    <string name="logs_dropped_notice_one">1 earlier line dropped</string>
     <string name="logs_action_share_cd">Share log</string>
     <string name="logs_action_clear_cd">Delete logs</string>
     <string name="logs_empty_idle">Waiting for log output…</string>
@@ -376,8 +376,8 @@
     <string name="profile_config_caution_quic">Tuning these can break the connection</string>
     <string name="profile_config_value_unset">unset</string>
     <string name="profile_config_value_default_seconds">default %1$ds</string>
-    <string name="profile_config_hint_quic_idle">0 uses the default of %1$d seconds. The tunnel uses the smaller of this value and the server value</string>
-    <string name="profile_config_hint_quic_keepalive">0 uses the default of %1$d seconds</string>
+    <string name="profile_config_hint_quic_idle" tools:ignore="PluralsCandidate">0 uses the default of %1$d seconds. The tunnel uses the smaller of this value and the server value</string>
+    <string name="profile_config_hint_quic_keepalive" tools:ignore="PluralsCandidate">0 uses the default of %1$d seconds</string>
     <string name="profile_config_caution_congestion">Unsupported algorithm or BBR profile may be rejected</string>
     <string name="profile_config_caution_bandwidth">Misreporting causes congestion-control issues</string>
     <string name="profile_config_caution_hop">Hop intervals must agree with the server</string>
@@ -397,4 +397,39 @@
     <string name="update_error_signature">This download was not signed with the same key as your installed app. Get the update from the GitHub releases page instead.</string>
     <string name="update_error_install_permission">Android blocks Bedlam from installing apps. Allow it in settings, then try again.</string>
     <string name="update_action_allow_installs">Open settings</string>
+
+    <string name="profile_config_discard_title">Discard changes?</string>
+    <string name="profile_config_discard_message">Your unsaved edits to this profile will be lost.</string>
+    <string name="profile_config_discard_confirm">Discard</string>
+    <string name="profile_config_discard_keep">Keep editing</string>
+
+    <string name="dashboard_error_import_failed">Import failed: %1$s</string>
+
+    <string name="profile_config_reconnect_hint">Saved. Reconnect to use the new settings.</string>
+
+    <string name="logs_empty_filtered">The %1$s filter hides every line</string>
+
+    <string name="dashboard_ping_all_cd">Measure latency of all profiles</string>
+    <string name="dashboard_latency_measuring">…</string>
+    <string name="dashboard_latency_measuring_cd">Measuring latency</string>
+    <string name="dashboard_latency_ms">%1$d ms</string>
+    <string name="dashboard_latency_unreachable">—</string>
+    <string name="dashboard_latency_unreachable_cd">Unreachable</string>
+    <string name="routing_source_kind_cidr">CIDR</string>
+    <string name="routing_source_kind_asn">ASN</string>
+    <string name="routing_source_kind_domain">DOMAIN</string>
+    <string name="routing_source_updated_just_now">just now</string>
+    <plurals name="routing_source_updated_minutes">
+        <item quantity="one">%1$d min ago</item>
+        <item quantity="other">%1$d min ago</item>
+    </plurals>
+    <plurals name="routing_source_updated_hours">
+        <item quantity="one">%1$d h ago</item>
+        <item quantity="other">%1$d h ago</item>
+    </plurals>
+    <plurals name="routing_source_updated_days">
+        <item quantity="one">%1$d d ago</item>
+        <item quantity="other">%1$d d ago</item>
+    </plurals>
+    <string name="routing_source_state_disabled">Disabled</string>
 </resources>

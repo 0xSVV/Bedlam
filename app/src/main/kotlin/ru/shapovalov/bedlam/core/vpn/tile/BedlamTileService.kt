@@ -118,7 +118,7 @@ class BedlamTileService : TileService() {
     private fun updateTile(state: ConnectionState, activeProfileId: String?) {
         val tile = qsTile ?: return
         tile.label = getString(R.string.qs_tile_label)
-        tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_tunnel)
+        tile.icon = Icon.createWithResource(this, R.drawable.ic_power_settings_new)
         tile.state = when {
             activeProfileId == null -> Tile.STATE_UNAVAILABLE
             state.isTunnelActive() -> Tile.STATE_ACTIVE

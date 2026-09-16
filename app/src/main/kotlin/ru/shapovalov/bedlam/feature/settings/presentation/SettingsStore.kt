@@ -8,11 +8,13 @@ interface SettingsStore : Store<SettingsStore.Intent, SettingsStore.State, Nothi
     sealed interface Intent {
         data class SetQuickSettingsTileAdded(val added: Boolean) : Intent
         data class MarkReliabilityConfirmed(val fingerprint: String) : Intent
+        data class SetForeground(val foreground: Boolean) : Intent
+        data class SetReliabilityVisible(val visible: Boolean) : Intent
     }
 
     data class State(
         val quickSettingsTileAdded: Boolean = false,
-        val reliabilitySnapshot: PowerReliabilitySnapshot,
+        val reliabilitySnapshot: PowerReliabilitySnapshot? = null,
         val confirmedReliabilityFingerprint: String? = null,
     )
 }

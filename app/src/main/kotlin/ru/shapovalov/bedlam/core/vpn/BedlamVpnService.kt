@@ -162,10 +162,11 @@ class BedlamVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         when (intent?.action) {
             ACTION_STOP -> {
                 startAsForeground()
-                stop()
+                stop(requestId = intent.getStringExtra(EXTRA_STOP_REQUEST_ID), startId = startId)
                 return START_NOT_STICKY
             }
 
@@ -173,7 +174,7 @@ class BedlamVpnService : VpnService() {
                 startAsForeground()
                 if (client.stats() == null) {
                     Log.i(TAG, "Reconnect requested with no active session; stopping")
-                    stop()
+                    stop(startId = startId)
                     return START_NOT_STICKY
                 }
                 scope.launch {
@@ -184,7 +185,6 @@ class BedlamVpnService : VpnService() {
             }
         }
 
-        lastStartId = startId
         stopWasRequested = false
 
         if (!startAsForeground()) {
@@ -384,18 +384,22 @@ class BedlamVpnService : VpnService() {
             ?: throw IllegalStateException("VpnService.establish() returned null")
     }
 
-    private fun stop(reason: DisconnectReason = DisconnectReason.USER) {
+    private fun stop(
+        reason: DisconnectReason = DisconnectReason.USER,
+        requestId: String? = null,
+        startId: Int = lastStartId,
+    ) {
         stopWasRequested = true
         currentConfig = null
         startJob?.cancel()
         startJob = null
         scope.launch(Dispatchers.Main.immediate) {
-            runtimeStateRepository.markStopping(serviceEpoch, reason.name)
+            runtimeStateRepository.markStopping(serviceEpoch, reason.name, requestId)
             releaseForegroundResources()
             runCatching { client.stop(reason) }
                 .onFailure { Log.w(TAG, "client.stop failed", it) }
             runtimeStateRepository.markStopped(reason.name)
-            stopSelf(lastStartId)
+            stopSelf(startId)
         }
     }
 
@@ -688,6 +692,7 @@ class BedlamVpnService : VpnService() {
         const val EXTRA_CONFIG_JSON = "config_json"
         const val EXTRA_PROFILE_ID = "profile_id"
         const val EXTRA_PROFILE_NAME = "profile_name"
+        const val EXTRA_STOP_REQUEST_ID = "stop_request_id"
     }
 
     private suspend fun updateConnectionName(name: String) {

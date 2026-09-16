@@ -18,11 +18,11 @@ private val Context.vpnRuntimeDataStore: DataStore<Preferences> by preferencesDa
     name = "vpn_runtime_state",
 )
 
-@Inject
-class VpnRuntimeStateRepository(
-    context: Context,
+class VpnRuntimeStateRepository internal constructor(
+    private val dataStore: DataStore<Preferences>,
 ) {
-    private val dataStore = context.applicationContext.vpnRuntimeDataStore
+    @Inject
+    constructor(context: Context) : this(context.applicationContext.vpnRuntimeDataStore)
 
     val state: Flow<VpnRuntimeState> = dataStore.data.map { prefs -> prefs.toRuntimeState() }
 
@@ -86,7 +86,7 @@ class VpnRuntimeStateRepository(
         }
     }
 
-    suspend fun markStopping(serviceEpoch: Long, reason: String) {
+    suspend fun markStopping(serviceEpoch: Long, reason: String, stopRequestId: String?) {
         val now = System.currentTimeMillis()
         dataStore.edit { prefs ->
             prefs[KEY_DESIRED_RUNNING] = false
@@ -94,6 +94,11 @@ class VpnRuntimeStateRepository(
             prefs[KEY_SERVICE_EPOCH] = serviceEpoch
             prefs[KEY_HEARTBEAT_AT] = now
             prefs[KEY_LAST_STOP_REASON] = reason
+            if (stopRequestId == null) {
+                prefs.remove(KEY_STOP_REQUEST_ID)
+            } else {
+                prefs[KEY_STOP_REQUEST_ID] = stopRequestId
+            }
         }
     }
 
@@ -145,6 +150,7 @@ class VpnRuntimeStateRepository(
             heartbeatAtMillis = this[KEY_HEARTBEAT_AT] ?: 0L,
             stoppedAtMillis = this[KEY_STOPPED_AT],
             lastStopReason = this[KEY_LAST_STOP_REASON],
+            stopRequestId = this[KEY_STOP_REQUEST_ID],
             lastError = this[KEY_LAST_ERROR],
         )
 
@@ -162,6 +168,7 @@ class VpnRuntimeStateRepository(
         private val KEY_HEARTBEAT_AT = longPreferencesKey("heartbeat_at")
         private val KEY_STOPPED_AT = longPreferencesKey("stopped_at")
         private val KEY_LAST_STOP_REASON = stringPreferencesKey("last_stop_reason")
+        private val KEY_STOP_REQUEST_ID = stringPreferencesKey("stop_request_id")
         private val KEY_LAST_ERROR = stringPreferencesKey("last_error")
     }
 }
@@ -177,6 +184,7 @@ data class VpnRuntimeState(
     val heartbeatAtMillis: Long = 0L,
     val stoppedAtMillis: Long? = null,
     val lastStopReason: String? = null,
+    val stopRequestId: String? = null,
     val lastError: String? = null,
 ) {
     val expectsActiveTunnel: Boolean

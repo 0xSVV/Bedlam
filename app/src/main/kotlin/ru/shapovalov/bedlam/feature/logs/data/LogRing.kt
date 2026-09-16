@@ -9,18 +9,23 @@ class LogRing(private val capacity: Int) {
     var droppedCount: Long = 0L
         private set
 
-    fun add(entry: LogEntry): List<LogEntry> {
+    var firstIndex: Long = 0L
+        private set
+
+    fun add(entry: LogEntry) {
         entries.addLast(entry)
         while (entries.size > capacity) {
             entries.removeFirst()
             droppedCount++
+            firstIndex++
         }
-        return entries.toList()
     }
 
-    fun clear(): List<LogEntry> {
+    fun clear() {
+        firstIndex += entries.size
         entries.clear()
         droppedCount = 0L
-        return emptyList()
     }
+
+    fun snapshot(): List<LogEntry> = entries.toList()
 }

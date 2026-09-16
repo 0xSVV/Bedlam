@@ -22,11 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -49,7 +44,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,6 +59,8 @@ import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
 import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
+import ru.shapovalov.bedlam.core.util.RelativeAge
+import ru.shapovalov.bedlam.core.util.relativeAge
 import ru.shapovalov.bedlam.ui.theme.spacing
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -123,6 +127,10 @@ internal fun SwipeableSourceCard(
                     isRefreshing = isRefreshing,
                     expanded = expanded,
                     onToggleExpanded = { expanded = !expanded },
+                    onToggleEnabled = {
+                        latestOnToggle(latestResolved.source.id, !latestResolved.source.enabled)
+                    },
+                    onDelete = { latestOnDelete(latestResolved.source.id) },
                 )
             },
         )
@@ -137,7 +145,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
         SwipeToDismissBoxValue.StartToEnd -> SwipeBgSpec(
             bg = MaterialTheme.colorScheme.tertiaryContainer,
             fg = MaterialTheme.colorScheme.onTertiaryContainer,
-            icon = if (currentlyEnabled) Icons.Default.Clear else Icons.Default.Check,
+            iconRes = if (currentlyEnabled) R.drawable.ic_close else R.drawable.ic_check,
             label = stringResource(
                 if (currentlyEnabled) R.string.routing_swipe_disable else R.string.routing_swipe_enable
             ),
@@ -147,7 +155,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
         SwipeToDismissBoxValue.EndToStart -> SwipeBgSpec(
             bg = MaterialTheme.colorScheme.errorContainer,
             fg = MaterialTheme.colorScheme.onErrorContainer,
-            icon = Icons.Default.Delete,
+            iconRes = R.drawable.ic_delete,
             label = stringResource(R.string.routing_sources_delete_cd),
             align = Alignment.CenterEnd,
         )
@@ -162,7 +170,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
         contentAlignment = spec.align,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(spec.icon, contentDescription = null, tint = spec.fg)
+            Icon(painterResource(spec.iconRes), contentDescription = null, tint = spec.fg)
             Spacer(Modifier.width(spacing.small))
             Text(spec.label, style = MaterialTheme.typography.labelLarge, color = spec.fg)
         }
@@ -172,21 +180,28 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, currentlyEnabled:
 private data class SwipeBgSpec(
     val bg: Color,
     val fg: Color,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val iconRes: Int,
     val label: String,
     val align: Alignment,
 )
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SourceRowContent(
+internal fun SourceRowContent(
     resolved: ResolvedSource,
     isRefreshing: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
+    onToggleEnabled: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     val dimmed = !resolved.source.enabled
+    val toggleActionLabel = stringResource(
+        if (dimmed) R.string.routing_swipe_enable else R.string.routing_swipe_disable
+    )
+    val deleteActionLabel = stringResource(R.string.routing_sources_delete_cd)
+    val disabledStateText = stringResource(R.string.routing_source_state_disabled)
     val baseColor = MaterialTheme.colorScheme.surfaceContainerLow
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
@@ -201,7 +216,20 @@ private fun SourceRowContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onToggleExpanded)
+                .clickable(role = Role.Button, onClick = onToggleExpanded)
+                .semantics {
+                    customActions = listOf(
+                        CustomAccessibilityAction(toggleActionLabel) {
+                            onToggleEnabled()
+                            true
+                        },
+                        CustomAccessibilityAction(deleteActionLabel) {
+                            onDelete()
+                            true
+                        },
+                    )
+                    if (dimmed) stateDescription = disabledStateText
+                }
                 .padding(horizontal = spacing.large, vertical = spacing.medium),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -248,7 +276,7 @@ private fun SourceRowContent(
             }
             Spacer(Modifier.width(spacing.small))
             Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
+                painter = painterResource(R.drawable.ic_keyboard_arrow_down),
                 contentDescription = stringResource(
                     if (expanded) R.string.routing_source_details_collapse_cd
                     else R.string.routing_source_details_expand_cd
@@ -326,10 +354,11 @@ private fun SourceDetails(resolved: ResolvedSource) {
                 val overflow = resolved.cidrs.size - MaxVisibleCidrs
                 if (overflow > 0) {
                     Text(
-                        text = stringResource(
-                            R.string.routing_source_details_more_networks,
-                            overflow,
-                        ),
+                        text = if (overflow == 1) {
+                            stringResource(R.string.routing_source_details_more_networks_one)
+                        } else {
+                            stringResource(R.string.routing_source_details_more_networks, overflow)
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -365,10 +394,10 @@ private fun DetailRow(
 
 @Composable
 private fun KindChip(source: DirectRouteSource) {
-    val (label, color) = when (source) {
-        is DirectRouteSource.Cidr -> "CIDR" to MaterialTheme.colorScheme.primary
-        is DirectRouteSource.Asn -> "ASN" to MaterialTheme.colorScheme.tertiary
-        is DirectRouteSource.Domain -> "DOMAIN" to MaterialTheme.colorScheme.secondary
+    val (labelRes, color) = when (source) {
+        is DirectRouteSource.Cidr -> R.string.routing_source_kind_cidr to MaterialTheme.colorScheme.primary
+        is DirectRouteSource.Asn -> R.string.routing_source_kind_asn to MaterialTheme.colorScheme.tertiary
+        is DirectRouteSource.Domain -> R.string.routing_source_kind_domain to MaterialTheme.colorScheme.secondary
     }
     Box(
         modifier = Modifier
@@ -377,7 +406,7 @@ private fun KindChip(source: DirectRouteSource) {
             .padding(horizontal = KindChipHPad, vertical = KindChipVPad),
     ) {
         Text(
-            text = label,
+            text = stringResource(labelRes),
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
             color = color,
         )
@@ -403,16 +432,17 @@ private fun resolutionSummary(resolved: ResolvedSource, isRefreshing: Boolean): 
     else stringResource(R.string.routing_source_count, count)
 }
 
-private fun formatRelative(millis: Long): String {
-    val delta = System.currentTimeMillis() - millis
-    val minutes = delta / 60_000
-    return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> "$minutes min ago"
-        minutes < 24 * 60 -> "${minutes / 60} h ago"
-        else -> "${minutes / 60 / 24} d ago"
+@Composable
+private fun formatRelative(millis: Long): String =
+    when (val age = relativeAge(System.currentTimeMillis() - millis)) {
+        RelativeAge.JustNow -> stringResource(R.string.routing_source_updated_just_now)
+        is RelativeAge.Minutes ->
+            pluralStringResource(R.plurals.routing_source_updated_minutes, age.value, age.value)
+        is RelativeAge.Hours ->
+            pluralStringResource(R.plurals.routing_source_updated_hours, age.value, age.value)
+        is RelativeAge.Days ->
+            pluralStringResource(R.plurals.routing_source_updated_days, age.value, age.value)
     }
-}
 
 private const val MaxVisibleCidrs = 200
 

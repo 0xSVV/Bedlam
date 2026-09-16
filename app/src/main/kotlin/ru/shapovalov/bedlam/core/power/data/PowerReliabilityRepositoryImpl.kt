@@ -16,11 +16,11 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.power.domain.PowerReliabilityRules
 import ru.shapovalov.bedlam.core.power.domain.model.AlwaysOnVpnState
@@ -63,16 +63,13 @@ class PowerReliabilityRepositoryImpl(
     override val confirmedFingerprint: Flow<String?> =
         dataStore.data.map { prefs -> prefs[KEY_CONFIRMED_FINGERPRINT] }
 
-    override fun snapshotNow(): PowerReliabilitySnapshot =
-        buildSnapshot(recentObservedAlwaysOnState = null)
-
-    override fun observeSnapshot(refreshIntervalMillis: Long): Flow<PowerReliabilitySnapshot> =
-        flow {
-            while (true) {
-                emit(snapshotWithStoredState())
-                delay(refreshIntervalMillis)
-            }
-        }
+    override suspend fun snapshot(): PowerReliabilitySnapshot = withContext(Dispatchers.IO) {
+        buildSnapshot(
+            recentObservedAlwaysOnState = readAlwaysOnState(
+                maxAgeMillis = ALWAYS_ON_OBSERVED_MAX_AGE_MS,
+            ),
+        )
+    }
 
     override suspend fun markConfirmed(fingerprint: String) {
         dataStore.edit { prefs ->
@@ -86,13 +83,6 @@ class PowerReliabilityRepositoryImpl(
             prefs[KEY_ALWAYS_ON_OBSERVED_AT] = System.currentTimeMillis()
         }
     }
-
-    private suspend fun snapshotWithStoredState(): PowerReliabilitySnapshot =
-        buildSnapshot(
-            recentObservedAlwaysOnState = readAlwaysOnState(
-                maxAgeMillis = ALWAYS_ON_OBSERVED_MAX_AGE_MS,
-            ),
-        )
 
     private fun buildSnapshot(
         recentObservedAlwaysOnState: AlwaysOnVpnState?,

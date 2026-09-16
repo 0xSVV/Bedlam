@@ -20,6 +20,8 @@ class ProfileConfigComponent(
     val state: StateFlow<ProfileConfigStore.State> = store.stateFlow(scope)
 
     fun onEnterEditMode() = store.accept(ProfileConfigStore.Intent.EnterEditMode)
+    fun onCancelEdit() = store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+    fun onKeepEditing() = store.accept(ProfileConfigStore.Intent.CancelDiscard)
     fun onDiscardChanges() = store.accept(ProfileConfigStore.Intent.DiscardChanges)
     fun onDraftChanged(config: HysteriaConfig) =
         store.accept(ProfileConfigStore.Intent.UpdateDraft(config))
@@ -32,7 +34,17 @@ class ProfileConfigComponent(
     fun onCancelDelete() = store.accept(ProfileConfigStore.Intent.CancelDelete)
     fun onConfirmDelete() = store.accept(ProfileConfigStore.Intent.ConfirmDelete)
     fun onDismissError() = store.accept(ProfileConfigStore.Intent.DismissError)
-    fun onBackPressed() = onBack.invoke()
+    fun onReconnectOfferShown() = store.accept(ProfileConfigStore.Intent.DismissReconnectOffer)
+    fun onReconnect() = store.accept(ProfileConfigStore.Intent.Reconnect)
+    fun onClose() = onBack.invoke()
+
+    fun onBackPressed() {
+        if (store.state.editMode) {
+            store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+        } else {
+            onBack.invoke()
+        }
+    }
 
     fun interface OnBack {
         fun invoke()

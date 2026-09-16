@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
     private val vpnServiceLauncher: VpnServiceLauncher by injected { vpnServiceLauncher }
     private val profileRepository: ProfileRepository by injected { profileRepository }
     private var pendingStartProfileId: String? = null
+    private var notificationPermissionRequested = false
     private lateinit var root: RootComponent
 
     private val vpnPermissionLauncher = registerForActivityResult(
@@ -54,7 +55,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         pendingStartProfileId = savedInstanceState?.getString(KEY_PENDING_PROFILE_ID)
-        ensureNotificationPermission()
+        notificationPermissionRequested =
+            savedInstanceState?.getBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED) == true
 
         val rootContext = defaultComponentContext()
         root = appComponent.rootComponentFactory.create(
@@ -82,10 +84,12 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         pendingStartProfileId?.let { outState.putString(KEY_PENDING_PROFILE_ID, it) }
+        outState.putBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, notificationPermissionRequested)
     }
 
     private fun startVpnService(profile: Profile) {
         vpnServiceLauncher.start(profile)
+        ensureNotificationPermission()
     }
 
     private fun stopVpnService() {
@@ -104,14 +108,16 @@ class MainActivity : ComponentActivity() {
 
     private fun ensureNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (notificationPermissionRequested) return
         val permission = Manifest.permission.POST_NOTIFICATIONS
-        if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
-            notificationPermissionLauncher.launch(permission)
-        }
+        if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) return
+        notificationPermissionRequested = true
+        notificationPermissionLauncher.launch(permission)
     }
 
     private companion object {
         const val TAG = "Bedlam"
         const val KEY_PENDING_PROFILE_ID = "pending_start_profile_id"
+        const val KEY_NOTIFICATION_PERMISSION_REQUESTED = "notification_permission_requested"
     }
 }

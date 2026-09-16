@@ -8,8 +8,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"math/big"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -201,6 +203,129 @@ func TestTLSResolver_verifiesServerName(t *testing.T) {
 	}
 }
 
+type recordingDoTServer struct {
+	addr        string
+	serverNames chan string
+
+	mu     sync.Mutex
+	dialed []string
+}
+
+func newRecordingDoTServer(t *testing.T, cert tls.Certificate) *recordingDoTServer {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	srv := &recordingDoTServer{addr: ln.Addr().String(), serverNames: make(chan string, 8)}
+	go func() {
+		for {
+			s, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(s net.Conn) {
+				tc := tls.Server(s, &tls.Config{
+					Certificates: []tls.Certificate{cert},
+					NextProtos:   []string{"dot"},
+					GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+						srv.serverNames <- hello.ServerName
+						return nil, nil
+					},
+				})
+				defer tc.Close()
+				for {
+					q, err := readDNSFrame(tc)
+					if err != nil {
+						return
+					}
+					if err := writeDNSFrame(tc, echoDoT([4]byte{1, 1, 1, 1})(q)); err != nil {
+						return
+					}
+				}
+			}(s)
+		}
+	}()
+	return srv
+}
+
+func (s *recordingDoTServer) client() *fakeClient {
+	return &fakeClient{tcp: func(addr string) (net.Conn, error) {
+		s.mu.Lock()
+		s.dialed = append(s.dialed, addr)
+		s.mu.Unlock()
+		return net.Dial("tcp", s.addr)
+	}}
+}
+
+func (s *recordingDoTServer) dialedAddrs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.dialed...)
+}
+
+func TestNewTLSResolver_dialsHostAndNamesIt(t *testing.T) {
+	cert, _ := testCert(t)
+	srv := newRecordingDoTServer(t, cert)
+	r := newTLSResolver(srv.client(), "one.one.one.one:853", nil)
+	defer r.close()
+
+	cfg := r.tlsCfg
+	if cfg.ServerName != "one.one.one.one" {
+		t.Errorf("server name = %q, want one.one.one.one", cfg.ServerName)
+	}
+	if cfg.InsecureSkipVerify || cfg.RootCAs == nil {
+		t.Error("the certificate must be verified against the system roots")
+	}
+	if len(cfg.NextProtos) != 1 || cfg.NextProtos[0] != "dot" {
+		t.Errorf("ALPN = %q, want [dot]", cfg.NextProtos)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := r.exchange(ctx, dnsQuery("example.com"))
+	var certErr *tls.CertificateVerificationError
+	if !errors.As(err, &certErr) {
+		t.Fatalf("err = %v, want a certificate outside the system roots to be refused", err)
+	}
+	select {
+	case name := <-srv.serverNames:
+		if name != "one.one.one.one" {
+			t.Errorf("server saw SNI %q, want one.one.one.one", name)
+		}
+	default:
+		t.Fatal("the server saw no ClientHello")
+	}
+	if dialed := srv.dialedAddrs(); len(dialed) != 1 || dialed[0] != "one.one.one.one:853" {
+		t.Errorf("dialed %q, want the unresolved [one.one.one.one:853]", dialed)
+	}
+}
+
+func TestTLSResolver_serverSeesHostAsSNI(t *testing.T) {
+	cert, pool := testCert(t)
+	srv := newRecordingDoTServer(t, cert)
+	r := newTLSResolver(srv.client(), "dns.test:853", &tls.Config{RootCAs: pool})
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	select {
+	case name := <-srv.serverNames:
+		if name != "dns.test" {
+			t.Errorf("server saw SNI %q, want dns.test", name)
+		}
+	default:
+		t.Fatal("the server saw no ClientHello")
+	}
+	if dialed := srv.dialedAddrs(); len(dialed) != 1 || dialed[0] != "dns.test:853" {
+		t.Errorf("dialed %q, want [dns.test:853]", dialed)
+	}
+}
+
 func TestTLSResolver_ipServerName(t *testing.T) {
 	cert, pool := testCert(t)
 	dial := loopbackDoTServer(t, cert, func(_ int, q []byte) []byte { return echoDoT([4]byte{1, 1, 1, 1})(q) })
@@ -210,5 +335,75 @@ func TestTLSResolver_ipServerName(t *testing.T) {
 
 	if _, err := r.exchange(context.Background(), dnsQuery("example.com")); err != nil {
 		t.Fatalf("IP SAN should verify: %v", err)
+	}
+}
+
+func TestTLSResolver_cancelDuringHandshakeReturnsPromptly(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		if c, err := ln.Accept(); err == nil {
+			accepted <- c
+		}
+	}()
+	_, pool := testCert(t)
+	fc := &fakeClient{tcp: func(string) (net.Conn, error) { return net.Dial("tcp", ln.Addr().String()) }}
+	r := newTLSResolver(fc, "dns.test:853", &tls.Config{RootCAs: pool})
+	defer r.close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	_, err = r.exchange(ctx, dnsQuery("example.com"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("cancel during the handshake took %v", elapsed)
+	}
+
+	s := <-accepted
+	defer s.Close()
+	_ = s.SetReadDeadline(time.Now().Add(time.Second))
+	buf := make([]byte, 4096)
+	for {
+		if _, err := s.Read(buf); err != nil {
+			if isTimeoutClass(err) {
+				t.Error("the abandoned handshake left its connection open")
+			}
+			return
+		}
+	}
+}
+
+func TestTLSResolver_retriesAStalePooledStreamWithinTheAttempt(t *testing.T) {
+	cert, pool := testCert(t)
+	var stale atomic.Bool
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	dial := loopbackDoTServer(t, cert, func(conn int, q []byte) []byte {
+		if stale.Load() && conn == 1 {
+			<-release
+			return nil
+		}
+		return echoDoT([4]byte{byte(conn), 0, 0, 0})(q)
+	})
+	r := newTLSResolver(&fakeClient{tcp: func(string) (net.Conn, error) { return dial() }}, "dns.test:853", &tls.Config{RootCAs: pool})
+	defer r.close()
+	fillPool(t, r.pool, 1)
+	stale.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	resp, err := r.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("a new DoT stream answers, so the query must succeed: %v", err)
+	}
+	if conn := answerConn(resp); conn != 2 {
+		t.Errorf("answer came from connection %d, want a new connection 2", conn)
 	}
 }

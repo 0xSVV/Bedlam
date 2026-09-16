@@ -19,9 +19,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -34,9 +31,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.session.presentation.SessionComponent
@@ -47,11 +45,9 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
-    var showSpeedTest by remember { mutableStateOf(false) }
+    var showSpeedTest by rememberSaveable { mutableStateOf(false) }
 
-    BackHandler {
-        if (showSpeedTest) showSpeedTest = false else component.onBackPressed()
-    }
+    BackHandler(enabled = showSpeedTest) { showSpeedTest = false }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -70,7 +66,7 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                         },
                     ) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            painterResource(R.drawable.ic_arrow_back),
                             contentDescription = stringResource(R.string.action_back),
                         )
                     }
@@ -79,7 +75,7 @@ fun SessionContent(component: SessionComponent, modifier: Modifier = Modifier) {
                     if (!showSpeedTest) {
                         IconButton(onClick = component::onRefresh, enabled = !state.isLoading) {
                             Icon(
-                                Icons.Default.Refresh,
+                                painterResource(R.drawable.ic_refresh),
                                 contentDescription = stringResource(R.string.session_action_refresh_cd),
                             )
                         }

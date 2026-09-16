@@ -1,10 +1,13 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import com.arkivanov.decompose.ComponentContext
+import com.arkivanov.essenty.lifecycle.subscribe
 import com.arkivanov.mvikotlin.core.instancekeeper.getStore
 import com.arkivanov.mvikotlin.extensions.coroutines.labels
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
@@ -24,7 +27,14 @@ class DashboardComponent(
 
     val state: StateFlow<DashboardStore.State> = store.stateFlow(scope)
 
+    private val resumed = MutableStateFlow(false)
+    val isResumed: StateFlow<Boolean> = resumed.asStateFlow()
+
     init {
+        lifecycle.subscribe(
+            onResume = { resumed.value = true },
+            onPause = { resumed.value = false },
+        )
         scope.launch {
             store.labels.collect { label ->
                 when (label) {
@@ -37,7 +47,6 @@ class DashboardComponent(
 
     fun onToggleConnection() = store.accept(DashboardStore.Intent.ToggleConnection)
     fun onSelectProfile(id: String) = store.accept(DashboardStore.Intent.SelectProfile(id))
-    fun onDeleteProfile(id: String) = store.accept(DashboardStore.Intent.DeleteProfile(id))
     fun onOpenImport(prefill: String) = store.accept(DashboardStore.Intent.OpenImport(prefill))
     fun onCloseImport() = store.accept(DashboardStore.Intent.CloseImport)
     fun onImportProfile(format: ProfileImportFormat, text: String, name: String) =

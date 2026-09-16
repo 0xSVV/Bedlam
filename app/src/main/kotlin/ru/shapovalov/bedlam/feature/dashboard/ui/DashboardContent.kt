@@ -5,16 +5,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,14 +30,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
@@ -47,6 +52,7 @@ import ru.shapovalov.hysteria.ConnectionState
 @Composable
 fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
+    val resumed by component.isResumed.collectAsState()
     val clipboard = LocalClipboard.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -54,23 +60,28 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     val spacing = MaterialTheme.spacing
 
     val errorText = state.error?.resolve()
-    LaunchedEffect(errorText) {
+    val connectionFailure = state.error is DashboardStore.ErrorReason.ConnectionFailed
+    val sheetOpen = state.importSheet != null
+    val connectionSnackbar = remember { mutableStateOf<Job?>(null) }
+    LaunchedEffect(errorText, sheetOpen, resumed) {
         val msg = errorText ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
+        if (sheetOpen || !resumed) return@LaunchedEffect
         component.onDismissError()
+        if (snackbarHostState.currentSnackbarData?.visuals?.message == msg) return@LaunchedEffect
+        val snackbar = scope.launch { snackbarHostState.showSnackbar(msg) }
+        if (connectionFailure) connectionSnackbar.value = snackbar
     }
-    val connectionErrorText = (state.connectionState as? ConnectionState.Error)?.let {
-        stringResource(R.string.dashboard_connection_error, it.message)
-    }
-    LaunchedEffect(connectionErrorText) {
-        val msg = connectionErrorText ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
+    val inErrorState = state.connectionState is ConnectionState.Error
+    LaunchedEffect(inErrorState) {
+        if (!inErrorState) connectionSnackbar.value?.cancel()
     }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .windowInsetsPadding(
+                WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            )
     ) {
         Column(
             modifier = Modifier
@@ -108,7 +119,6 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 latencies = state.latencies,
                 onSelect = component::onSelectProfile,
                 onOpenConfig = component::onOpenProfileConfig,
-                onPingProfile = component::onPingProfile,
                 onPingAll = component::onPingAllProfiles,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -126,6 +136,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
             seed = seed,
             isImporting = state.isImporting,
             error = state.importError,
+            closing = state.importSheetClosing,
             onDismiss = component::onCloseImport,
             onImport = component::onImportProfile,
         )
@@ -159,7 +170,7 @@ private fun DashboardTopBar(
                 )
             } else {
                 Icon(
-                    Icons.Default.Add,
+                    painterResource(R.drawable.ic_add),
                     contentDescription = stringResource(R.string.dashboard_action_import_cd),
                 )
             }
@@ -172,6 +183,14 @@ private fun DashboardStore.ErrorReason.resolve(): String = when (this) {
     DashboardStore.ErrorReason.NoActiveProfile -> stringResource(R.string.dashboard_error_no_profile)
     is DashboardStore.ErrorReason.DuplicateProfile ->
         stringResource(R.string.dashboard_error_duplicate_profile, name)
+    is DashboardStore.ErrorReason.ConnectionFailed ->
+        stringResource(R.string.dashboard_connection_error, message)
+    is DashboardStore.ErrorReason.ImportFailed ->
+        if (message.isBlank()) {
+            stringResource(R.string.import_error_failed)
+        } else {
+            stringResource(R.string.dashboard_error_import_failed, message)
+        }
 }
 
 private val SmallIconSize = 20.dp

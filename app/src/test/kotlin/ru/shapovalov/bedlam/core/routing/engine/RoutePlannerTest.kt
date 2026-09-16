@@ -23,6 +23,39 @@ class RoutePlannerTest {
     private val resolverV4 = "172.19.0.2"
     private val resolverV6 = "fdfe:dcba:9876::2"
 
+    private val cloudflareV4 = listOf("1.1.1.1/32", "1.0.0.1/32").map(Cidr::parse)
+    private val cloudflareV6 = listOf("2606:4700:4700::1111/128", "2606:4700:4700::1001/128").map(Cidr::parse)
+    private val googleV4 = listOf("8.8.8.8/32", "8.8.4.4/32").map(Cidr::parse)
+    private val googleV6 = listOf("2001:4860:4860::8888/128", "2001:4860:4860::8844/128").map(Cidr::parse)
+
+    private class PresetRoutes(
+        val mode: DnsMode,
+        val endpoints: (DnsTransport) -> List<String>,
+        val hostRoutesV4: List<Cidr>,
+        val hostRoutesV6: List<Cidr>,
+        val directRoutes: List<String>,
+        val directNeighbours: List<String>,
+    )
+
+    private val presets = listOf(
+        PresetRoutes(
+            DnsMode.Cloudflare,
+            DnsPresets::cloudflare,
+            cloudflareV4,
+            cloudflareV6,
+            listOf("1.1.1.0/24", "1.0.0.0/24", "2606:4700::/32"),
+            listOf("1.1.1.2/32", "1.0.0.2/32", "2606:4700:4700::2/128"),
+        ),
+        PresetRoutes(
+            DnsMode.Google,
+            DnsPresets::google,
+            googleV4,
+            googleV6,
+            listOf("8.8.8.0/24", "8.8.4.0/24", "2001:4860::/32"),
+            listOf("8.8.8.9/32", "8.8.4.5/32", "2001:4860:4860::2/128"),
+        ),
+    )
+
     private fun planner(
         supportsExclude: Boolean = true,
         max: Int = RoutePlanner.DEFAULT_MAX_TOTAL_ROUTES,
@@ -46,6 +79,9 @@ class RoutePlannerTest {
             lastError = null,
         )
     }
+
+    private fun customDnsConfig(transport: DnsTransport, vararg entries: String): RoutingConfig =
+        RoutingConfig(dnsMode = DnsMode.Custom, dnsTransport = transport, customDns = entries.toList())
 
     private fun asnSource(
         id: String,
@@ -321,12 +357,228 @@ class RoutePlannerTest {
         }
 
         @Test
-        fun `a DoH upstream is claimed by the address in its URL`() {
+        fun `a DoH preset is claimed by its provider addresses`() {
             val plan = planner().plan(
                 RoutingConfig(dnsMode = DnsMode.Cloudflare, dnsTransport = DnsTransport.Https),
                 AppFilter(),
             )
-            assertTrue(plan.claimedV4.any { it == Cidr.parse("1.1.1.1/32") })
+            assertEquals(
+                DnsUpstream(DnsTransport.Https, listOf("https://cloudflare-dns.com/dns-query")),
+                plan.dnsUpstream,
+            )
+            assertTrue(plan.claimedV4.containsAll(cloudflareV4))
+            assertTrue(plan.claimedV6.containsAll(cloudflareV6))
+        }
+
+        @Test
+        fun `a DoT preset is claimed by its provider addresses`() {
+            val plan = planner().plan(
+                RoutingConfig(dnsMode = DnsMode.Google, dnsTransport = DnsTransport.Tls),
+                AppFilter(),
+            )
+            assertEquals(DnsUpstream(DnsTransport.Tls, listOf("dns.google:853")), plan.dnsUpstream)
+            assertTrue(plan.claimedV4.containsAll(googleV4))
+            assertTrue(plan.claimedV6.containsAll(googleV6))
+        }
+
+        @Test
+        fun `an unusable encrypted custom list falls back to the Cloudflare host`() {
+            val dot = planner().plan(customDnsConfig(DnsTransport.Tls, "not a host"), AppFilter())
+            assertEquals(DnsUpstream(DnsTransport.Tls, listOf("one.one.one.one:853")), dot.dnsUpstream)
+
+            val doq = planner().plan(customDnsConfig(DnsTransport.Doq, "nope!"), AppFilter())
+            assertEquals(DnsUpstream(DnsTransport.Tls, listOf("one.one.one.one:853")), doq.dnsUpstream)
+
+            val doh = planner().plan(customDnsConfig(DnsTransport.Https), AppFilter())
+            assertEquals(
+                DnsUpstream(DnsTransport.Https, listOf("https://cloudflare-dns.com/dns-query")),
+                doh.dnsUpstream,
+            )
+        }
+
+        @Test
+        fun `every preset transport claims its provider addresses`() {
+            for (preset in presets) {
+                for (transport in DnsPresets.supportedTransports(preset.mode)) {
+                    val plan = planner().plan(
+                        RoutingConfig(dnsMode = preset.mode, dnsTransport = transport),
+                        AppFilter(),
+                    )
+                    val label = "${preset.mode} $transport"
+                    assertEquals(DnsUpstream(transport, preset.endpoints(transport)), plan.dnsUpstream, label)
+                    assertEquals(
+                        listOf(RoutePlanner.IPV4_DEFAULT, Cidr.parse("$resolverV4/32")) + preset.hostRoutesV4,
+                        plan.claimedV4,
+                        label,
+                    )
+                    assertEquals(
+                        listOf(RoutePlanner.IPV6_DEFAULT, Cidr.parse("$resolverV6/128")) + preset.hostRoutesV6,
+                        plan.claimedV6,
+                        label,
+                    )
+                    assertEquals(listOf(resolverV4, resolverV6), plan.dnsServers, label)
+                }
+            }
+        }
+
+        @Test
+        fun `a stored dns over quic preset dials over TLS and keeps its routes`() {
+            for (preset in presets) {
+                assertFalse(DnsTransport.Doq in DnsPresets.supportedTransports(preset.mode), "${preset.mode}")
+                val plan = planner().plan(
+                    RoutingConfig(dnsMode = preset.mode, dnsTransport = DnsTransport.Doq),
+                    AppFilter(),
+                )
+                assertEquals(
+                    DnsUpstream(DnsTransport.Tls, preset.endpoints(DnsTransport.Tls)),
+                    plan.dnsUpstream,
+                    "${preset.mode}",
+                )
+                assertTrue(plan.claimedV4.containsAll(preset.hostRoutesV4), "${preset.mode}")
+                assertTrue(plan.claimedV6.containsAll(preset.hostRoutesV6), "${preset.mode}")
+            }
+        }
+
+        @Test
+        fun `preset routes survive an overlapping direct route`() {
+            for (preset in presets) {
+                for (transport in DnsPresets.supportedTransports(preset.mode)) {
+                    val plan = planner().plan(
+                        RoutingConfig(
+                            dnsMode = preset.mode,
+                            dnsTransport = transport,
+                            sources = listOf(asnSource("provider", preset.directRoutes)),
+                        ),
+                        AppFilter(),
+                    )
+                    val label = "${preset.mode} $transport"
+                    val excluded = plan.excludedV4 + plan.excludedV6
+                    assertTrue(excluded.containsAll(preset.directRoutes.map(Cidr::parse)), label)
+                    assertTrue(plan.claimedV4.containsAll(preset.hostRoutesV4), label)
+                    assertTrue(plan.claimedV6.containsAll(preset.hostRoutesV6), label)
+                }
+            }
+        }
+
+        @Test
+        fun `preset routes follow the ipv6 mode`() {
+            for (preset in presets) {
+                for (transport in DnsPresets.supportedTransports(preset.mode)) {
+                    val label = "${preset.mode} $transport"
+                    fun planFor(ipv6Mode: Ipv6Mode) = planner().plan(
+                        RoutingConfig(ipv6Mode = ipv6Mode, dnsMode = preset.mode, dnsTransport = transport),
+                        AppFilter(),
+                    )
+                    val resolverRouteV4 = listOf(Cidr.parse("$resolverV4/32"))
+
+                    val enabled = planFor(Ipv6Mode.Enabled)
+                    assertEquals(resolverRouteV4 + preset.hostRoutesV4, enabled.claimedV4.drop(1), label)
+                    assertEquals(
+                        listOf(Cidr.parse("$resolverV6/128")) + preset.hostRoutesV6,
+                        enabled.claimedV6.drop(1),
+                        label,
+                    )
+                    assertEquals(listOf(resolverV4, resolverV6), enabled.dnsServers, label)
+
+                    val disabled = planFor(Ipv6Mode.Disabled)
+                    assertEquals(resolverRouteV4 + preset.hostRoutesV4, disabled.claimedV4.drop(1), label)
+                    assertEquals(listOf(RoutePlanner.IPV6_DEFAULT), disabled.claimedV6, label)
+                    assertEquals(listOf(resolverV4), disabled.dnsServers, label)
+
+                    val bypass = planFor(Ipv6Mode.BypassOnly)
+                    assertEquals(resolverRouteV4 + preset.hostRoutesV4, bypass.claimedV4.drop(1), label)
+                    assertTrue(bypass.claimedV6.isEmpty(), label)
+                    assertEquals(listOf(resolverV4), bypass.dnsServers, label)
+                }
+            }
+        }
+
+        @Test
+        fun `the Cloudflare fallback claims its provider addresses`() {
+            val unusable = listOf(
+                RoutingConfig(dnsMode = DnsMode.System),
+                customDnsConfig(DnsTransport.Tcp),
+                customDnsConfig(DnsTransport.Tls, "not a host"),
+                customDnsConfig(DnsTransport.Https, "1.1.1.1:53"),
+                customDnsConfig(DnsTransport.Http3, "192.168.1.10"),
+                customDnsConfig(DnsTransport.Doq, "nope!"),
+            ).map { planner().plan(it, AppFilter()) }
+            assertEquals(
+                listOf(
+                    DnsTransport.Tcp,
+                    DnsTransport.Tcp,
+                    DnsTransport.Tls,
+                    DnsTransport.Https,
+                    DnsTransport.Http3,
+                    DnsTransport.Tls,
+                ),
+                unusable.map { it.dnsUpstream.transport },
+            )
+            for (plan in unusable) {
+                val label = "${plan.dnsUpstream}"
+                assertEquals(
+                    DnsPresets.cloudflare(plan.dnsUpstream.transport),
+                    plan.dnsUpstream.servers,
+                    label,
+                )
+                assertTrue(plan.claimedV4.containsAll(cloudflareV4), label)
+                assertTrue(plan.claimedV6.containsAll(cloudflareV6), label)
+            }
+        }
+
+        @Test
+        fun `custom literal entries claim only their own addresses`() {
+            val dot = planner().plan(
+                customDnsConfig(DnsTransport.Tls, "9.9.9.9", "dns.quad9.net", "[2620:fe::fe]:853"),
+                AppFilter(),
+            )
+            assertEquals(
+                listOf("9.9.9.9:853", "dns.quad9.net:853", "[2620:fe::fe]:853"),
+                dot.dnsUpstream.servers,
+            )
+            assertEquals(
+                listOf(Cidr.parse("$resolverV4/32"), Cidr.parse("9.9.9.9/32")),
+                dot.claimedV4.drop(1),
+            )
+            assertEquals(
+                listOf(Cidr.parse("$resolverV6/128"), Cidr.parse("2620:fe::fe/128")),
+                dot.claimedV6.drop(1),
+            )
+
+            val doh = planner().plan(customDnsConfig(DnsTransport.Https, "https://1.1.1.1/dns-query"), AppFilter())
+            assertEquals(listOf("https://1.1.1.1/dns-query"), doh.dnsUpstream.servers)
+            assertEquals(
+                listOf(Cidr.parse("$resolverV4/32"), Cidr.parse("1.1.1.1/32")),
+                doh.claimedV4.drop(1),
+            )
+            assertEquals(listOf(Cidr.parse("$resolverV6/128")), doh.claimedV6.drop(1))
+        }
+
+        @Test
+        fun `custom hostnames claim no routes even when they name a preset host`() {
+            val entries = listOf(
+                DnsTransport.Tls to "one.one.one.one:853",
+                DnsTransport.Tls to "dns.google:853",
+                DnsTransport.Https to "https://cloudflare-dns.com/dns-query",
+                DnsTransport.Https to "https://dns.google/dns-query",
+            )
+            for ((transport, server) in entries) {
+                val plan = planner().plan(customDnsConfig(transport, server), AppFilter())
+                assertEquals(DnsUpstream(transport, listOf(server)), plan.dnsUpstream, server)
+                assertEquals(listOf(Cidr.parse("$resolverV4/32")), plan.claimedV4.drop(1), server)
+                assertEquals(listOf(Cidr.parse("$resolverV6/128")), plan.claimedV6.drop(1), server)
+            }
+        }
+
+        @Test
+        fun `a custom filtering resolver URL is kept as entered`() {
+            val filtering = "https://security.cloudflare-dns.com/dns-query"
+            for (transport in listOf(DnsTransport.Https, DnsTransport.Http3)) {
+                val plan = planner().plan(customDnsConfig(transport, filtering), AppFilter())
+                assertEquals(DnsUpstream(transport, listOf(filtering)), plan.dnsUpstream, "$transport")
+                assertEquals(listOf(Cidr.parse("$resolverV4/32")), plan.claimedV4.drop(1), "$transport")
+                assertEquals(listOf(Cidr.parse("$resolverV6/128")), plan.claimedV6.drop(1), "$transport")
+            }
         }
 
         @Test
@@ -480,6 +732,50 @@ class RoutePlannerTest {
                 assertFalse(plan.claimedV4.any { CidrMath.contains(it, iface) }, "bypassLan=$bypassLan")
                 assertTrue(plan.claimedV6.any { CidrMath.contains(it, Cidr.parse("$resolverV6/128")) })
             }
+        }
+
+        @Test
+        fun `preset routes survive subtraction of an overlapping direct route`() {
+            for (preset in presets) {
+                for (transport in DnsPresets.supportedTransports(preset.mode)) {
+                    val plan = planner(supportsExclude = false).plan(
+                        RoutingConfig(
+                            dnsMode = preset.mode,
+                            dnsTransport = transport,
+                            sources = listOf(asnSource("provider", preset.directRoutes)),
+                        ),
+                        AppFilter(),
+                    )
+                    val label = "${preset.mode} $transport"
+                    assertTrue(plan.excludedV4.isEmpty() && plan.excludedV6.isEmpty(), label)
+                    val claimed = plan.claimedV4 + plan.claimedV6
+                    for (hostRoute in preset.hostRoutesV4 + preset.hostRoutesV6) {
+                        assertTrue(claimed.any { CidrMath.contains(it, hostRoute) }, "$label $hostRoute")
+                    }
+                    for (neighbour in preset.directNeighbours.map { Cidr.parse(it) }) {
+                        assertFalse(claimed.any { CidrMath.contains(it, neighbour) }, "$label $neighbour")
+                    }
+                }
+            }
+        }
+
+        @Test
+        fun `the Cloudflare fallback survives subtraction of an overlapping direct route`() {
+            val plan = planner(supportsExclude = false).plan(
+                RoutingConfig(
+                    dnsMode = DnsMode.Custom,
+                    dnsTransport = DnsTransport.Tls,
+                    customDns = listOf("not a host"),
+                    sources = listOf(cidrSource("1.1.1.0/24"), cidrSource("2606:4700:4700::/48")),
+                ),
+                AppFilter(),
+            )
+            val claimed = plan.claimedV4 + plan.claimedV6
+            for (hostRoute in cloudflareV4 + cloudflareV6) {
+                assertTrue(claimed.any { CidrMath.contains(it, hostRoute) }, "$hostRoute")
+            }
+            assertFalse(claimed.any { CidrMath.contains(it, Cidr.parse("1.1.1.2/32")) })
+            assertFalse(claimed.any { CidrMath.contains(it, Cidr.parse("2606:4700:4700::2/128")) })
         }
     }
 

@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -52,14 +51,14 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun BatteryReliabilityContent(
-    snapshot: PowerReliabilitySnapshot,
+    snapshot: PowerReliabilitySnapshot?,
     confirmedFingerprint: String?,
     onMarkConfirmed: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val confirmed = confirmedFingerprint == snapshot.buildFingerprint
+    val confirmed = snapshot != null && confirmedFingerprint == snapshot.buildFingerprint
     val spacing = MaterialTheme.spacing
 
     Scaffold(
@@ -75,7 +74,7 @@ fun BatteryReliabilityContent(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            painterResource(R.drawable.ic_arrow_back),
                             contentDescription = stringResource(R.string.action_back),
                         )
                     }
@@ -93,6 +92,8 @@ fun BatteryReliabilityContent(
             ),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
+            if (snapshot == null) return@LazyColumn
+
             item(key = "hero") {
                 ReliabilityHero(
                     snapshot = snapshot,

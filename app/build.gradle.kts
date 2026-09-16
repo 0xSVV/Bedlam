@@ -73,7 +73,34 @@ val abiVersionCodes = mapOf(
     "x86_64" to 4,
 )
 
+val readmeFile: RegularFile = rootProject.layout.projectDirectory.file("README.md")
+
+abstract class BundleReadme : DefaultTask() {
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val readme: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val assetDirectory: DirectoryProperty
+
+    @TaskAction
+    fun bundle() {
+        val directory = assetDirectory.get().asFile
+        directory.deleteRecursively()
+        readme.get().asFile.copyTo(directory.resolve("README.md"))
+    }
+}
+
 androidComponents {
+    onVariants { variant ->
+        val bundleReadme = tasks.register<BundleReadme>(
+            "bundle${variant.name.replaceFirstChar { it.uppercase() }}Readme",
+        ) {
+            readme.set(readmeFile)
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(bundleReadme, BundleReadme::assetDirectory)
+    }
     onVariants(selector().withBuildType("release")) { variant ->
         val baseVersionCode = libs.versions.versionCode.get().toInt()
         variant.outputs.forEach { output ->
@@ -109,13 +136,16 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    constraints {
+        implementation(libs.androidx.navigationevent.compose)
+    }
 
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)
@@ -145,4 +175,16 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    inputs.dir(layout.projectDirectory.dir("src/main/res"))
+        .withPropertyName("mainResources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(layout.projectDirectory.file("src/main/AndroidManifest.xml"))
+        .withPropertyName("mainManifest")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(readmeFile)
+        .withPropertyName("readme")
+        .withPathSensitivity(PathSensitivity.NONE)
+    inputs.dir(rootProject.layout.projectDirectory.dir("release-notes"))
+        .withPropertyName("releaseNotes")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }

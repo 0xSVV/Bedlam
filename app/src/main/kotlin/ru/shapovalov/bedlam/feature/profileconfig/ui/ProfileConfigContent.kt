@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.feature.profileconfig.ui
 
+import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
@@ -18,17 +19,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,9 +41,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -100,23 +102,44 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
     val clipboardLabel = stringResource(R.string.profile_config_clip_label)
     val copiedMessage = stringResource(R.string.profile_config_copy_success)
 
-    BackHandler { component.onBackPressed() }
+    BackHandler(enabled = state.editMode) { component.onBackPressed() }
+
+    val reconnectMessage = stringResource(R.string.profile_config_reconnect_hint)
+    val reconnectAction = stringResource(R.string.action_reconnect)
 
     val saveErrorMessage = state.saveError?.let {
         stringResource(R.string.profile_config_save_error, it)
     }
     LaunchedEffect(saveErrorMessage) {
         val msg = saveErrorMessage ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
         component.onDismissError()
+        if (snackbarHostState.currentSnackbarData?.visuals?.message == msg) return@LaunchedEffect
+        snackbarHostState.dismissShowing(reconnectMessage)
+        scope.launch { snackbarHostState.showSnackbar(msg) }
+    }
+
+    LaunchedEffect(state.offerReconnect) {
+        if (!state.offerReconnect) return@LaunchedEffect
+        component.onReconnectOfferShown()
+        snackbarHostState.dismissShowing(reconnectMessage)
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = reconnectMessage,
+                actionLabel = reconnectAction,
+                withDismissAction = true,
+                duration = SnackbarDuration.Long,
+            )
+            if (result == SnackbarResult.ActionPerformed) component.onReconnect()
+        }
     }
 
     LaunchedEffect(state.notFound) {
-        if (state.notFound) component.onBackPressed()
+        if (state.notFound) component.onClose()
     }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
         topBar = {
             TopAppBar(
                 title = {
@@ -129,9 +152,12 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = component::onBackPressed) {
+                    IconButton(
+                        onClick = component::onBackPressed,
+                        enabled = !state.isSaving,
+                    ) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            painterResource(R.drawable.ic_arrow_back),
                             contentDescription = stringResource(R.string.action_back),
                         )
                     }
@@ -175,9 +201,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                         clipboardLabel,
                         current.toClipboardText(state.original?.name.orEmpty()),
                     )
-                    clip.description.extras = PersistableBundle().apply {
-                        putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-                    }
+                    clip.description.extras = sensitiveClipExtras()
                     clipboardManager.setPrimaryClip(clip)
                     scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
                 },
@@ -195,6 +219,22 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
             onDismiss = component::onCancelDelete,
         )
     }
+
+    if (state.pendingDiscardConfirmation) {
+        DiscardConfirmationDialog(
+            onConfirm = component::onDiscardChanges,
+            onDismiss = component::onKeepEditing,
+        )
+    }
+}
+
+private fun SnackbarHostState.dismissShowing(message: String) {
+    currentSnackbarData?.takeIf { it.visuals.message == message }?.dismiss()
+}
+
+@SuppressLint("InlinedApi")
+private fun sensitiveClipExtras() = PersistableBundle().apply {
+    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
 }
 
 @Composable
@@ -217,7 +257,7 @@ private fun TopActions(
             Spacer(Modifier.size(0.dp))
         } else {
             Row {
-                TextButton(onClick = component::onDiscardChanges, enabled = !state.isSaving) {
+                TextButton(onClick = component::onCancelEdit, enabled = !state.isSaving) {
                     Text(stringResource(R.string.action_cancel))
                 }
                 TextButton(
@@ -240,7 +280,7 @@ private fun TopActions(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ProfileActionsToolbar(
+internal fun ProfileActionsToolbar(
     visible: Boolean,
     onDelete: () -> Unit,
     onCopy: () -> Unit,
@@ -262,7 +302,7 @@ private fun ProfileActionsToolbar(
             floatingActionButton = {
                 FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onEdit) {
                     Icon(
-                        Icons.Default.Edit,
+                        painterResource(R.drawable.ic_edit),
                         contentDescription = stringResource(R.string.profile_config_action_edit),
                     )
                 }
@@ -270,7 +310,7 @@ private fun ProfileActionsToolbar(
         ) {
             IconButton(onClick = onDelete) {
                 Icon(
-                    Icons.Default.Delete,
+                    painterResource(R.drawable.ic_delete),
                     contentDescription = stringResource(R.string.profile_config_action_delete),
                     tint = MaterialTheme.colorScheme.error,
                 )
@@ -311,7 +351,32 @@ private fun DeleteConfirmationDialog(
 }
 
 @Composable
-private fun ConfigBody(
+private fun DiscardConfirmationDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.profile_config_discard_title)) },
+        text = { Text(stringResource(R.string.profile_config_discard_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.profile_config_discard_confirm),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.profile_config_discard_keep))
+            }
+        },
+    )
+}
+
+@Composable
+internal fun ConfigBody(
     draft: HysteriaConfig,
     name: String,
     editMode: Boolean,
@@ -369,7 +434,7 @@ private fun DocsFooter() {
         )
         Spacer(Modifier.weight(1f))
         Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            painterResource(R.drawable.ic_keyboard_arrow_right),
             contentDescription = null,
         )
     }
@@ -377,14 +442,14 @@ private fun DocsFooter() {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun CenteredSpinner() {
+internal fun CenteredSpinner() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularWavyProgressIndicator()
     }
 }
 
 @Composable
-private fun NotFoundMessage() {
+internal fun NotFoundMessage() {
     val spacing = MaterialTheme.spacing
     Box(
         modifier = Modifier

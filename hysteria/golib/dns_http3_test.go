@@ -1,10 +1,12 @@
 package golib
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -46,7 +48,26 @@ type doh3Server struct {
 	pool     *x509.CertPool
 	requests atomic.Int32
 	proto    atomic.Int32
+	maxBody  atomic.Int32
 	srv      *http3.Server
+
+	mu     sync.Mutex
+	bodies [][]byte
+}
+
+func (d *doh3Server) record(q []byte) {
+	d.mu.Lock()
+	d.bodies = append(d.bodies, append([]byte(nil), q...))
+	d.mu.Unlock()
+}
+
+func (d *doh3Server) lastBody() []byte {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.bodies) == 0 {
+		return nil
+	}
+	return d.bodies[len(d.bodies)-1]
 }
 
 func newDoH3Server(t *testing.T, ip [4]byte) *doh3Server {
@@ -63,12 +84,19 @@ func newDoH3Server(t *testing.T, ip [4]byte) *doh3Server {
 			d.requests.Add(1)
 			d.proto.Store(int32(r.ProtoMajor))
 			q, err := io.ReadAll(r.Body)
+			d.record(q)
+			if rejectOversizeDoH(w, q, d.maxBody.Load()) {
+				return
+			}
 			if err != nil || len(q) < 12 || r.Method != http.MethodPost {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			if binary.BigEndian.Uint16(q[:2]) != 0 {
 				t.Errorf("wire ID = %#x, want 0", binary.BigEndian.Uint16(q[:2]))
+			}
+			if rejectUnparsableDoH(w, q) {
+				return
 			}
 			resp := dnsResponse("example.com", 60, ip)
 			resp[0], resp[1] = 0, 0
@@ -143,6 +171,111 @@ func TestH3Resolver_roundTrip(t *testing.T) {
 	}
 	if d.requests.Load() != 2 {
 		t.Errorf("server saw %d requests, want 2", d.requests.Load())
+	}
+}
+
+func TestH3Resolver_bodyIsTheQueryWithAZeroID(t *testing.T) {
+	d := newDoH3Server(t, [4]byte{3, 3, 3, 3})
+	fc, _ := d.client(t)
+	r, err := newH3Resolver(fc, d.url(), &tls.Config{RootCAs: d.pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cases := []struct {
+		name     string
+		query    []byte
+		rejected bool
+	}{
+		{"plain", dnsQuery("example.com"), false},
+		{"EDNS with DO", withEDNS(dnsQuery("example.com"), 4096, true), false},
+		{"padded to the limit", withPadding(dnsQuery("example.com"), dohFixtureQueryLimit), false},
+		{"padded past the limit", withPadding(dnsQuery("example.com"), dohFixtureQueryLimit+1), false},
+		{"300 bytes of non-DNS", nonDNSPayload(300), true},
+	}
+	for _, c := range cases {
+		binary.BigEndian.PutUint16(c.query[:2], 0x3333)
+		sent := append([]byte(nil), c.query...)
+		_, err := r.exchange(ctx, c.query)
+		if c.rejected && err == nil {
+			t.Errorf("%s: the server's 400 must be an error", c.name)
+		}
+		if !c.rejected && err != nil {
+			t.Fatalf("%s: exchange: %v", c.name, err)
+		}
+		want := append([]byte(nil), sent...)
+		want[0], want[1] = 0, 0
+		if got := d.lastBody(); !bytes.Equal(got, want) {
+			t.Errorf("%s: body is %d bytes, want the %d-byte query with a zero ID", c.name, len(got), len(sent))
+		}
+		if !bytes.Equal(c.query, sent) {
+			t.Errorf("%s: exchange modified the query it was given", c.name)
+		}
+	}
+	if d.proto.Load() != 3 {
+		t.Errorf("negotiated HTTP/%d, want HTTP/3", d.proto.Load())
+	}
+}
+
+func TestH3Resolver_rejectionsNeitherTripTheGateNorFallBack(t *testing.T) {
+	d := newDoH3Server(t, [4]byte{3, 3, 3, 3})
+	d.maxBody.Store(dohFixtureQueryLimit)
+	fc, _ := d.client(t)
+	var tcpDials atomic.Int32
+	fc.tcp = func(string) (net.Conn, error) {
+		tcpDials.Add(1)
+		return nil, errors.New("the HTTPS fallback must stay unused")
+	}
+	r, err := newH3Resolver(fc, d.url(), &tls.Config{RootCAs: d.pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+
+	rejected := []struct {
+		query  []byte
+		status int
+	}{
+		{withPadding(dnsQuery("example.com"), dohFixtureQueryLimit+1), http.StatusRequestEntityTooLarge},
+		{nonDNSPayload(300), http.StatusBadRequest},
+		{nonDNSPayload(1400), http.StatusRequestEntityTooLarge},
+	}
+	for i := 0; i <= fallbackGateThreshold; i++ {
+		c := rejected[i%len(rejected)]
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := r.exchange(ctx, c.query)
+		cancel()
+		var statusErr *dohStatusError
+		if !errors.As(err, &statusErr) {
+			t.Fatalf("exchange %d: err = %v, want a DoH status error", i, err)
+		}
+		if statusErr.status != c.status || statusErr.proto != "HTTP/3.0" || statusErr.queryLen != len(c.query) {
+			t.Errorf("exchange %d: HTTP %d over %q for %d bytes, want %d over HTTP/3.0 for %d", i, statusErr.status, statusErr.proto, statusErr.queryLen, c.status, len(c.query))
+		}
+		if isTimeoutClass(err) {
+			t.Fatalf("exchange %d: a rejection counted as a timeout", i)
+		}
+	}
+	if r.gate.tripped() || r.isUDPDown() {
+		t.Error("HTTP rejections must not move the resolver off HTTP/3")
+	}
+	if tcpDials.Load() != 0 {
+		t.Errorf("HTTPS fallback dialed %d times", tcpDials.Load())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := r.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("a small query after the rejections: %v", err)
+	}
+	if resp[len(resp)-1] != 3 {
+		t.Errorf("answer = %v", resp)
+	}
+	if got := d.requests.Load(); got != int32(fallbackGateThreshold+2) {
+		t.Errorf("server saw %d requests, want %d", got, fallbackGateThreshold+2)
 	}
 }
 

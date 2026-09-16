@@ -23,7 +23,7 @@ The UI is Jetpack Compose and Material 3 over a unidirectional architecture. It 
 
 Routing is rule based. Three kinds of source decide what bypasses the tunnel and what goes through it: CIDR ranges, autonomous systems (Bedlam expands an ASN to its announced prefixes, live from RIPEstat), and domains (Bedlam resolves them to addresses). The engine coalesces and subtracts those into a minimal route set, with LAN bypass. You can tunnel IPv6, block it, or leave it outside the VPN.
 
-DNS goes through the tunnel to Cloudflare, Google, your own servers, or your network's resolvers. Choose plain UDP or TCP, DNS over TLS, DNS over QUIC, DNS over HTTPS, or DNS over HTTP/3. IPv4 and IPv6 resolvers both work.
+DNS goes through the tunnel to Cloudflare, Google, your own servers, or your network's resolvers. Choose plain UDP or TCP, DNS over TLS, DNS over QUIC, DNS over HTTPS, or DNS over HTTP/3. IPv4 and IPv6 resolvers both work. The Cloudflare and Google presets for DNS over TLS and DNS over HTTPS name the provider by hostname, so your Hysteria server has to resolve it.
 
 You can set the tunnel MTU from 1280 to 9000 bytes. Auto uses 1280. 1280 is the minimum link MTU of IPv6. The interface always holds an IPv6 address, so `VpnService.Builder.establish` refuses a smaller value.
 
@@ -31,9 +31,16 @@ GeoIP is deliberately out of scope. Bedlam bundles no `geoip.dat` or `.mmdb`, an
 
 ## Building
 
-You need Go 1.25+, gomobile and gobind (`go install golang.org/x/mobile/cmd/{gomobile,gobind}@latest`), the Android NDK, and the submodule checked out (`git submodule update --init --recursive`). After that, `./gradlew assembleDebug` builds everything, Go core included.
+You need Go, gomobile and gobind, the Android NDK, and the submodule checked out (`git submodule update --init --recursive`). Releases use the Go and NDK versions in `.github/toolchain.env`, and gomobile and gobind at the `golang.org/x/mobile` version that `hysteria/golib/go.mod` selects:
 
-Bedlam vendors the Hysteria core at a pinned commit. `./gradlew :hysteria:updateHysteriaCore` moves it to upstream's latest. Run it deliberately, review the diff, then rebuild. A regular build never touches the pin.
+```sh
+v=$(cd hysteria/golib && go list -m -f '{{.Version}}' golang.org/x/mobile)
+go install golang.org/x/mobile/cmd/gomobile@$v golang.org/x/mobile/cmd/gobind@$v
+```
+
+Set `ANDROID_NDK_HOME` to the pinned NDK, or the build picks the highest NDK installed. After that, `./gradlew assembleDebug` builds everything, Go core included.
+
+Bedlam vendors the Hysteria core at a pinned commit. `./gradlew :hysteria:updateHysteriaCore` moves it to upstream's latest. Run it deliberately, review the diff, then rebuild. A regular build never touches the pin. CI accepts only a core commit that carries upstream release tags. If upstream's latest commit has none, check out the release tag in `hysteria/upstream` instead. Then set `HYSTERIA_CORE_COMMIT` and `HYSTERIA_CORE_TAGS` in `.github/toolchain.env` to that commit and its tags, for example `app/v2.12.3 core/v2.12.3 extras/v2.12.3`. CI rejects a checkout whose core differs from them.
 
 ## License
 

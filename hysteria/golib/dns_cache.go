@@ -4,12 +4,16 @@ import (
 	"container/list"
 	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
 
 	"golang.org/x/sync/singleflight"
 )
+
+var errDNSQueryInvalid = errors.New("not a DNS query with one question")
 
 const (
 	dnsCacheMaxEntries = 1024
@@ -42,9 +46,7 @@ func newDNSCache() *dnsCache {
 func (c *dnsCache) resolve(ctx context.Context, r dnsResolver, query []byte, onTunnel func(tx, rx int)) ([]byte, error) {
 	txID, qKey, ok := parseDNSQuery(query)
 	if !ok {
-		resp, err := r.exchange(ctx, query)
-		countTunnelDNS(onTunnel, query, resp, err)
-		return resp, err
+		return nil, fmt.Errorf("%w (%d bytes)", errDNSQueryInvalid, len(query))
 	}
 
 	cacheKey := r.id() + "\x00" + qKey
@@ -173,6 +175,9 @@ func (c *dnsCache) clear() {
 }
 
 func parseDNSQuery(query []byte) (uint16, string, bool) {
+	if !validDNSQuery(query) {
+		return 0, "", false
+	}
 	question, ok := dnsQuestion(query)
 	if !ok {
 		return 0, "", false
@@ -395,4 +400,29 @@ func skipName(data []byte, pos int) int {
 		}
 		pos += 1 + l
 	}
+}
+
+func validDNSQuery(msg []byte) bool {
+	if len(msg) < dnsHeaderLen || msg[2]&0x80 != 0 || binary.BigEndian.Uint16(msg[4:6]) != 1 {
+		return false
+	}
+	pos := skipName(msg, dnsHeaderLen)
+	if pos < 0 || pos+4 > len(msg) {
+		return false
+	}
+	pos += 4
+	records := int(binary.BigEndian.Uint16(msg[6:8])) +
+		int(binary.BigEndian.Uint16(msg[8:10])) +
+		int(binary.BigEndian.Uint16(msg[10:12]))
+	for i := 0; i < records; i++ {
+		np := skipName(msg, pos)
+		if np < 0 || np+10 > len(msg) {
+			return false
+		}
+		pos = np + 10 + int(binary.BigEndian.Uint16(msg[np+8:np+10]))
+		if pos > len(msg) {
+			return false
+		}
+	}
+	return true
 }

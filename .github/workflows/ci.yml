@@ -11,18 +11,25 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          persist-credentials: false
+
+      - name: Check Hysteria core pin
+        run: bash .github/scripts/check-core-pin.sh
+
+      - name: Lint workflow scripts
+        run: shellcheck --severity=warning .github/scripts/*.sh
 
       - uses: ./.github/actions/setup-build
 
       - name: Go tests
         working-directory: hysteria/golib
-        run: go test ./...
+        run: go test -tags with_gvisor ./...
 
       - name: Unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
@@ -32,3 +39,13 @@ jobs:
 
       - name: Release build (R8 smoke, unsigned)
         run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Provenance manifest (unsigned)
+        run: bash .github/scripts/write-provenance.sh build/release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: provenance
+          path: build/release/*-provenance.json
+          if-no-files-found: error
+          retention-days: 14

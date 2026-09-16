@@ -1,9 +1,13 @@
 package golib
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -14,8 +18,10 @@ const (
 )
 
 type pooledConn struct {
-	conn net.Conn
-	last time.Time
+	conn     net.Conn
+	opened   time.Time
+	last     time.Time
+	answered int
 }
 
 // Without reuse every lookup opens its own tunnel stream, and a page that
@@ -27,6 +33,15 @@ type streamPool struct {
 	closed atomic.Bool
 }
 
+type streamResult struct {
+	conn     *pooledConn
+	pooled   bool
+	resp     []byte
+	reusable bool
+	stream   string
+	err      error
+}
+
 func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *streamPool {
 	return &streamPool{
 		label: label,
@@ -36,35 +51,164 @@ func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *
 }
 
 func (p *streamPool) exchange(ctx context.Context, query []byte) ([]byte, error) {
+	var failures []streamResult
 	if c := p.take(); c != nil {
-		if resp, err := p.exchangeOn(ctx, c, query); err == nil {
+		resp, pooledFailures := p.exchangeOnPooled(ctx, c, query)
+		if pooledFailures == nil {
 			return resp, nil
-		} else if ctx.Err() != nil {
-			return nil, err
+		}
+		failures = pooledFailures
+		if ctx.Err() != nil || deadlineExpired(failures[len(failures)-1].err) {
+			return nil, p.failed(failures)
 		}
 	}
-	conn, err := p.dial(ctx)
-	if err != nil {
-		return nil, err
+	result := p.exchangeOnNewStream(ctx, query)
+	if result.err != nil {
+		return nil, p.failed(append(failures, result))
 	}
-	return p.exchangeOn(ctx, &pooledConn{conn: conn}, query)
+	if result.reusable {
+		p.put(result.conn)
+	}
+	return result.resp, nil
 }
 
-func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte) ([]byte, error) {
+func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, callerQuery []byte) ([]byte, []streamResult) {
+	query := bytes.Clone(callerQuery)
+	streamCtx, stopStreams := context.WithCancel(ctx)
+	defer stopStreams()
+	results := make(chan streamResult, 2)
+	stream := pooled.describe()
+	go func() {
+		resp, reusable, err := p.exchangeOn(streamCtx, pooled, query)
+		results <- streamResult{conn: pooled, pooled: true, resp: resp, reusable: reusable, stream: stream, err: err}
+	}()
+	hedge := time.NewTimer(hedgeDelay(ctx))
+	defer hedge.Stop()
+	var failures []streamResult
+	pooledPending := true
+	for running := 1; running > 0; {
+		select {
+		case <-hedge.C:
+			running++
+			go func() { results <- p.exchangeOnNewStream(streamCtx, query) }()
+		case result := <-results:
+			running--
+			if result.pooled {
+				pooledPending = false
+			}
+			if result.err != nil {
+				if result.pooled {
+					failures = append([]streamResult{result}, failures...)
+				} else {
+					failures = append(failures, result)
+				}
+				continue
+			}
+			if !result.pooled && (pooledPending || isTimeoutClass(failures[0].err)) {
+				p.drain()
+			}
+			if result.reusable {
+				p.put(result.conn)
+			}
+			if running > 0 {
+				go p.reclaim(results, running)
+			}
+			return result.resp, nil
+		}
+	}
+	return nil, failures
+}
+
+func (p *streamPool) exchangeOnNewStream(ctx context.Context, query []byte) streamResult {
+	dialStart := time.Now()
+	conn, err := p.dial(ctx)
+	if err != nil {
+		return streamResult{err: err}
+	}
+	c := &pooledConn{conn: conn, opened: time.Now()}
+	resp, reusable, err := p.exchangeOn(ctx, c, query)
+	if err != nil {
+		return streamResult{stream: "new stream dialed in " + diagDuration(c.opened.Sub(dialStart)).String(), err: err}
+	}
+	return streamResult{conn: c, resp: resp, reusable: reusable}
+}
+
+func (p *streamPool) reclaim(results <-chan streamResult, pending int) {
+	for ; pending > 0; pending-- {
+		if result := <-results; result.err == nil && result.reusable {
+			p.put(result.conn)
+		}
+	}
+}
+
+func (p *streamPool) failed(failures []streamResult) error {
+	last := failures[len(failures)-1]
+	if len(failures) == 1 && last.stream == "" {
+		return last.err
+	}
+	var earlier strings.Builder
+	for _, failure := range failures[:len(failures)-1] {
+		if failure.stream != "" {
+			earlier.WriteString(failure.stream + " failed: ")
+		}
+		earlier.WriteString(failure.err.Error() + "; ")
+	}
+	if last.stream == "" {
+		return fmt.Errorf("%s: %s%w", p.label, earlier.String(), last.err)
+	}
+	return fmt.Errorf("%s: %s%s: %w", p.label, earlier.String(), last.stream, last.err)
+}
+
+func deadlineExpired(err error) bool {
+	return errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded)
+}
+
+func hedgeDelay(ctx context.Context) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return dnsIOTimeout / 2
+	}
+	return time.Until(deadline) / 2
+}
+
+func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte) ([]byte, bool, error) {
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		deadline = time.Now().Add(dnsIOTimeout)
 	}
 	_ = c.conn.SetDeadline(deadline)
+	stopInterrupt := context.AfterFunc(ctx, func() { _ = c.conn.SetDeadline(time.Now()) })
 	resp, err := dnsStreamExchange(c.conn, query)
-	if err != nil {
+	interrupted := !stopInterrupt()
+	if err != nil || interrupted {
 		_ = c.conn.Close()
-		return nil, fmt.Errorf("%s: %w", p.label, err)
+	}
+	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return nil, false, ctx.Err()
+		}
+		return nil, false, err
+	}
+	if interrupted {
+		return resp, false, nil
 	}
 	_ = c.conn.SetDeadline(time.Time{})
 	c.last = time.Now()
-	p.put(c)
-	return resp, nil
+	c.answered++
+	return resp, true, nil
+}
+
+func (c *pooledConn) describe() string {
+	return fmt.Sprintf("pooled stream idle %s (open %s, answered %d)",
+		diagDuration(wallSince(c.last)), diagDuration(wallSince(c.opened)), c.answered)
+}
+
+func wallSince(t time.Time) time.Duration {
+	return time.Now().Round(0).Sub(t.Round(0))
+}
+
+func diagDuration(d time.Duration) time.Duration {
+	return d.Round(100 * time.Millisecond)
 }
 
 func (p *streamPool) take() *pooledConn {
@@ -89,6 +233,9 @@ func (p *streamPool) put(c *pooledConn) {
 	}
 	select {
 	case p.idle <- c:
+		if p.closed.Load() {
+			p.drain()
+		}
 	default:
 		_ = c.conn.Close()
 	}
@@ -96,6 +243,10 @@ func (p *streamPool) put(c *pooledConn) {
 
 func (p *streamPool) close() {
 	p.closed.Store(true)
+	p.drain()
+}
+
+func (p *streamPool) drain() {
 	for {
 		select {
 		case c := <-p.idle:

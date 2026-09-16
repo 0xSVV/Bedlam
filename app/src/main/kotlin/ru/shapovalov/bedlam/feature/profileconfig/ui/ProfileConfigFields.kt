@@ -29,6 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,7 +37,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -82,26 +87,15 @@ internal fun TextFieldRow(
 ) {
     var revealed by rememberSaveable { mutableStateOf(false) }
     val masked = secret && !revealed
+    val canReveal = secret && value.isNotBlank()
     FieldRowFrame(
         label = label,
         caution = caution,
         editMode = editMode,
         showDivider = showDivider,
-        labelTrailing = if (secret && value.isNotBlank()) {
-            {
-                TextButton(onClick = { revealed = !revealed }) {
-                    Text(
-                        text = stringResource(
-                            if (revealed) {
-                                R.string.profile_config_action_hide
-                            } else {
-                                R.string.profile_config_action_reveal
-                            },
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-            }
+        labelInField = true,
+        labelTrailing = if (canReveal) {
+            { RevealToggle(revealed = revealed, onToggle = { revealed = !revealed }) }
         } else {
             null
         },
@@ -109,6 +103,7 @@ internal fun TextFieldRow(
         AnimatedFieldContent(editMode = editMode) { isEditing ->
             if (isEditing) {
                 ConfigTextField(
+                    label = label,
                     value = value,
                     onValueChange = onChange,
                     singleLine = singleLine,
@@ -117,15 +112,36 @@ internal fun TextFieldRow(
                     } else {
                         VisualTransformation.None
                     },
+                    trailingIcon = if (canReveal) {
+                        { RevealToggle(revealed = revealed, onToggle = { revealed = !revealed }) }
+                    } else {
+                        null
+                    },
                 )
             } else {
-                ReadOnlyValue(value = if (masked) MASKED_VALUE else value)
+                ReadOnlyValue(value = readOnlyFieldText(value, masked))
             }
         }
     }
 }
 
 private const val MASKED_VALUE = "••••••••"
+
+@Composable
+private fun RevealToggle(revealed: Boolean, onToggle: () -> Unit) {
+    TextButton(onClick = onToggle) {
+        Text(
+            text = stringResource(
+                if (revealed) {
+                    R.string.profile_config_action_hide
+                } else {
+                    R.string.profile_config_action_reveal
+                },
+            ),
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+}
 
 @Composable
 internal fun IntFieldRow(
@@ -187,18 +203,24 @@ private fun <T> NumericFieldRow(
         caution = caution,
         editMode = editMode,
         showDivider = showDivider,
+        labelInField = true,
     ) {
         AnimatedFieldContent(editMode = editMode) { isEditing ->
             if (isEditing) {
-                var local by remember(text) { mutableStateOf(text) }
+                var local by rememberSaveable { mutableStateOf(text) }
+                var focused by remember { mutableStateOf(false) }
+                LaunchedEffect(text, focused) {
+                    local = numericFieldText(local, text, focused, parse)
+                }
                 ConfigTextField(
+                    label = label,
                     value = local,
                     onValueChange = { entry ->
                         local = entry
-                        val source = entry.ifEmpty { "0" }
-                        parse(source)?.let(onChange)
+                        parse(entry.ifEmpty { "0" })?.let(onChange)
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.onFocusChanged { focused = it.isFocused },
                 )
             } else {
                 val unset = stringResource(R.string.profile_config_value_unset)
@@ -209,6 +231,63 @@ private fun <T> NumericFieldRow(
         }
     }
 }
+
+internal fun <T> numericFieldText(
+    local: String,
+    stored: String,
+    focused: Boolean,
+    parse: (String) -> T?,
+): String = if (focused || parse(local.ifEmpty { "0" }) == parse(stored)) local else stored
+
+@Composable
+internal fun ListFieldRow(
+    label: String,
+    values: List<String>,
+    editMode: Boolean,
+    onChange: (List<String>) -> Unit,
+    caution: String? = null,
+    showDivider: Boolean = true,
+) {
+    FieldRowFrame(
+        label = label,
+        caution = caution,
+        editMode = editMode,
+        showDivider = showDivider,
+        labelInField = true,
+    ) {
+        AnimatedFieldContent(editMode = editMode) { isEditing ->
+            if (isEditing) {
+                var local by rememberSaveable { mutableStateOf(formatListField(values)) }
+                var focused by remember { mutableStateOf(false) }
+                LaunchedEffect(values, focused) {
+                    local = listFieldText(local, values, focused)
+                }
+                ConfigTextField(
+                    label = label,
+                    value = local,
+                    onValueChange = { entry ->
+                        local = entry
+                        onChange(parseListField(entry))
+                    },
+                    modifier = Modifier.onFocusChanged { focused = it.isFocused },
+                )
+            } else {
+                ReadOnlyValue(value = formatListField(values))
+            }
+        }
+    }
+}
+
+internal fun parseListField(text: String): List<String> =
+    text.split(',', '\n').map(String::trim).filter(String::isNotEmpty)
+
+internal fun formatListField(values: List<String>): String = values.joinToString(", ")
+
+internal fun listFieldText(local: String, stored: List<String>, focused: Boolean): String =
+    if (focused || parseListField(local) == stored) local else formatListField(stored)
+
+internal fun readOnlyFieldText(value: String, masked: Boolean): String =
+    if (masked && value.isNotBlank()) MASKED_VALUE else value
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -227,6 +306,7 @@ internal fun SwitchRow(
         caution = caution,
         editMode = editMode,
         showDivider = showDivider,
+        labelSpoken = !editMode,
         labelTrailing = {
             AnimatedVisibility(
                 visible = editMode,
@@ -237,7 +317,11 @@ internal fun SwitchRow(
                         shrinkVertically(motion.fastSpatialSpec()) +
                         scaleOut(motion.fastSpatialSpec()),
             ) {
-                Switch(checked = value, onCheckedChange = onChange)
+                Switch(
+                    checked = value,
+                    onCheckedChange = onChange,
+                    modifier = Modifier.semantics { contentDescription = label },
+                )
             }
         },
     ) {
@@ -258,16 +342,20 @@ internal fun SwitchRow(
 
 @Composable
 private fun ConfigTextField(
+    label: String,
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    trailingIcon: (@Composable () -> Unit)? = null,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
+        label = { Text(text = label, fontFamily = FontFamily.Monospace) },
+        trailingIcon = trailingIcon,
         singleLine = singleLine,
         visualTransformation = visualTransformation,
         minLines = if (singleLine) 1 else 3,
@@ -292,36 +380,51 @@ private fun ConfigTextField(
             focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.0f),
             unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.0f),
             cursorColor = MaterialTheme.colorScheme.primary,
+            focusedLabelColor = MaterialTheme.colorScheme.primary,
+            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
         modifier = modifier.fillMaxWidth(),
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun FieldRowFrame(
     label: String,
     caution: String?,
     editMode: Boolean,
     showDivider: Boolean,
+    labelInField: Boolean = false,
+    labelSpoken: Boolean = true,
     labelTrailing: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
+    val motion = MaterialTheme.motionScheme
+    val labelModifier = if (labelSpoken) Modifier else Modifier.clearAndSetSemantics {}
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.large, vertical = spacing.small),
     ) {
-        if (labelTrailing != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FieldLabel(label, modifier = Modifier.weight(1f))
-                labelTrailing()
+        AnimatedVisibility(
+            visible = !(editMode && labelInField),
+            enter = fadeIn(motion.defaultEffectsSpec()) +
+                    expandVertically(motion.fastSpatialSpec()),
+            exit = fadeOut(motion.defaultEffectsSpec()) +
+                    shrinkVertically(motion.fastSpatialSpec()),
+        ) {
+            if (labelTrailing != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FieldLabel(label, modifier = Modifier.weight(1f).then(labelModifier))
+                    labelTrailing()
+                }
+            } else {
+                FieldLabel(label, modifier = labelModifier)
             }
-        } else {
-            FieldLabel(label)
         }
         content()
         AnimatedHint(hint = caution, visible = editMode && !caution.isNullOrBlank())

@@ -1,8 +1,6 @@
 package ru.shapovalov.bedlam.feature.settings.ui
 
 import android.app.StatusBarManager
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -10,19 +8,24 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -31,12 +34,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import com.arkivanov.decompose.ExperimentalDecomposeApi
 import com.arkivanov.decompose.extensions.compose.stack.Children
 import com.arkivanov.decompose.extensions.compose.stack.animation.fade
@@ -71,6 +76,7 @@ fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier)
                 onOpenAppSelection = component::onOpenAppSelection,
                 onOpenRouting = component::onOpenRouting,
                 onOpenBatteryReliability = component::onOpenBatteryReliability,
+                onOpenAbout = component::onOpenAbout,
                 quickSettingsTileAdded = state.quickSettingsTileAdded,
                 onQuickSettingsTileAdded = component::onSetQuickSettingsTileAdded,
                 reliabilitySnapshot = state.reliabilitySnapshot,
@@ -85,30 +91,38 @@ fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier)
                 onMarkConfirmed = component::onMarkReliabilityConfirmed,
                 onBack = component::onBack,
             )
+
+            Child.About -> AboutContent(onBack = component::onBack)
         }
     }
 }
 
 @Composable
-private fun SettingsRoot(
+internal fun SettingsRoot(
     onOpenAppSelection: () -> Unit,
     onOpenRouting: () -> Unit,
     onOpenBatteryReliability: () -> Unit,
+    onOpenAbout: () -> Unit,
     quickSettingsTileAdded: Boolean,
     onQuickSettingsTileAdded: (Boolean) -> Unit,
-    reliabilitySnapshot: PowerReliabilitySnapshot,
+    reliabilitySnapshot: PowerReliabilitySnapshot?,
     confirmedReliabilityFingerprint: String?,
 ) {
     val spacing = MaterialTheme.spacing
     val context = LocalContext.current
-    val needsReliabilityAttention = PowerReliabilityRules.needsAttention(
-        snapshot = reliabilitySnapshot,
-        confirmedFingerprint = confirmedReliabilityFingerprint,
-    )
+    val versionName = remember(context) { context.appVersionName() }
+    val needsReliabilityAttention = reliabilitySnapshot != null &&
+            PowerReliabilityRules.needsAttention(
+                snapshot = reliabilitySnapshot,
+                confirmedFingerprint = confirmedReliabilityFingerprint,
+            )
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .windowInsetsPadding(
+                WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            )
+            .verticalScroll(rememberScrollState())
             .padding(top = spacing.small),
     ) {
         SettingsRow(
@@ -125,14 +139,16 @@ private fun SettingsRoot(
         SettingsDivider()
         SettingsRow(
             title = stringResource(R.string.settings_reliability_title),
-            subtitle = stringResource(
-                if (needsReliabilityAttention) {
-                    R.string.settings_reliability_subtitle_action
-                } else {
-                    R.string.settings_reliability_subtitle_ok
-                },
-                reliabilitySnapshot.vendor.displayName,
-            ),
+            subtitle = reliabilitySnapshot?.let { snapshot ->
+                stringResource(
+                    if (needsReliabilityAttention) {
+                        R.string.settings_reliability_subtitle_action
+                    } else {
+                        R.string.settings_reliability_subtitle_ok
+                    },
+                    snapshot.vendor.displayName,
+                )
+            }.orEmpty(),
             subtitleEmphasized = needsReliabilityAttention,
             onClick = onOpenBatteryReliability,
         )
@@ -148,23 +164,15 @@ private fun SettingsRoot(
                     },
                 ),
                 subtitleEmphasized = true,
-                showNavigationIcon = false,
+                trailingIcon = null,
                 onClick = { requestQuickSettingsTile(context, onQuickSettingsTileAdded) },
             )
         }
         SettingsDivider()
         SettingsRow(
             title = stringResource(R.string.settings_about_title),
-            subtitle = stringResource(R.string.settings_about_subtitle, context.appVersionName()),
-            showNavigationIcon = false,
-            onClick = { context.copyVersion() },
-        )
-        SettingsDivider()
-        SettingsRow(
-            title = stringResource(R.string.settings_about_source_title),
-            subtitle = stringResource(R.string.settings_about_source_subtitle),
-            showNavigationIcon = false,
-            onClick = { context.openSource() },
+            subtitle = stringResource(R.string.settings_about_subtitle, versionName),
+            onClick = onOpenAbout,
         )
     }
 }
@@ -175,7 +183,7 @@ private fun requestQuickSettingsTile(context: Context, onAddedChanged: (Boolean)
         manager.requestAddTileService(
             ComponentName(context, BedlamTileService::class.java),
             context.getString(R.string.qs_tile_label),
-            Icon.createWithResource(context, R.drawable.ic_qs_tunnel),
+            Icon.createWithResource(context, R.drawable.ic_power_settings_new),
             context.mainExecutor,
         ) { result ->
             val added = result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
@@ -206,20 +214,20 @@ private const val ACTION_QUICK_SETTINGS_SETTINGS = "android.settings.QUICK_SETTI
 
 @Composable
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private fun SettingsRow(
+internal fun SettingsRow(
     title: String,
     subtitle: String,
-    subtitleEmphasized: Boolean = false,
-    showNavigationIcon: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    subtitleEmphasized: Boolean = false,
+    @DrawableRes trailingIcon: Int? = R.drawable.ic_keyboard_arrow_right,
 ) {
     val spacing = MaterialTheme.spacing
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = SettingsItemMinHeight)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = spacing.large, vertical = spacing.small),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -236,10 +244,10 @@ private fun SettingsRow(
                 },
             )
         }
-        if (showNavigationIcon) {
+        if (trailingIcon != null) {
             Spacer(Modifier.width(spacing.small))
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                painterResource(trailingIcon),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -248,7 +256,7 @@ private fun SettingsRow(
 }
 
 @Composable
-private fun SettingsDivider() {
+internal fun SettingsDivider() {
     HorizontalDivider(
         modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large),
         color = MaterialTheme.colorScheme.outlineVariant,
@@ -256,23 +264,3 @@ private fun SettingsDivider() {
 }
 
 private val SettingsItemMinHeight = 84.dp
-
-private const val SOURCE_URL = "https://github.com/0xSVV/Bedlam"
-
-private fun Context.appVersionName(): String = runCatching {
-    packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
-}.getOrDefault("")
-
-private fun Context.copyVersion() {
-    val clipboard = getSystemService(ClipboardManager::class.java) ?: return
-    clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.app_name), appVersionName()))
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-        Toast.makeText(this, R.string.settings_about_copied, Toast.LENGTH_SHORT).show()
-    }
-}
-
-private fun Context.openSource() {
-    val intent = Intent(Intent.ACTION_VIEW, SOURCE_URL.toUri())
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { startActivity(intent) }
-}

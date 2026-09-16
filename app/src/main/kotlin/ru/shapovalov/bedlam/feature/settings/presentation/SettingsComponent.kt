@@ -7,6 +7,8 @@ import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.router.stack.pop
 import com.arkivanov.decompose.router.stack.pushNew
 import com.arkivanov.decompose.value.Value
+import com.arkivanov.essenty.lifecycle.doOnPause
+import com.arkivanov.essenty.lifecycle.doOnResume
 import com.arkivanov.mvikotlin.core.instancekeeper.getStore
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,10 +50,25 @@ class SettingsComponent(
                     routingFactory.create(ctx, RoutingComponent.OnBack { navigation.pop() })
                 )
 
-                Config.BatteryReliability -> Child.BatteryReliability
+                Config.BatteryReliability -> {
+                    ctx.lifecycle.doOnResume {
+                        store.accept(SettingsStore.Intent.SetReliabilityVisible(true))
+                    }
+                    ctx.lifecycle.doOnPause {
+                        store.accept(SettingsStore.Intent.SetReliabilityVisible(false))
+                    }
+                    Child.BatteryReliability
+                }
+
+                Config.About -> Child.About
             }
         },
     )
+
+    init {
+        lifecycle.doOnResume { store.accept(SettingsStore.Intent.SetForeground(true)) }
+        lifecycle.doOnPause { store.accept(SettingsStore.Intent.SetForeground(false)) }
+    }
 
     fun onBack() {
         navigation.pop()
@@ -69,6 +86,10 @@ class SettingsComponent(
         navigation.pushNew(Config.BatteryReliability)
     }
 
+    fun onOpenAbout() {
+        navigation.pushNew(Config.About)
+    }
+
     fun onSetQuickSettingsTileAdded(added: Boolean) {
         store.accept(SettingsStore.Intent.SetQuickSettingsTileAdded(added))
     }
@@ -82,6 +103,7 @@ class SettingsComponent(
         data class AppSelection(val component: AppSelectionComponent) : Child
         data class Routing(val component: RoutingComponent) : Child
         data object BatteryReliability : Child
+        data object About : Child
     }
 
     @Serializable
@@ -97,5 +119,8 @@ class SettingsComponent(
 
         @Serializable
         data object BatteryReliability : Config
+
+        @Serializable
+        data object About : Config
     }
 }

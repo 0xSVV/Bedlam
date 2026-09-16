@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
+import android.os.SystemClock
 import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.formatBytes
@@ -22,11 +23,14 @@ class VpnNotificationController(private val context: Context) {
     var connectionName: String = ""
 
     private val rateHistory = RateHistory()
-    private val sparklineRenderer = SparklineRenderer()
+    private val sparklineRenderer = SparklineRenderer(context)
     private val postLock = Any()
 
     @Volatile
     private var closed = false
+
+    @Volatile
+    private var lastSparkline: Icon? = null
 
     private val notificationManager: NotificationManager =
         requireNotNull(context.getSystemService(NotificationManager::class.java)) {
@@ -66,7 +70,7 @@ class VpnNotificationController(private val context: Context) {
     fun cancel() {
         synchronized(postLock) {
             closed = true
-            rateHistory.clear()
+            clearSparkline()
             notificationManager.cancel(NOTIFICATION_ID)
         }
     }
@@ -84,7 +88,7 @@ class VpnNotificationController(private val context: Context) {
                 Notification.BigTextStyle()
                     .bigText(context.getString(R.string.notification_reconnect_timeout))
             )
-            .setContentIntent(openAppIntent())
+            .setContentIntent(openAppIntent)
             .setAutoCancel(true)
             .build()
         notificationManager.notify(WARNING_NOTIFICATION_ID, notification)
@@ -102,7 +106,7 @@ class VpnNotificationController(private val context: Context) {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setContentIntent(openAppIntent())
+            .setContentIntent(openAppIntent)
 
         applyState(builder, state, stats, txRate, rxRate)
         return builder.build()
@@ -117,16 +121,21 @@ class VpnNotificationController(private val context: Context) {
     ) {
         when (state) {
             is ConnectionState.Connecting -> {
-                rateHistory.clear()
+                clearSparkline()
                 builder.setContentText(context.getString(R.string.notification_state_connecting))
-                builder.addAction(stopAction())
+                builder.addAction(stopAction)
             }
 
             is ConnectionState.Connected -> {
-                rateHistory.record(txRate, rxRate)
+                val now = SystemClock.elapsedRealtime()
+                rateHistory.record(txRate + rxRate, now)
                 runCatching {
-                    sparklineRenderer.render(rateHistory.snapshot(), context.isNightMode())
-                }.getOrNull()?.let { builder.setLargeIcon(Icon.createWithBitmap(it)) }
+                    sparklineRenderer.render(rateHistory.snapshot(now), context.isNightMode())
+                }.getOrNull()?.let { bitmap ->
+                    val icon = Icon.createWithBitmap(bitmap)
+                    lastSparkline = icon
+                    builder.setLargeIcon(icon)
+                }
                 val rateLine = context.getString(
                     R.string.notification_traffic_rate,
                     context.formatRate(txRate),
@@ -153,34 +162,40 @@ class VpnNotificationController(private val context: Context) {
                 builder.setWhen(state.connectedSinceMillis)
                 builder.setShowWhen(true)
                 builder.setUsesChronometer(true)
-                builder.addAction(reconnectAction())
-                builder.addAction(stopAction())
+                builder.addAction(reconnectAction)
+                builder.addAction(stopAction)
             }
 
             is ConnectionState.Reconnecting -> {
+                lastSparkline?.let { builder.setLargeIcon(it) }
                 builder.setContentText(
                     context.getString(R.string.notification_state_reconnecting, state.attempt)
                 )
                 builder.setSubText(state.reason)
-                builder.addAction(reconnectAction())
-                builder.addAction(stopAction())
+                builder.addAction(reconnectAction)
+                builder.addAction(stopAction)
             }
 
             is ConnectionState.Error -> {
-                rateHistory.clear()
+                clearSparkline()
                 builder.setContentText(
                     context.getString(R.string.notification_state_error, state.message)
                 )
-                builder.addAction(reconnectAction())
-                builder.addAction(stopAction())
+                builder.addAction(reconnectAction)
+                builder.addAction(stopAction)
             }
 
             is ConnectionState.Disconnected -> {
-                rateHistory.clear()
+                clearSparkline()
                 builder.setContentText(context.getString(R.string.notification_state_disconnected))
-                builder.addAction(stopAction())
+                builder.addAction(stopAction)
             }
         }
+    }
+
+    private fun clearSparkline() {
+        rateHistory.clear()
+        lastSparkline = null
     }
 
     private fun Context.isNightMode(): Boolean =
@@ -194,7 +209,7 @@ class VpnNotificationController(private val context: Context) {
             context.getString(R.string.notification_title)
         }
 
-    private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
+    private val openAppIntent: PendingIntent = PendingIntent.getActivity(
         context,
         0,
         Intent(context, MainActivity::class.java).apply {
@@ -203,17 +218,17 @@ class VpnNotificationController(private val context: Context) {
         PendingIntent.FLAG_IMMUTABLE,
     )
 
-    private fun stopAction(): Notification.Action = actionFor(
+    private val stopAction: Notification.Action = actionFor(
         requestCode = REQ_STOP,
         action = BedlamVpnService.ACTION_STOP,
-        iconRes = R.drawable.ic_action_stop,
+        iconRes = R.drawable.ic_stop,
         labelRes = R.string.action_disconnect,
     )
 
-    private fun reconnectAction(): Notification.Action = actionFor(
+    private val reconnectAction: Notification.Action = actionFor(
         requestCode = REQ_RECONNECT,
         action = BedlamVpnService.ACTION_RECONNECT,
-        iconRes = R.drawable.ic_action_refresh,
+        iconRes = R.drawable.ic_refresh,
         labelRes = R.string.action_reconnect,
     )
 

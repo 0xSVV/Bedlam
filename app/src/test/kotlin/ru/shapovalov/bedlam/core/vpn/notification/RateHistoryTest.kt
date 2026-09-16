@@ -6,44 +6,66 @@ import org.junit.jupiter.api.Test
 class RateHistoryTest {
 
     @Test
-    fun `records samples in order`() {
-        val history = RateHistory(capacity = 4)
-        history.record(10, 20)
-        history.record(30, 40)
+    fun `merges samples in the same slot by max`() {
+        val history = RateHistory(slots = 3, slotMillis = 2_000)
+        history.record(10, atMillis = 0)
+        history.record(30, atMillis = 1_500)
+        history.record(20, atMillis = 1_999)
 
-        val snapshot = history.snapshot()
-        assertEquals(listOf(10L, 30L), snapshot.tx)
-        assertEquals(listOf(20L, 40L), snapshot.rx)
+        assertEquals(listOf(0L, 0L, 30L), history.snapshot(nowMillis = 1_999))
     }
 
     @Test
-    fun `evicts oldest beyond capacity`() {
-        val history = RateHistory(capacity = 2)
-        history.record(1, 1)
-        history.record(2, 2)
-        history.record(3, 3)
+    fun `starts a new slot after slot millis`() {
+        val history = RateHistory(slots = 3, slotMillis = 2_000)
+        history.record(10, atMillis = 0)
+        history.record(20, atMillis = 2_000)
 
-        val snapshot = history.snapshot()
-        assertEquals(listOf(2L, 3L), snapshot.tx)
-        assertEquals(listOf(2L, 3L), snapshot.rx)
+        assertEquals(listOf(0L, 10L, 20L), history.snapshot(nowMillis = 2_000))
+    }
+
+    @Test
+    fun `slots without samples read as zero`() {
+        val history = RateHistory(slots = 3, slotMillis = 2_000)
+        history.record(10, atMillis = 0)
+
+        assertEquals(listOf(10L, 0L, 0L), history.snapshot(nowMillis = 4_000))
+    }
+
+    @Test
+    fun `drops slots older than the window`() {
+        val history = RateHistory(slots = 3, slotMillis = 2_000)
+        history.record(10, atMillis = 0)
+        history.record(20, atMillis = 2_000)
+        history.record(30, atMillis = 4_000)
+        history.record(40, atMillis = 6_000)
+
+        assertEquals(listOf(20L, 30L, 40L), history.snapshot(nowMillis = 6_000))
+    }
+
+    @Test
+    fun `a gap longer than the window leaves only the newest sample`() {
+        val history = RateHistory(slots = 3, slotMillis = 2_000)
+        history.record(10, atMillis = 0)
+        history.record(20, atMillis = 100_000)
+
+        assertEquals(listOf(0L, 0L, 20L), history.snapshot(nowMillis = 100_000))
     }
 
     @Test
     fun `clamps negative rates to zero`() {
-        val history = RateHistory(capacity = 2)
-        history.record(-5, -7)
+        val history = RateHistory(slots = 1, slotMillis = 2_000)
+        history.record(-5, atMillis = 0)
 
-        val snapshot = history.snapshot()
-        assertEquals(listOf(0L), snapshot.tx)
-        assertEquals(listOf(0L), snapshot.rx)
+        assertEquals(listOf(0L), history.snapshot(nowMillis = 0))
     }
 
     @Test
     fun `clear empties history`() {
-        val history = RateHistory(capacity = 2)
-        history.record(1, 1)
+        val history = RateHistory(slots = 2, slotMillis = 2_000)
+        history.record(1, atMillis = 0)
         history.clear()
 
-        assertEquals(0, history.snapshot().size)
+        assertEquals(listOf(0L, 0L), history.snapshot(nowMillis = 0))
     }
 }

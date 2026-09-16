@@ -111,6 +111,19 @@ class TunConfigTest {
     }
 
     @Test
+    fun `hostname dns upstream wire json keeps the host and transport`() {
+        assertEquals(
+            """{"transport":"tls","servers":["one.one.one.one:853"],"listen":["172.19.0.2","fdfe:dcba:9876::2"]}""",
+            DnsUpstream(DnsTransport.Tls, listOf("one.one.one.one:853")).toWireJson(),
+        )
+        assertEquals(
+            """{"transport":"https","servers":["https://cloudflare-dns.com/dns-query"],""" +
+                """"listen":["172.19.0.2","fdfe:dcba:9876::2"]}""",
+            DnsUpstream(DnsTransport.Https, listOf("https://cloudflare-dns.com/dns-query")).toWireJson(),
+        )
+    }
+
+    @Test
     fun `transport wire names are lowercase and stable`() {
         assertEquals(
             listOf("udp", "tcp", "tls", "quic", "https", "http3"),

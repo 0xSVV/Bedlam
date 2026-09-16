@@ -46,9 +46,10 @@ class VpnServiceLauncher(
         return profileRepository.get(activeId)
     }
 
-    fun stop() {
+    fun stop(requestId: String? = null) {
         val intent = Intent(appContext, BedlamVpnService::class.java).apply {
             action = BedlamVpnService.ACTION_STOP
+            putExtra(BedlamVpnService.EXTRA_STOP_REQUEST_ID, requestId)
         }
         ContextCompat.startForegroundService(appContext, intent)
     }

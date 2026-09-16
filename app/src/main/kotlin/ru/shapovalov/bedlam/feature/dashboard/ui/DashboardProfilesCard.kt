@@ -2,8 +2,6 @@ package ru.shapovalov.bedlam.feature.dashboard.ui
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,10 +10,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -24,11 +21,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,7 +45,6 @@ internal fun ProfilesCard(
     latencies: Map<String, LatencyResult>,
     onSelect: (String) -> Unit,
     onOpenConfig: (String) -> Unit,
-    onPingProfile: (String) -> Unit,
     onPingAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -68,27 +67,28 @@ internal fun ProfilesCard(
                 )
                 IconButton(onClick = onPingAll) {
                     Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = null,
+                        painterResource(R.drawable.ic_refresh),
+                        contentDescription = stringResource(R.string.dashboard_ping_all_cd),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(SmallIconSize),
                     )
                 }
             }
-            profiles.forEachIndexed { index, profile ->
-                ProfileRow(
-                    profile = profile,
-                    isActive = profile.id == activeProfileId,
-                    latency = latencies[profile.id] ?: LatencyResult.Idle,
-                    onClick = { onSelect(profile.id) },
-                    onPing = { onPingProfile(profile.id) },
-                    onOpenConfig = { onOpenConfig(profile.id) },
-                )
-                if (index < profiles.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = spacing.large),
-                        color = MaterialTheme.colorScheme.outlineVariant,
+            Column(modifier = Modifier.selectableGroup()) {
+                profiles.forEachIndexed { index, profile ->
+                    ProfileRow(
+                        profile = profile,
+                        isActive = profile.id == activeProfileId,
+                        latency = latencies[profile.id] ?: LatencyResult.Idle,
+                        onClick = { onSelect(profile.id) },
+                        onOpenConfig = { onOpenConfig(profile.id) },
                     )
+                    if (index < profiles.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = spacing.large),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                    }
                 }
             }
         }
@@ -101,7 +101,6 @@ private fun ProfileRow(
     isActive: Boolean,
     latency: LatencyResult,
     onClick: () -> Unit,
-    onPing: () -> Unit,
     onOpenConfig: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
@@ -112,11 +111,7 @@ private fun ProfileRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
+            .selectable(selected = isActive, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = spacing.large, vertical = spacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -161,7 +156,7 @@ private fun ProfileRow(
         }
         IconButton(onClick = onOpenConfig) {
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                painterResource(R.drawable.ic_keyboard_arrow_right),
                 contentDescription = stringResource(R.string.profile_config_open_cd),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -171,11 +166,13 @@ private fun ProfileRow(
 
 @Composable
 private fun LatencyLabel(latency: LatencyResult) {
-    val text = when (latency) {
+    val (text, description) = when (latency) {
         LatencyResult.Idle -> return
-        LatencyResult.Measuring -> "..."
-        is LatencyResult.Success -> "${latency.ms} ms"
-        LatencyResult.Unreachable -> "—"
+        LatencyResult.Measuring -> stringResource(R.string.dashboard_latency_measuring) to
+                stringResource(R.string.dashboard_latency_measuring_cd)
+        is LatencyResult.Success -> stringResource(R.string.dashboard_latency_ms, latency.ms) to null
+        LatencyResult.Unreachable -> stringResource(R.string.dashboard_latency_unreachable) to
+                stringResource(R.string.dashboard_latency_unreachable_cd)
     }
     val color = when (latency) {
         is LatencyResult.Success -> when {
@@ -192,6 +189,11 @@ private fun LatencyLabel(latency: LatencyResult) {
         text = text,
         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
         color = color,
+        modifier = if (description != null) {
+            Modifier.semantics { contentDescription = description }
+        } else {
+            Modifier
+        },
     )
 }
 

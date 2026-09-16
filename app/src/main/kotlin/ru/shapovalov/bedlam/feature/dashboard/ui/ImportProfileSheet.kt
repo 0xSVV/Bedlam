@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
@@ -55,6 +57,7 @@ internal fun ImportProfileSheet(
     seed: DashboardStore.ImportSheetSeed,
     isImporting: Boolean,
     error: String?,
+    closing: Boolean,
     onDismiss: () -> Unit,
     onImport: (ProfileImportFormat, String, String) -> Unit,
 ) {
@@ -79,6 +82,7 @@ internal fun ImportProfileSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        sheetGesturesEnabled = !closing,
     ) {
         Column(
             modifier = Modifier
@@ -184,7 +188,7 @@ internal fun ImportProfileSheet(
                     onClick = {
                         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
                     },
-                    enabled = !isImporting,
+                    enabled = !isImporting && !closing,
                 ) {
                     Text(stringResource(R.string.action_cancel))
                 }
@@ -193,7 +197,7 @@ internal fun ImportProfileSheet(
                         attemptedText = text
                         onImport(format, text, name)
                     },
-                    enabled = text.isNotBlank() && !isImporting,
+                    enabled = text.isNotBlank() && !isImporting && !closing,
                 ) {
                     if (isImporting) {
                         CircularProgressIndicator(
@@ -205,6 +209,18 @@ internal fun ImportProfileSheet(
                     }
                 }
             }
+        }
+    }
+
+    LaunchedEffect(closing) {
+        if (!closing) {
+            if (sheetState.hasExpandedState) sheetState.show()
+            return@LaunchedEffect
+        }
+        try {
+            sheetState.hide()
+        } finally {
+            if (isActive) onDismiss()
         }
     }
 }

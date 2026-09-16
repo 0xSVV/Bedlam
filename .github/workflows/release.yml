@@ -1,55 +1,115 @@
 # Builds signed per-ABI APKs on a v* tag and publishes a GitHub release.
 # Release notes come from release-notes/<version>.md (version = tag without the v).
-# Secrets (optional; without them the build is unsigned):
+# Secrets (required; without them the job stops before building):
 #   BEDLAM_STORE_BASE64    base64 of the keystore (base64 -w0 keystore.jks)
 #   BEDLAM_STORE_PASSWORD  keystore password
 #   BEDLAM_KEY_ALIAS       key alias
 #   BEDLAM_KEY_PASSWORD    key password
+# BEDLAM_CERT_SHA256 below must equal the signing certificate's SHA-256,
+# as apksigner verify --print-certs prints it.
 name: Release
 
 on:
   push:
     tags: ["v*"]
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     env:
-      HAS_KEYSTORE: ${{ secrets.BEDLAM_STORE_BASE64 != '' }}
-      ORG_GRADLE_PROJECT_BEDLAM_STORE_PASSWORD: ${{ secrets.BEDLAM_STORE_PASSWORD }}
-      ORG_GRADLE_PROJECT_BEDLAM_KEY_ALIAS: ${{ secrets.BEDLAM_KEY_ALIAS }}
-      ORG_GRADLE_PROJECT_BEDLAM_KEY_PASSWORD: ${{ secrets.BEDLAM_KEY_PASSWORD }}
+      BEDLAM_CERT_SHA256: 53dc7856de56620d6428a344662ee0b3c3bf5d09faa16312534945044ba2d109
+      HAS_SIGNING_SECRETS: ${{ secrets.BEDLAM_STORE_BASE64 != '' && secrets.BEDLAM_STORE_PASSWORD != '' && secrets.BEDLAM_KEY_ALIAS != '' && secrets.BEDLAM_KEY_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          persist-credentials: false
+
+      - name: Require the release signing secrets
+        if: ${{ env.HAS_SIGNING_SECRETS != 'true' }}
+        run: |
+          echo "::error::A release needs the BEDLAM_STORE_BASE64, BEDLAM_STORE_PASSWORD, BEDLAM_KEY_ALIAS and BEDLAM_KEY_PASSWORD secrets. Unsigned APKs cannot update installed copies."
+          exit 1
+
+      - name: Check tag, version and release notes
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/check-release-version.sh "$GITHUB_REF_NAME"
+
+      - name: Check Hysteria core pin
+        run: bash .github/scripts/check-core-pin.sh
 
       - uses: ./.github/actions/setup-build
+        with:
+          cache: "false"
 
-      - name: Resolve version
-        id: ver
-        run: echo "name=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Go tests
+        working-directory: hysteria/golib
+        run: go test -tags with_gvisor ./...
 
-      - name: Decode keystore
-        if: ${{ env.HAS_KEYSTORE == 'true' }}
-        env:
-          KS: ${{ secrets.BEDLAM_STORE_BASE64 }}
+      - name: Build the Go library from source
+        id: golib
         run: |
-          echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.jks"
-          echo "ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          if [ -e hysteria/libs ]; then
+            echo "::error::hysteria/libs exists before the Go library was built"
+            exit 1
+          fi
+          ./gradlew :hysteria:buildGolib --stacktrace
+          aar_sha256=$(sha256sum hysteria/libs/golib.aar | cut -d' ' -f1)
+          echo "sha256=$aar_sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Build per-ABI APKs
-        run: ./gradlew :app:assembleRelease --stacktrace
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest -x :hysteria:buildGolib --stacktrace
+
+      - name: Lint
+        run: ./gradlew :app:lintRelease -x :hysteria:buildGolib --stacktrace
+
+      - name: Build signed APKs
+        env:
+          BEDLAM_STORE_BASE64: ${{ secrets.BEDLAM_STORE_BASE64 }}
+          ORG_GRADLE_PROJECT_BEDLAM_STORE_PASSWORD: ${{ secrets.BEDLAM_STORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_BEDLAM_KEY_ALIAS: ${{ secrets.BEDLAM_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_BEDLAM_KEY_PASSWORD: ${{ secrets.BEDLAM_KEY_PASSWORD }}
+        run: |
+          export ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE="$RUNNER_TEMP/release.jks"
+          trap 'rm -f "$ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE"' EXIT
+          printf '%s' "$BEDLAM_STORE_BASE64" | base64 -d > "$ORG_GRADLE_PROJECT_BEDLAM_STORE_FILE"
+          ./gradlew :app:assembleRelease -x :hysteria:buildGolib --stacktrace
+
+      - name: Verify the APKs and write the provenance manifest
+        env:
+          RELEASE_BUILD: "true"
+          EXPECTED_TAG: ${{ github.ref_name }}
+          EXPECTED_CERT_SHA256: ${{ env.BEDLAM_CERT_SHA256 }}
+          GOLIB_SHA256: ${{ steps.golib.outputs.sha256 }}
+        run: bash .github/scripts/write-provenance.sh build/release
+
+      - name: Check the tag again before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/check-release-version.sh "$GITHUB_REF_NAME"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            app/build/outputs/apk/release/bedlam-*.apk
-            app/build/outputs/apk/release/output-metadata.json
-          body_path: release-notes/${{ steps.ver.outputs.name }}.md
+          files: build/release/*
+          body_path: release-notes/${{ steps.version.outputs.name }}.md
           fail_on_unmatched_files: true
+
+      - name: Check uploaded assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/check-release-assets.sh "$GITHUB_REF_NAME" build/release

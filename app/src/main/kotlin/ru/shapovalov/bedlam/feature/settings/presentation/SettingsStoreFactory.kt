@@ -17,18 +17,16 @@ class SettingsStoreFactory(
             Store<SettingsStore.Intent, SettingsStore.State, Nothing>
             by storeFactory.create(
                 name = "SettingsStore",
-                initialState = SettingsStore.State(
-                    reliabilitySnapshot = powerReliabilityRepository.snapshotNow(),
-                ),
+                initialState = SettingsStore.State(),
                 bootstrapper = SettingsBootstrapper(
                     powerReliabilityRepository = powerReliabilityRepository,
                     quickSettingsTileRepository = quickSettingsTileRepository,
-                    refreshIntervalMillis = SETTINGS_REFRESH_MS,
                 ),
                 executorFactory = {
                     SettingsExecutor(
                         powerReliabilityRepository = powerReliabilityRepository,
                         quickSettingsTileRepository = quickSettingsTileRepository,
+                        reliabilityRefreshMillis = SETTINGS_REFRESH_MS,
                     )
                 },
                 reducer = SettingsReducer,
