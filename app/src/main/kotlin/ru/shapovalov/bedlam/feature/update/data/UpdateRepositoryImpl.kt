@@ -12,9 +12,11 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Inject
@@ -39,6 +41,14 @@ class UpdateRepositoryImpl(
 ) : UpdateRepository {
 
     private val dataStore = context.applicationContext.updateDataStore
+
+    override val availableVersion: Flow<String?> = dataStore.data
+        .map { prefs ->
+            prefs[KEY_LATEST_VERSION]
+                ?.takeIf { isNewer(candidate = it, installed = installedVersion()) }
+        }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.IO)
 
     override fun installedVersion(): String {
         val pm = context.packageManager
@@ -81,6 +91,7 @@ class UpdateRepositoryImpl(
             httpClient.get(LATEST_RELEASE_URL),
         )
         val latestVersion = release.tagName.removePrefix("v")
+        dataStore.edit { it[KEY_LATEST_VERSION] = latestVersion }
         if (!isNewer(candidate = latestVersion, installed = installedVersion())) {
             return@withContext null
         }
@@ -165,6 +176,7 @@ class UpdateRepositoryImpl(
         val KEY_SKIPPED_AT = longPreferencesKey("skipped_at")
         val KEY_SKIP_COUNT = intPreferencesKey("skip_count")
         val KEY_LAST_CHECK_AT = longPreferencesKey("last_check_at")
+        val KEY_LATEST_VERSION = stringPreferencesKey("latest_version")
         const val SKIP_TTL_MS = 6 * 60 * 60 * 1000L
         const val SKIP_LIMIT = 3
         const val CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L

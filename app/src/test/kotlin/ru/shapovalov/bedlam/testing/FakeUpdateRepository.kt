@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.testing
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import ru.shapovalov.bedlam.feature.update.domain.model.AppUpdate
 import ru.shapovalov.bedlam.feature.update.domain.model.DownloadEvent
@@ -14,6 +15,8 @@ class FakeUpdateRepository(
 ) : UpdateRepository {
 
     val skipped = mutableListOf<String>()
+
+    override val availableVersion = MutableStateFlow<String?>(null)
 
     override fun installedVersion(): String = installed
 
