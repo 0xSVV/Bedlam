@@ -70,6 +70,7 @@ type clientConfig struct {
 	MaxHopIntervalSec int `json:"max_hop_interval"`
 
 	FastOpen bool `json:"fast_open"`
+	Lazy     bool `json:"lazy"`
 
 	RealmStunServers    []string `json:"realm_stun_servers"`
 	RealmStunTimeoutMs  int      `json:"realm_stun_timeout_ms"`

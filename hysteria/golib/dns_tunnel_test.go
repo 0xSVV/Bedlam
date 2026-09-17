@@ -97,7 +97,7 @@ func newTestTunnel(t *testing.T, fastOpen bool, outbound func(addr string) (net.
 			FastOpen:    fastOpen,
 			ConnFactory: blackholeConnFactory{drop: drop},
 		}, nil
-	}, &recordingHandler{}, nil, false)
+	}, &recordingHandler{}, nil, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,17 +1,21 @@
 package ru.shapovalov.bedlam.feature.settings.presentation
 
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.power.domain.repository.PowerReliabilityRepository
 import ru.shapovalov.bedlam.core.vpn.tile.domain.repository.QuickSettingsTileRepository
+import ru.shapovalov.bedlam.feature.settings.presentation.SettingsStore.State.UpdateCheck
+import ru.shapovalov.bedlam.feature.update.domain.usecase.FetchUpdateUseCase
 
 internal class SettingsExecutor(
     private val powerReliabilityRepository: PowerReliabilityRepository,
     private val quickSettingsTileRepository: QuickSettingsTileRepository,
+    private val fetchUpdate: FetchUpdateUseCase,
     private val reliabilityRefreshMillis: Long,
-) : CoroutineExecutor<SettingsStore.Intent, Action, SettingsStore.State, Msg, Nothing>() {
+) : CoroutineExecutor<SettingsStore.Intent, Action, SettingsStore.State, Msg, SettingsStore.Label>() {
 
     private var foreground = false
     private var reliabilityVisible = false
@@ -24,6 +28,9 @@ internal class SettingsExecutor(
 
             is Action.ConfirmedReliabilityFingerprintChanged ->
                 dispatch(Msg.ConfirmedReliabilityFingerprintChanged(action.fingerprint))
+
+            is Action.AvailableVersionChanged ->
+                dispatch(Msg.AvailableVersionChanged(action.version))
         }
     }
 
@@ -45,6 +52,29 @@ internal class SettingsExecutor(
             is SettingsStore.Intent.SetReliabilityVisible -> {
                 reliabilityVisible = intent.visible
                 restartReliabilityJob()
+            }
+
+            SettingsStore.Intent.CheckForUpdates -> checkForUpdates()
+        }
+    }
+
+    private fun checkForUpdates() {
+        if (state().updateCheck == UpdateCheck.Checking) return
+        dispatch(Msg.UpdateCheckChanged(UpdateCheck.Checking))
+        scope.launch {
+            val update = try {
+                fetchUpdate()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                dispatch(Msg.UpdateCheckChanged(UpdateCheck.Failed))
+                return@launch
+            }
+            if (update == null) {
+                dispatch(Msg.UpdateCheckChanged(UpdateCheck.UpToDate))
+            } else {
+                dispatch(Msg.UpdateCheckChanged(UpdateCheck.Idle))
+                publish(SettingsStore.Label.OpenUpdate(update))
             }
         }
     }

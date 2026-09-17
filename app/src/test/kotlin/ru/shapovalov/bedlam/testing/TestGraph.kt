@@ -44,6 +44,8 @@ import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponentFacto
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsStoreFactory
 import ru.shapovalov.bedlam.feature.update.domain.usecase.CheckForUpdateUseCase
 import ru.shapovalov.bedlam.feature.update.domain.usecase.DownloadUpdateUseCase
+import ru.shapovalov.bedlam.feature.update.domain.usecase.FetchUpdateUseCase
+import ru.shapovalov.bedlam.feature.update.domain.usecase.ObserveAvailableVersionUseCase
 import ru.shapovalov.bedlam.feature.update.domain.usecase.SkipUpdateUseCase
 import ru.shapovalov.bedlam.feature.update.presentation.UpdateComponentFactory
 import ru.shapovalov.bedlam.feature.update.presentation.UpdateStoreFactory
@@ -94,7 +96,13 @@ class TestGraph(
     val settingsFactory = SettingsComponentFactory(
         appSelectionFactory,
         routingFactory,
-        SettingsStoreFactory(storeFactory, power, tile),
+        SettingsStoreFactory(
+            storeFactory,
+            power,
+            tile,
+            ObserveAvailableVersionUseCase(updates),
+            FetchUpdateUseCase(updates),
+        ),
     )
 
     val sessionFactory = SessionComponentFactory(
@@ -145,6 +153,7 @@ class TestGraph(
                     VpnServiceLauncher(android, profiles, Json),
                     runtimeState,
                 ),
+                idleReconnectProfile(client, profiles),
             )
         )
     }

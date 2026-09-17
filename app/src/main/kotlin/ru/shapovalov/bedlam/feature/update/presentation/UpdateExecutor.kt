@@ -12,12 +12,14 @@ import ru.shapovalov.bedlam.feature.update.domain.usecase.DownloadUpdateUseCase
 import ru.shapovalov.bedlam.feature.update.domain.usecase.SkipUpdateUseCase
 
 internal class UpdateExecutor(
+    private val trigger: UpdateTrigger,
     private val downloadUpdate: DownloadUpdateUseCase,
     private val skipUpdate: SkipUpdateUseCase,
     private val installer: UpdateInstaller,
-) : CoroutineExecutor<UpdateStore.Intent, Action, UpdateStore.State, Msg, UpdateStore.Label>() {
+) :CoroutineExecutor<UpdateStore.Intent, Action, UpdateStore.State, Msg, UpdateStore.Label>() {
 
     private var downloadJob: Job? = null
+    private var skipJob: Job? = null
 
     override fun executeAction(action: Action) {
         when (action) {
@@ -28,6 +30,8 @@ internal class UpdateExecutor(
                 InstallStatus.SignatureMismatch -> dispatch(Msg.SignatureMismatch)
                 is InstallStatus.Failed -> dispatch(Msg.Failed(status.message))
             }
+
+            Action.LastReminder -> dispatch(Msg.LastReminder)
         }
     }
 
@@ -35,8 +39,16 @@ internal class UpdateExecutor(
         when (intent) {
             UpdateStore.Intent.Install -> startDownload()
             UpdateStore.Intent.Skip -> skip()
+            UpdateStore.Intent.Back -> if (state().phase.isBusy()) {
+                publish(UpdateStore.Label.Dismiss)
+            } else {
+                skip()
+            }
         }
     }
+
+    private fun UpdateStore.State.Phase.isBusy(): Boolean =
+        this is UpdateStore.State.Phase.Downloading || this == UpdateStore.State.Phase.Installing
 
     private fun startDownload() {
         if (downloadJob?.isActive == true) return
@@ -64,8 +76,11 @@ internal class UpdateExecutor(
     }
 
     private fun skip() {
-        scope.launch {
-            runCatching { skipUpdate(state().update) }
+        if (skipJob != null) return
+        skipJob = scope.launch {
+            if (trigger == UpdateTrigger.LaunchCheck) {
+                runCatching { skipUpdate(state().update) }
+            }
             publish(UpdateStore.Label.Dismiss)
         }
     }

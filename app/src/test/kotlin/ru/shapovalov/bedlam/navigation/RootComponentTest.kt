@@ -202,4 +202,45 @@ class RootComponentTest {
             assertEquals(left, graph.power.snapshotReads)
         }
     }
+
+    @Test
+    fun `an update found from settings opens over settings and closes back to it`() = runTest {
+        val graph = TestGraph()
+        graph.updates.latest = appUpdate()
+        withComponentContext { lifecycle, context ->
+            val root = graph.root(context)
+            lifecycle.resume()
+            root.onTabSelected(Tab.Settings)
+
+            assertInstanceOf(Child.Settings::class.java, root.activeChild())
+                .component
+                .onCheckForUpdates()
+            assertInstanceOf(Child.Update::class.java, root.activeChild()).component.onBack()
+
+            assertInstanceOf(Child.Settings::class.java, root.activeChild())
+            assertEquals(0, root.updateScreens())
+            assertEquals(emptyList<String>(), graph.updates.skipped)
+        }
+    }
+
+    @Test
+    fun `an update opened from settings replaces the one left behind the dashboard`() = runTest {
+        val graph = TestGraph()
+        graph.updates.available = appUpdate()
+        graph.updates.latest = appUpdate(version = "9.9.10")
+        withComponentContext { lifecycle, context ->
+            val root = graph.root(context)
+            lifecycle.resume()
+            root.onImportLink(TEST_LINK)
+            root.onTabSelected(Tab.Settings)
+
+            assertInstanceOf(Child.Settings::class.java, root.activeChild())
+                .component
+                .onCheckForUpdates()
+
+            val update = assertInstanceOf(Child.Update::class.java, root.activeChild()).component
+            assertEquals("9.9.10", update.state.value.update.versionName)
+            assertEquals(1, root.updateScreens())
+        }
+    }
 }

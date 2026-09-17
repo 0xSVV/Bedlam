@@ -1,10 +1,20 @@
 package ru.shapovalov.bedlam.feature.dashboard.ui
 
+import android.graphics.BlurMaskFilter
 import android.os.SystemClock
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -12,9 +22,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.GenericShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ElevatedAssistChip
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -23,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicatorDefaults
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.material3.toPath
@@ -35,10 +48,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.center
+import androidx.compose.ui.geometry.toRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.withSaveLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -50,7 +69,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.graphics.shapes.Morph
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -60,6 +82,7 @@ import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.util.formatDuration
 import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.ConnectionState
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -67,47 +90,63 @@ internal fun ConnectionHero(
     connectionState: ConnectionState,
     connectedSinceMillis: Long?,
     hasActiveProfile: Boolean,
+    pendingSwitchName: String?,
     onToggle: () -> Unit,
+    onConfirmSwitch: () -> Unit,
+    onCancelSwitch: () -> Unit,
     onOpenSession: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
+    val colorScheme = MaterialTheme.colorScheme
+    val motionScheme = MaterialTheme.motionScheme
     val isConnected = connectionState is ConnectionState.Connected
     val isConnecting = connectionState is ConnectionState.Connecting ||
             connectionState is ConnectionState.Reconnecting
     val isError = connectionState is ConnectionState.Error
+    val isConfirming = pendingSwitchName != null
+    val buttonMode = when {
+        isConfirming -> ConnectionButtonMode.ConfirmSwitch
+        isConnecting -> ConnectionButtonMode.Loading
+        else -> ConnectionButtonMode.Resting
+    }
 
     val buttonMorph = remember {
         ConnectionButtonMorph(
             restingShape = MaterialShapes.Square,
             loadingShapes = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons,
+            confirmShape = MaterialShapes.Cookie9Sided,
+            cancelShape = MaterialShapes.Circle,
             connecting = isConnecting,
+            confirming = isConfirming,
         )
     }
-    val morph = remember(buttonMorph.fromShape, buttonMorph.toShape) {
-        Morph(buttonMorph.fromShape, buttonMorph.toShape)
-    }
 
-    LaunchedEffect(isConnecting) {
-        if (isConnecting) buttonMorph.animateLoading() else buttonMorph.settle()
+    LaunchedEffect(buttonMode) {
+        when (buttonMode) {
+            ConnectionButtonMode.Loading -> buttonMorph.animateLoading()
+            ConnectionButtonMode.Resting -> buttonMorph.settle()
+            ConnectionButtonMode.ConfirmSwitch -> buttonMorph.split()
+        }
     }
 
     val connectionButtonColor by animateColorAsState(
         targetValue = when {
-            isConnecting -> MaterialTheme.colorScheme.primary
-            isError -> MaterialTheme.colorScheme.errorContainer
-            isConnected -> MaterialTheme.colorScheme.primaryContainer
-            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+            isConfirming || isConnecting -> colorScheme.primary
+            isError -> colorScheme.errorContainer
+            isConnected -> colorScheme.primaryContainer
+            else -> colorScheme.surfaceContainerHigh
         },
         label = "connection-button-color",
     )
     val connectionButtonContentColor by animateColorAsState(
-        targetValue = if (isError) {
-            MaterialTheme.colorScheme.onErrorContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
+        targetValue = when {
+            isConfirming -> colorScheme.onPrimary
+            isError -> colorScheme.onErrorContainer
+            else -> colorScheme.onSurface
         },
         label = "connection-button-content-color",
     )
+    val cancelButtonColor = colorScheme.surfaceContainerHigh
 
     val lifecycleOwner = LocalLifecycleOwner.current
     val elapsedSeconds = remember(connectedSinceMillis) {
@@ -128,19 +167,50 @@ internal fun ConnectionHero(
             .padding(horizontal = spacing.large),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = stringResource(R.string.dashboard_connection_time),
-            style = MaterialTheme.typography.titleSmallEmphasized,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        AnimatedContent(
+            targetState = isConfirming,
+            transitionSpec = { heroTextTransition(motionScheme, forward = targetState) },
+            contentAlignment = Alignment.Center,
+            label = "hero-caption",
+        ) { confirming ->
+            Text(
+                text = stringResource(
+                    if (confirming) {
+                        R.string.dashboard_confirm_switch_title
+                    } else {
+                        R.string.dashboard_connection_time
+                    }
+                ),
+                style = MaterialTheme.typography.titleSmallEmphasized,
+                color = colorScheme.onSurface,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
         Spacer(Modifier.height(spacing.xSmall))
-        Text(
-            text = formatDuration(elapsedSeconds.longValue),
-            style = MaterialTheme.typography.displayMediumEmphasized.copy(
+        AnimatedContent(
+            targetState = pendingSwitchName,
+            transitionSpec = { heroTextTransition(motionScheme, forward = targetState != null) },
+            contentAlignment = Alignment.Center,
+            label = "hero-headline",
+        ) { name ->
+            val style = MaterialTheme.typography.displayMediumEmphasized.copy(
                 fontFeatureSettings = "tnum",
-            ),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+            )
+            Text(
+                text = name ?: formatDuration(elapsedSeconds.longValue),
+                style = style,
+                color = colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                autoSize = name?.let {
+                    TextAutoSize.StepBased(
+                        minFontSize = HeroNameMinFontSize,
+                        maxFontSize = style.fontSize,
+                    )
+                },
+            )
+        }
         Spacer(Modifier.height(spacing.large))
 
         val toggleCd = stringResource(
@@ -150,39 +220,67 @@ internal fun ConnectionHero(
                 else -> R.string.action_connect
             }
         )
+        val confirmCd = pendingSwitchName?.let { stringResource(R.string.dashboard_confirm_switch_cd, it) }
+        val cancelCd = stringResource(R.string.dashboard_cancel_switch_cd)
         val stateText = connectionState.displayText()
-        ConnectionFab(
-            morph = morph,
-            progress = { buttonMorph.progress },
-            containerColor = connectionButtonColor,
-            onClick = onToggle,
-            modifier = Modifier
-                .size(ConnectionFabContainerSize)
-                .semantics {
-                    contentDescription = toggleCd
-                    stateDescription = stateText
-                },
+        val iconRes = when {
+            isConfirming -> R.drawable.ic_check
+            isConnected -> R.drawable.ic_pause
+            else -> R.drawable.ic_power_settings_new
+        }
+        Box(
+            modifier = Modifier.size(
+                width = ConnectionFabContainerSize * 2 + ConnectionFabSplitGap,
+                height = ConnectionFabContainerSize,
+            ),
+            contentAlignment = Alignment.Center,
         ) {
-            AnimatedVisibility(
-                visible = buttonMorph.showIcon,
-                enter = fadeIn(),
-                exit = fadeOut(),
+            if (buttonMorph.isSplit) {
+                ConnectionFab(
+                    shape = buttonMorph.cancelButton,
+                    containerColor = { lerp(connectionButtonColor, cancelButtonColor, buttonMorph.split) },
+                    alpha = { (buttonMorph.split * CancelButtonFadeSpeed).coerceAtMost(1f) },
+                    onClick = onCancelSwitch,
+                    modifier = Modifier
+                        .offset { IntOffset(-(ConnectionFabSplitOffset.toPx() * buttonMorph.split).roundToInt(), 0) }
+                        .size(ConnectionFabContainerSize)
+                        .semantics { contentDescription = cancelCd },
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_close),
+                        contentDescription = null,
+                        modifier = Modifier.size(FloatingActionButtonDefaults.LargeIconSize),
+                        tint = colorScheme.onSurface,
+                    )
+                }
+            }
+            ConnectionFab(
+                shape = buttonMorph.button,
+                containerColor = { connectionButtonColor },
+                alpha = { 1f },
+                onClick = if (isConfirming) onConfirmSwitch else onToggle,
+                modifier = Modifier
+                    .zIndex(1f)
+                    .offset { IntOffset((ConnectionFabSplitOffset.toPx() * buttonMorph.split).roundToInt(), 0) }
+                    .size(ConnectionFabContainerSize)
+                    .semantics {
+                        contentDescription = confirmCd ?: toggleCd
+                        stateDescription = stateText
+                    },
             ) {
-                Icon(
-                    painter = painterResource(
-                        if (isConnected) R.drawable.ic_pause else R.drawable.ic_power_settings_new
-                    ),
-                    contentDescription = null,
-                    modifier = Modifier.size(FloatingActionButtonDefaults.LargeIconSize),
+                ConnectionButtonIcon(
+                    visible = buttonMorph.showIcon,
+                    iconRes = iconRes,
                     tint = connectionButtonContentColor,
+                    motionScheme = motionScheme,
                 )
             }
         }
         Spacer(Modifier.height(spacing.large))
         val chipLabelColor = when (connectionState) {
-            is ConnectionState.Connected -> MaterialTheme.colorScheme.primary
-            is ConnectionState.Error -> MaterialTheme.colorScheme.error
-            else -> MaterialTheme.colorScheme.onSurfaceVariant
+            is ConnectionState.Connected -> colorScheme.primary
+            is ConnectionState.Error -> colorScheme.error
+            else -> colorScheme.onSurfaceVariant
         }
         val openSessionCd = stringResource(R.string.dashboard_open_session_cd)
         ElevatedAssistChip(
@@ -217,7 +315,7 @@ internal fun ConnectionHero(
             Text(
                 text = stringResource(R.string.dashboard_empty_hint),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colorScheme.onSurfaceVariant,
             )
         }
         if (connectionState is ConnectionState.Error) {
@@ -225,7 +323,7 @@ internal fun ConnectionHero(
             Text(
                 text = connectionState.message,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                color = colorScheme.error,
                 textAlign = TextAlign.Center,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
@@ -234,33 +332,102 @@ internal fun ConnectionHero(
     }
 }
 
+private enum class ConnectionButtonMode { Resting, Loading, ConfirmSwitch }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ConnectionButtonIcon(
+    visible: Boolean,
+    @DrawableRes iconRes: Int,
+    tint: Color,
+    motionScheme: MotionScheme,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+    ) {
+        AnimatedContent(
+            targetState = iconRes,
+            transitionSpec = {
+                val enter = fadeIn(motionScheme.defaultEffectsSpec()) +
+                        scaleIn(motionScheme.defaultSpatialSpec(), initialScale = 0.6f)
+                val exit = fadeOut(motionScheme.fastEffectsSpec()) +
+                        scaleOut(motionScheme.defaultSpatialSpec(), targetScale = 0.6f)
+                enter.togetherWith(exit)
+            },
+            label = "connection-icon",
+        ) { icon ->
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(FloatingActionButtonDefaults.LargeIconSize),
+                tint = tint,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+private fun heroTextTransition(motionScheme: MotionScheme, forward: Boolean): ContentTransform {
+    val direction = if (forward) 1 else -1
+    val enter = fadeIn(motionScheme.defaultEffectsSpec()) +
+            slideInVertically(motionScheme.defaultSpatialSpec()) { direction * it / 2 }
+    val exit = fadeOut(motionScheme.fastEffectsSpec()) +
+            slideOutVertically(motionScheme.defaultSpatialSpec()) { -direction * it / 2 }
+    return ContentTransform(enter, exit, sizeTransform = SizeTransform(clip = false))
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ConnectionFab(
-    morph: Morph,
-    progress: () -> Float,
-    containerColor: Color,
+    shape: MorphingShape,
+    containerColor: () -> Color,
+    alpha: () -> Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val morph = remember(shape.fromShape, shape.toShape) { Morph(shape.fromShape, shape.toShape) }
     val morphClip = remember(morph) {
         GenericShape { size, _ ->
-            val p = morph.toPath(progress = progress())
+            val p = morph.toPath(progress = shape.progress)
             p.transform(Matrix().apply { scale(x = size.width, y = size.height) })
             p.translate(size.center - p.getBounds().center)
             addPath(p)
         }
     }
+    val density = LocalDensity.current
+    val shadowPaint = remember(density) {
+        Paint().apply {
+            color = ConnectionFabShadowColor
+            asFrameworkPaint().maskFilter = BlurMaskFilter(
+                with(density) { ConnectionFabShadowBlur.toPx() },
+                BlurMaskFilter.Blur.NORMAL,
+            )
+        }
+    }
+    val contentPaint = remember { Paint() }
     Box(
         modifier = modifier
-            .shadow(ConnectionFabShadowElevation, MaterialTheme.shapes.extraLarge, clip = false)
             .drawWithContent {
-                val path = morph.toPath(progress = progress())
+                val opacity = alpha()
+                val path = morph.toPath(progress = shape.progress)
                 path.transform(Matrix().apply { scale(x = size.width, y = size.height) })
                 path.translate(size.center - path.getBounds().center)
-                drawPath(path, color = containerColor)
-                drawContent()
+                shadowPaint.alpha = ConnectionFabShadowColor.alpha * opacity
+                translate(top = ConnectionFabShadowOffset.toPx()) {
+                    drawIntoCanvas { it.drawPath(path, shadowPaint) }
+                }
+                drawPath(path, color = containerColor(), alpha = opacity)
+                if (opacity < 1f) {
+                    contentPaint.alpha = opacity
+                    drawIntoCanvas { canvas ->
+                        canvas.withSaveLayer(size.toRect(), contentPaint) { drawContent() }
+                    }
+                } else {
+                    drawContent()
+                }
             }
             .clip(morphClip)
             .clickable(
@@ -291,6 +458,12 @@ private fun ConnectionState.displayText(): String = when (this) {
 private fun secondsSince(elapsedRealtimeMillis: Long): Long =
     (SystemClock.elapsedRealtime() - elapsedRealtimeMillis) / 1000
 
+private val HeroNameMinFontSize = 24.sp
+private const val CancelButtonFadeSpeed = 3f
 private val ConnectionFabContainerSize = 96.dp
-private val ConnectionFabShadowElevation = 6.dp
+private val ConnectionFabSplitGap = 16.dp
+private val ConnectionFabSplitOffset = (ConnectionFabContainerSize + ConnectionFabSplitGap) / 2
+private val ConnectionFabShadowBlur = 10.dp
+private val ConnectionFabShadowOffset = 3.dp
+private val ConnectionFabShadowColor = Color.Black.copy(alpha = 0.3f)
 private val ChipTrailingIconSize = 18.dp

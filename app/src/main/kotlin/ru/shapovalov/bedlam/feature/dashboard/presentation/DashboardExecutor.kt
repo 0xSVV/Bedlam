@@ -11,11 +11,13 @@ import ru.shapovalov.bedlam.core.profile.domain.model.detectProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
 import ru.shapovalov.hysteria.ConnectionState
+import ru.shapovalov.hysteria.isActiveTunnel
 
 internal class DashboardExecutor(
     private val setActiveProfile: SetActiveProfileUseCase,
     private val importProfile: ImportProfileUseCase,
     private val pingProfile: suspend (Profile) -> LatencyResult,
+    private val switchProfile: suspend (String) -> Unit,
 ) : CoroutineExecutor<DashboardStore.Intent, Action, DashboardStore.State, Msg, DashboardStore.Label>() {
 
     private val pingJobs = HashMap<String, Job>()
@@ -32,12 +34,15 @@ internal class DashboardExecutor(
                 )
             }
 
-            is Action.ConnectionStateChanged -> dispatch(
-                Msg.ConnectionChanged(
-                    action.state,
-                    action.connectedSinceMillis
+            is Action.ConnectionStateChanged -> {
+                dispatch(
+                    Msg.ConnectionChanged(
+                        action.state,
+                        action.connectedSinceMillis
+                    )
                 )
-            )
+                if (!action.state.isActiveTunnel) applyPendingSwitch()
+            }
 
             Action.TunnelConnected -> pingActiveProfile()
         }
@@ -46,7 +51,9 @@ internal class DashboardExecutor(
     override fun executeIntent(intent: DashboardStore.Intent) {
         when (intent) {
             DashboardStore.Intent.ToggleConnection -> toggleConnection()
-            is DashboardStore.Intent.SelectProfile -> scope.launch { setActiveProfile(intent.id) }
+            is DashboardStore.Intent.SelectProfile -> selectProfile(intent.id)
+            DashboardStore.Intent.ConfirmSwitch -> confirmSwitch()
+            DashboardStore.Intent.CancelSwitch -> dispatch(Msg.SwitchCleared)
             is DashboardStore.Intent.OpenImport -> openImport(intent.prefill)
             DashboardStore.Intent.CloseImport -> dispatch(Msg.ImportSheetClosed)
             is DashboardStore.Intent.ImportProfile ->
@@ -74,6 +81,30 @@ internal class DashboardExecutor(
                 }
             }
         }
+    }
+
+    private fun selectProfile(id: String) {
+        val s = state()
+        when {
+            id == s.activeProfileId -> dispatch(Msg.SwitchCleared)
+            s.connectionState.isActiveTunnel -> dispatch(Msg.SwitchRequested(id))
+            else -> scope.launch { setActiveProfile(id) }
+        }
+    }
+
+    private fun confirmSwitch() {
+        val target = state().pendingSwitchProfile ?: return
+        dispatch(Msg.SwitchCleared)
+        scope.launch {
+            setActiveProfile(target.id)
+            runCatching { switchProfile(target.id) }
+        }
+    }
+
+    private fun applyPendingSwitch() {
+        val id = state().pendingSwitchProfileId ?: return
+        dispatch(Msg.SwitchCleared)
+        scope.launch { setActiveProfile(id) }
     }
 
     private fun openImport(prefill: String) {

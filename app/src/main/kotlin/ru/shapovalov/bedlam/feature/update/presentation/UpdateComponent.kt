@@ -13,10 +13,11 @@ class UpdateComponent(
     componentContext: ComponentContext,
     storeFactory: UpdateStoreFactory,
     update: AppUpdate,
+    trigger: UpdateTrigger,
     private val onDismiss: OnDismiss,
 ) : ComponentContext by componentContext {
 
-    private val store = instanceKeeper.getStore { storeFactory.create(update) }
+    private val store = instanceKeeper.getStore { storeFactory.create(update, trigger) }
     private val scope = componentScope()
 
     val state: StateFlow<UpdateStore.State> = store.stateFlow(scope)
@@ -33,7 +34,7 @@ class UpdateComponent(
 
     fun onInstall() = store.accept(UpdateStore.Intent.Install)
     fun onSkip() = store.accept(UpdateStore.Intent.Skip)
-    fun onBack() = onDismiss.invoke()
+    fun onBack() = store.accept(UpdateStore.Intent.Back)
 
     fun interface OnDismiss {
         fun invoke()

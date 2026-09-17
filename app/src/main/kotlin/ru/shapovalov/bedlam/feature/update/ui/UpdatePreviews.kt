@@ -74,7 +74,13 @@ private fun ReleaseNotesCardEmptyPreview() {
 @UpdatePreviews
 @Composable
 private fun IdleActionsPreview() {
-    UpdatePreview { IdleActions(onInstall = {}, onSkip = {}) }
+    UpdatePreview { IdleActions(onInstall = {}, onSkip = {}, lastReminder = false) }
+}
+
+@UpdatePreviews
+@Composable
+private fun IdleActionsLastReminderPreview() {
+    UpdatePreview { IdleActions(onInstall = {}, onSkip = {}, lastReminder = true) }
 }
 
 @UpdatePreviews

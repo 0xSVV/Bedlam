@@ -36,6 +36,7 @@ const (
 var (
 	errConnectionsReset = errors.New("connections reset")
 	errDialBackoff      = errors.New("dial backoff")
+	errAwaitingFirstUse = errors.New("lazy: waiting for the first connection")
 )
 
 type reconnectClient struct {
@@ -51,6 +52,8 @@ type reconnectClient struct {
 	attempt    atomic.Int32
 	generation uint64 // guarded by mu; bumped on every state transition
 	sessionSeq atomic.Uint64
+
+	awaitingFirstUse atomic.Bool
 
 	eventMu        sync.Mutex
 	lastEmittedGen uint64 // guarded by eventMu
@@ -123,6 +126,7 @@ func newReconnectClient(
 	h EventHandler,
 	statsFunc func() (tx, rx int64),
 	echConfigured bool,
+	lazy bool,
 ) (*reconnectClient, error) {
 	rc := &reconnectClient{
 		configFunc:    cf,
@@ -133,7 +137,8 @@ func newReconnectClient(
 		watchdogDone:  make(chan struct{}),
 		pokeCh:        make(chan struct{}, 1),
 	}
-	if err := rc.dial(false); err != nil {
+	rc.awaitingFirstUse.Store(lazy)
+	if err := rc.dial(false); err != nil && !errors.Is(err, errAwaitingFirstUse) {
 		if rc.isTerminal(err) {
 			close(rc.watchdogDone)
 			return nil, err
@@ -163,6 +168,9 @@ func (rc *reconnectClient) dial(force bool) error {
 	}
 	rc.mu.Unlock()
 
+	if rc.awaitingFirstUse.Load() {
+		return errAwaitingFirstUse
+	}
 	if !force && rc.dialThrottled() {
 		return errDialBackoff
 	}
@@ -245,7 +253,7 @@ func (rc *reconnectClient) currentClient(callerSource string) (client.Client, er
 	}
 	rc.mu.Unlock()
 	if err := rc.dial(false); err != nil {
-		if errors.Is(err, errDialBackoff) {
+		if errors.Is(err, errDialBackoff) || errors.Is(err, errAwaitingFirstUse) {
 			return nil, err
 		}
 		if rc.isTerminal(err) {
@@ -283,6 +291,7 @@ func (rc *reconnectClient) SessionSeq() uint64 {
 }
 
 func (rc *reconnectClient) TCP(addr string) (net.Conn, error) {
+	rc.awaitingFirstUse.Store(false)
 	c, err := rc.currentClient(srcStream)
 	if err != nil {
 		return nil, err
@@ -295,6 +304,7 @@ func (rc *reconnectClient) TCP(addr string) (net.Conn, error) {
 }
 
 func (rc *reconnectClient) UDP() (client.HyUDPConn, error) {
+	rc.awaitingFirstUse.Store(false)
 	c, err := rc.currentClient(srcStream)
 	if err != nil {
 		return nil, err
@@ -397,6 +407,9 @@ func (rc *reconnectClient) tick() {
 	rc.mu.Unlock()
 
 	if c == nil {
+		if rc.awaitingFirstUse.Load() {
+			return
+		}
 		log(LogLevelDebug, srcWatchdog, "Down and idle; re-dialing")
 		if _, err := rc.currentClient(srcWatchdog); err != nil {
 			log(LogLevelDebug, srcWatchdog, "Idle re-dial failed: %s", err)

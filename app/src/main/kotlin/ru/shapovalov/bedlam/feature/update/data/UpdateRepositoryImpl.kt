@@ -6,14 +6,17 @@ import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Inject
@@ -39,6 +42,14 @@ class UpdateRepositoryImpl(
 
     private val dataStore = context.applicationContext.updateDataStore
 
+    override val availableVersion: Flow<String?> = dataStore.data
+        .map { prefs ->
+            prefs[KEY_LATEST_VERSION]
+                ?.takeIf { isNewer(candidate = it, installed = installedVersion()) }
+        }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.IO)
+
     override fun installedVersion(): String {
         val pm = context.packageManager
         val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -57,23 +68,31 @@ class UpdateRepositoryImpl(
             return@withContext null
         }
         dataStore.edit { it[KEY_LAST_CHECK_AT] = now }
+        val update = fetchUpdate() ?: return@withContext null
+        if (
+            isUpdateSuppressed(
+                skippedVersion = prefs[KEY_SKIPPED_VERSION],
+                skippedAtMillis = prefs[KEY_SKIPPED_AT],
+                skipCount = prefs[KEY_SKIP_COUNT] ?: 0,
+                candidate = update.versionName,
+                nowMillis = now,
+                ttlMillis = SKIP_TTL_MS,
+                skipLimit = SKIP_LIMIT,
+            )
+        ) {
+            return@withContext null
+        }
+        update
+    }
+
+    override suspend fun fetchUpdate(): AppUpdate? = withContext(Dispatchers.IO) {
         val release = json.decodeFromString(
             GitHubReleaseDto.serializer(),
             httpClient.get(LATEST_RELEASE_URL),
         )
         val latestVersion = release.tagName.removePrefix("v")
+        dataStore.edit { it[KEY_LATEST_VERSION] = latestVersion }
         if (!isNewer(candidate = latestVersion, installed = installedVersion())) {
-            return@withContext null
-        }
-        if (
-            isUpdateSuppressed(
-                skippedVersion = prefs[KEY_SKIPPED_VERSION],
-                skippedAtMillis = prefs[KEY_SKIPPED_AT],
-                candidate = latestVersion,
-                nowMillis = now,
-                ttlMillis = SKIP_TTL_MS,
-            )
-        ) {
             return@withContext null
         }
         val asset = pickAsset(release.assets, latestVersion, Build.SUPPORTED_ABIS.toList())
@@ -137,9 +156,24 @@ class UpdateRepositoryImpl(
 
     override suspend fun skipVersion(versionName: String) {
         dataStore.edit { prefs ->
+            prefs[KEY_SKIP_COUNT] = nextSkipCount(
+                skippedVersion = prefs[KEY_SKIPPED_VERSION],
+                skipCount = prefs[KEY_SKIP_COUNT] ?: 0,
+                version = versionName,
+            )
             prefs[KEY_SKIPPED_VERSION] = versionName
             prefs[KEY_SKIPPED_AT] = System.currentTimeMillis()
         }
+    }
+
+    override suspend fun skipsLeft(versionName: String): Int {
+        val prefs = dataStore.data.first()
+        return skipsLeft(
+            skippedVersion = prefs[KEY_SKIPPED_VERSION],
+            skipCount = prefs[KEY_SKIP_COUNT] ?: 0,
+            version = versionName,
+            skipLimit = SKIP_LIMIT,
+        )
     }
 
     private companion object {
@@ -150,8 +184,11 @@ class UpdateRepositoryImpl(
         const val DOWNLOAD_BUFFER_BYTES = 64 * 1024
         val KEY_SKIPPED_VERSION = stringPreferencesKey("skipped_version")
         val KEY_SKIPPED_AT = longPreferencesKey("skipped_at")
+        val KEY_SKIP_COUNT = intPreferencesKey("skip_count")
         val KEY_LAST_CHECK_AT = longPreferencesKey("last_check_at")
+        val KEY_LATEST_VERSION = stringPreferencesKey("latest_version")
         const val SKIP_TTL_MS = 6 * 60 * 60 * 1000L
+        const val SKIP_LIMIT = 3
         const val CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
         const val MAX_APK_BYTES = 200L * 1024 * 1024
         const val MAX_NOTES_CHARS = 4000
@@ -209,10 +246,20 @@ private val TRUSTED_DOWNLOAD_HOSTS = setOf(
 internal fun isUpdateSuppressed(
     skippedVersion: String?,
     skippedAtMillis: Long?,
+    skipCount: Int,
     candidate: String,
     nowMillis: Long,
     ttlMillis: Long,
+    skipLimit: Int,
 ): Boolean {
-    if (skippedVersion != candidate || skippedAtMillis == null) return false
+    if (skippedVersion != candidate) return false
+    if (skipCount >= skipLimit) return true
+    if (skippedAtMillis == null) return false
     return nowMillis - skippedAtMillis in 0 until ttlMillis
 }
+
+internal fun nextSkipCount(skippedVersion: String?, skipCount: Int, version: String): Int =
+    if (skippedVersion == version) skipCount + 1 else 1
+
+internal fun skipsLeft(skippedVersion: String?, skipCount: Int, version: String, skipLimit: Int): Int =
+    if (skippedVersion == version) (skipLimit - skipCount).coerceAtLeast(0) else skipLimit

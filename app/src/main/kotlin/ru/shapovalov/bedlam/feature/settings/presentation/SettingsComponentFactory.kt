@@ -11,11 +11,15 @@ class SettingsComponentFactory(
     private val routingFactory: RoutingComponentFactory,
     private val storeFactory: SettingsStoreFactory,
 ) {
-    fun create(componentContext: ComponentContext): SettingsComponent =
+    fun create(
+        componentContext: ComponentContext,
+        onOpenUpdate: SettingsComponent.OnOpenUpdate,
+    ): SettingsComponent =
         SettingsComponent(
             componentContext = componentContext,
             appSelectionFactory = appSelectionFactory,
             routingFactory = routingFactory,
             storeFactory = storeFactory,
+            onOpenUpdate = onOpenUpdate,
         )
 }

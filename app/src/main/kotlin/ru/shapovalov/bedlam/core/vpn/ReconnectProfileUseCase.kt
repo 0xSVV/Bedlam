@@ -45,27 +45,37 @@ class ReconnectProfileUseCase internal constructor(
 
     suspend operator fun invoke(profileId: String) {
         withContext(NonCancellable) {
-            if (!isTunnelUsing(profileId) || consentRequired()) return@withContext
-            val stopRequestId = UUID.randomUUID().toString()
-            stopTunnel(stopRequestId)
-            val stopped = withTimeoutOrNull(STOP_TIMEOUT_MS) {
-                combine(clientState, runtimeState) { state, runtime ->
-                    runtime.takeIf {
-                        !state.isActiveTunnel && it.status == VpnRuntimeStatus.Stopped
-                    }
-                }.filterNotNull().first()
-            }
-            if (stopped == null) {
-                Log.w(TAG, "Tunnel did not stop within $STOP_TIMEOUT_MS ms, not restarting")
-                return@withContext
-            }
-            if (stopped.stopRequestId != stopRequestId) {
-                Log.i(TAG, "Another stop request followed the reconnect, not restarting")
-                return@withContext
-            }
-            val profile = loadProfile(profileId) ?: return@withContext
-            startTunnel(profile)
+            if (isTunnelUsing(profileId)) restartWith(profileId)
         }
+    }
+
+    suspend fun switchTo(profileId: String) {
+        withContext(NonCancellable) {
+            if (clientState.value.isActiveTunnel) restartWith(profileId)
+        }
+    }
+
+    private suspend fun restartWith(profileId: String) {
+        if (consentRequired()) return
+        val stopRequestId = UUID.randomUUID().toString()
+        stopTunnel(stopRequestId)
+        val stopped = withTimeoutOrNull(STOP_TIMEOUT_MS) {
+            combine(clientState, runtimeState) { state, runtime ->
+                runtime.takeIf {
+                    !state.isActiveTunnel && it.status == VpnRuntimeStatus.Stopped
+                }
+            }.filterNotNull().first()
+        }
+        if (stopped == null) {
+            Log.w(TAG, "Tunnel did not stop within $STOP_TIMEOUT_MS ms, not restarting")
+            return
+        }
+        if (stopped.stopRequestId != stopRequestId) {
+            Log.i(TAG, "Another stop request followed the reconnect, not restarting")
+            return
+        }
+        val profile = loadProfile(profileId) ?: return
+        startTunnel(profile)
     }
 
     private companion object {

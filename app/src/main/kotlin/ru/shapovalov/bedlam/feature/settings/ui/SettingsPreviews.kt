@@ -10,6 +10,7 @@ import ru.shapovalov.bedlam.core.power.domain.model.PowerReliabilitySnapshot
 import ru.shapovalov.bedlam.core.power.domain.model.PowerRiskLevel
 import ru.shapovalov.bedlam.core.power.domain.model.PowerVendor
 import ru.shapovalov.bedlam.core.power.domain.model.StandbyBucket
+import ru.shapovalov.bedlam.feature.settings.presentation.SettingsStore.State.UpdateCheck
 import ru.shapovalov.bedlam.ui.markdown.MarkdownParser
 import ru.shapovalov.bedlam.ui.theme.BedlamTheme
 
@@ -85,6 +86,8 @@ private fun SettingsPreview(content: @Composable () -> Unit) {
 private fun SettingsRootPreview(
     quickSettingsTileAdded: Boolean,
     reliabilitySnapshot: PowerReliabilitySnapshot?,
+    availableVersion: String? = null,
+    updateCheck: UpdateCheck = UpdateCheck.Idle,
 ) {
     SettingsPreview {
         SettingsRoot(
@@ -96,6 +99,9 @@ private fun SettingsRootPreview(
             onQuickSettingsTileAdded = {},
             reliabilitySnapshot = reliabilitySnapshot,
             confirmedReliabilityFingerprint = null,
+            availableVersion = availableVersion,
+            updateCheck = updateCheck,
+            onCheckForUpdates = {},
         )
     }
 }
@@ -153,6 +159,26 @@ private fun SettingsRootNeedsAttentionPreview() {
 @Composable
 private fun SettingsRootHealthyPreview() {
     SettingsRootPreview(quickSettingsTileAdded = true, reliabilitySnapshot = healthyGeneric)
+}
+
+@SettingsScreenPreviews
+@Composable
+private fun SettingsRootUpdateAvailablePreview() {
+    SettingsRootPreview(
+        quickSettingsTileAdded = true,
+        reliabilitySnapshot = healthyGeneric,
+        availableVersion = "1.6.3",
+    )
+}
+
+@SettingsScreenPreviews
+@Composable
+private fun SettingsRootUpToDatePreview() {
+    SettingsRootPreview(
+        quickSettingsTileAdded = true,
+        reliabilitySnapshot = healthyGeneric,
+        updateCheck = UpdateCheck.UpToDate,
+    )
 }
 
 @Composable

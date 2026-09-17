@@ -27,6 +27,19 @@ class SettingsReducerTest {
             initial.copy(confirmedReliabilityFingerprint = "fp"),
             SettingsReducer.reduceAll(initial, Msg.ConfirmedReliabilityFingerprintChanged("fp")),
         )
+
+        assertEquals(
+            initial.copy(availableVersion = "9.9.9"),
+            SettingsReducer.reduceAll(initial, Msg.AvailableVersionChanged("9.9.9")),
+        )
+
+        assertEquals(
+            initial.copy(updateCheck = SettingsStore.State.UpdateCheck.Failed),
+            SettingsReducer.reduceAll(
+                initial,
+                Msg.UpdateCheckChanged(SettingsStore.State.UpdateCheck.Failed),
+            ),
+        )
     }
 
     @Test

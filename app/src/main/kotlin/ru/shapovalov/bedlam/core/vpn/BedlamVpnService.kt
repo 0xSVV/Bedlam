@@ -329,27 +329,15 @@ class BedlamVpnService : VpnService() {
     private fun startSettingsWatcher() {
         settingsWatcherJob?.cancel()
         settingsWatcherJob = scope.launch {
-            var lastPlan = currentRoutePlan
             combine(
                 routingRepository.observe(),
                 appFilterRepository.observe(),
             ) { _, _ -> }
                 .debounce(SETTINGS_REAPPLY_DEBOUNCE_MS.milliseconds)
                 .collect {
+                    if (!client.state.value.isActiveTunnel) return@collect
                     val newPlan = runCatching { buildRoutePlan() }.getOrNull() ?: return@collect
-                    if (newPlan == lastPlan) return@collect
-
-                    val settledState = withTimeoutOrNull(CONNECT_SETTLE_TIMEOUT_MS.milliseconds) {
-                        client.state.first {
-                            it is ConnectionState.Connected ||
-                                    it is ConnectionState.Disconnected ||
-                                    it is ConnectionState.Error
-                        }
-                    } ?: return@collect
-
-                    if (settledState !is ConnectionState.Connected) return@collect
-
-                    lastPlan = newPlan
+                    if (newPlan == currentRoutePlan) return@collect
                     reapplyTunnel(newPlan)
                 }
         }
@@ -681,7 +669,6 @@ class BedlamVpnService : VpnService() {
         private const val RECONNECT_WARNING_MS = 3 * 60 * 1000L
         private const val RUNTIME_HEARTBEAT_MS = 30_000L
         private const val SETTINGS_REAPPLY_DEBOUNCE_MS = 500L
-        private const val CONNECT_SETTLE_TIMEOUT_MS = 5_000L
         private const val ALWAYS_ON_STATE_REFRESH_MS = 60_000L
         private const val DESTROY_PERSIST_TIMEOUT_MS = 500L
         private const val SLEEP_GAP_CHECK_MS = 20_000L

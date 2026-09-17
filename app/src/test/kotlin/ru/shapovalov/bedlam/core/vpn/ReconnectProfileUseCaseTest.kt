@@ -20,6 +20,7 @@ import ru.shapovalov.hysteria.ConnectionState
 class ReconnectProfileUseCaseTest {
 
     private val saved = testProfile("p1", name = "Home", address = "saved.example:443")
+    private val other = testProfile("p2", name = "Work", address = "other.example:443")
     private val clientState = MutableStateFlow<ConnectionState>(testConnected())
     private val runtimeState = MutableStateFlow(
         VpnRuntimeState(desiredRunning = true, status = VpnRuntimeStatus.Running, profileId = "p1"),
@@ -37,7 +38,7 @@ class ReconnectProfileUseCaseTest {
             requestedStopId = it
         },
         startTunnel = { events += "start ${it.config.server.address}" },
-        loadProfile = FakeProfileRepository(listOf(saved))::get,
+        loadProfile = FakeProfileRepository(listOf(saved, other))::get,
     )
 
     private fun clientStopped() {
@@ -177,6 +178,39 @@ class ReconnectProfileUseCaseTest {
         clientStopped()
 
         useCase()("p1")
+
+        assertEquals(emptyList<String>(), events)
+    }
+
+    @Test
+    fun `switching starts the other profile once the tunnel has stopped`() = runTest {
+        val switch = launch { useCase().switchTo("p2") }
+        runCurrent()
+        assertEquals(listOf("stop"), events)
+
+        clientStopped()
+        markStopping()
+        markStopped()
+        runCurrent()
+
+        assertEquals(listOf("stop", "start other.example:443"), events)
+        assertTrue(switch.isCompleted)
+    }
+
+    @Test
+    fun `switching does nothing without a running tunnel`() = runTest {
+        clientStopped()
+
+        useCase().switchTo("p2")
+
+        assertEquals(emptyList<String>(), events)
+    }
+
+    @Test
+    fun `switching leaves the tunnel running without VPN consent`() = runTest {
+        consentRequired = true
+
+        useCase().switchTo("p2")
 
         assertEquals(emptyList<String>(), events)
     }

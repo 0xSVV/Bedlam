@@ -22,6 +22,7 @@ import ru.shapovalov.bedlam.feature.update.domain.model.AppUpdate
 import ru.shapovalov.bedlam.feature.update.domain.usecase.CheckForUpdateUseCase
 import ru.shapovalov.bedlam.feature.update.presentation.UpdateComponent
 import ru.shapovalov.bedlam.feature.update.presentation.UpdateComponentFactory
+import ru.shapovalov.bedlam.feature.update.presentation.UpdateTrigger
 
 class RootComponent(
     componentContext: ComponentContext,
@@ -52,12 +53,16 @@ class RootComponent(
                     )
                 )
 
-                Config.Settings -> Child.Settings(settingsFactory.create(ctx))
+                Config.Settings -> Child.Settings(
+                    settingsFactory.create(ctx) { update ->
+                        navigation.bringToFront(Config.Update(update, UpdateTrigger.ManualCheck))
+                    }
+                )
 
                 Config.Logs -> Child.Logs(logsFactory.create(ctx))
 
                 is Config.Update -> Child.Update(
-                    updateFactory.create(ctx, config.update) { navigation.pop() }
+                    updateFactory.create(ctx, config.update, config.trigger) { navigation.pop() }
                 )
             }
         },
@@ -68,7 +73,7 @@ class RootComponent(
             val update = runCatching { checkForUpdate() }.getOrNull() ?: return@launch
             val alreadyShown = childStack.value.items.any { it.configuration is Config.Update }
             if (!alreadyShown) {
-                navigation.pushNew(Config.Update(update))
+                navigation.pushNew(Config.Update(update, UpdateTrigger.LaunchCheck))
             }
         }
     }
@@ -133,6 +138,6 @@ class RootComponent(
         data object Logs : Config
 
         @Serializable
-        data class Update(val update: AppUpdate) : Config
+        data class Update(val update: AppUpdate, val trigger: UpdateTrigger) : Config
     }
 }

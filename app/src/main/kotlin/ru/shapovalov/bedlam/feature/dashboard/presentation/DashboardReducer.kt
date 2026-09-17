@@ -9,6 +9,8 @@ import ru.shapovalov.hysteria.isActiveTunnel
 internal sealed interface Msg {
     data class ProfilesLoaded(val profiles: List<Profile>, val activeId: String?) : Msg
     data class ConnectionChanged(val state: ConnectionState, val connectedSinceMillis: Long?) : Msg
+    data class SwitchRequested(val id: String) : Msg
+    data object SwitchCleared : Msg
     data class ImportSheetOpened(val seed: DashboardStore.ImportSheetSeed) : Msg
     data object ImportSheetClosed : Msg
     data object ImportStarted : Msg
@@ -27,6 +29,9 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             copy(
                 profiles = msg.profiles,
                 activeProfileId = msg.activeId,
+                pendingSwitchProfileId = pendingSwitchProfileId?.takeIf { pending ->
+                    pending in ids && pending != msg.activeId
+                },
                 latencies = latencies.filterKeys { it in ids },
             )
         }
@@ -36,6 +41,9 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             connectedSinceMillis = msg.connectedSinceMillis,
             error = errorAfterConnectionChange(msg.state),
         )
+
+        is Msg.SwitchRequested -> copy(pendingSwitchProfileId = msg.id)
+        Msg.SwitchCleared -> copy(pendingSwitchProfileId = null)
 
         is Msg.ImportSheetOpened -> copy(
             importSheet = msg.seed,

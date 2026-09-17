@@ -1,11 +1,14 @@
 package ru.shapovalov.hysteria
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import ru.shapovalov.hysteria.config.BehaviorOptions
 import ru.shapovalov.hysteria.config.HysteriaConfig
+import ru.shapovalov.hysteria.config.toJson
 import ru.shapovalov.hysteria.config.defaultBandwidthOptions
 import ru.shapovalov.hysteria.config.defaultBehaviorOptions
 import ru.shapovalov.hysteria.config.defaultCongestionOptions
@@ -101,6 +104,33 @@ class HysteriaConfigParseTest {
         assertEquals(true, parsed.quic?.disableChromeParrot)
         assertEquals(false, parsed.quic?.disableGso)
         assertEquals(30, parsed.quic?.maxIdleTimeoutSec)
+    }
+
+    @Test
+    fun `a profile saved before the lazy switch existed connects at once`() {
+        val legacy = """
+            {
+              "server": {"server": "host.example:443", "auth": "token"},
+              "tls": {},
+              "behavior": {"fastOpen": false}
+            }
+        """.trimIndent()
+
+        val parsed = parseHysteriaJson(legacy).config
+
+        assertEquals(false, parsed.behavior?.lazy)
+        assertEquals(false, parsed.behavior?.fastOpen)
+        assertEquals("false", Json.parseToJsonElement(parsed.toJson()).jsonObject["lazy"].toString())
+    }
+
+    @Test
+    fun `the lazy switch reaches the Go config`() {
+        val config = sampleConfig().copy(behavior = BehaviorOptions(lazy = true))
+
+        val wire = Json.parseToJsonElement(config.toJson()).jsonObject
+
+        assertEquals("true", wire["lazy"].toString())
+        assertEquals("true", wire["fast_open"].toString())
     }
 
     @Test

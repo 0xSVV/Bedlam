@@ -2,10 +2,13 @@ package ru.shapovalov.bedlam.feature.update.presentation
 
 import com.arkivanov.mvikotlin.main.store.DefaultStoreFactory
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import ru.shapovalov.bedlam.feature.update.domain.model.DownloadEvent
@@ -29,13 +32,14 @@ class UpdateExecutorTest {
     private fun store(
         repository: FakeUpdateRepository,
         installer: FakeUpdateInstaller = FakeUpdateInstaller(),
+        trigger: UpdateTrigger = UpdateTrigger.LaunchCheck,
     ): UpdateStore = UpdateStoreFactory(
         DefaultStoreFactory(),
         repository,
         DownloadUpdateUseCase(repository),
         SkipUpdateUseCase(repository),
         installer,
-    ).create(appUpdate())
+    ).create(appUpdate(), trigger)
 
     @Test
     fun `install downloads and hands the file to the installer`() = runTest {
@@ -100,6 +104,119 @@ class UpdateExecutorTest {
 
             assertEquals(listOf("9.9.9"), repository.skipped)
             assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `skip after a manual check dismisses without counting a skip`() = runTest {
+        val repository = FakeUpdateRepository()
+        store(repository, trigger = UpdateTrigger.ManualCheck).disposeAfter { store ->
+            val labels = store.recordLabels()
+
+            store.accept(UpdateStore.Intent.Skip)
+
+            assertEquals(emptyList<String>(), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `taps that arrive while a skip is saved count once`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeUpdateRepository().apply { skipGate = gate }
+        store(repository).disposeAfter { store ->
+            val labels = store.recordLabels()
+
+            store.accept(UpdateStore.Intent.Skip)
+            store.accept(UpdateStore.Intent.Skip)
+            store.accept(UpdateStore.Intent.Back)
+            gate.complete(Unit)
+
+            assertEquals(listOf("9.9.9"), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `back on the offer counts as a skip`() = runTest {
+        val repository = FakeUpdateRepository()
+        store(repository).disposeAfter { store ->
+            val labels = store.recordLabels()
+
+            store.accept(UpdateStore.Intent.Back)
+
+            assertEquals(listOf("9.9.9"), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `back after a failed install counts as a skip`() = runTest {
+        val repository = FakeUpdateRepository()
+        val installer = FakeUpdateInstaller()
+        store(repository, installer).disposeAfter { store ->
+            val labels = store.recordLabels()
+            installer.status.value = InstallStatus.SignatureMismatch
+
+            store.accept(UpdateStore.Intent.Back)
+
+            assertEquals(listOf("9.9.9"), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `back while downloading closes without counting a skip`() = runTest {
+        val repository = FakeUpdateRepository(
+            download = flow {
+                emit(DownloadEvent.Progress(100, 1_000))
+                awaitCancellation()
+            },
+        )
+        store(repository).disposeAfter { store ->
+            val labels = store.recordLabels()
+            store.accept(UpdateStore.Intent.Install)
+
+            store.accept(UpdateStore.Intent.Back)
+
+            assertEquals(emptyList<String>(), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `back while installing closes without counting a skip`() = runTest {
+        val repository = FakeUpdateRepository()
+        val installer = FakeUpdateInstaller()
+        store(repository, installer).disposeAfter { store ->
+            val labels = store.recordLabels()
+            installer.status.value = InstallStatus.InProgress
+
+            store.accept(UpdateStore.Intent.Back)
+
+            assertEquals(emptyList<String>(), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `the offer with one skip left is marked as the last reminder`() = runTest {
+        val repository = FakeUpdateRepository().apply { remainingSkips = 1 }
+        store(repository).disposeAfter { store ->
+            assertTrue(store.state.lastReminder)
+        }
+    }
+
+    @Test
+    fun `earlier offers and manual checks are not marked as the last reminder`() = runTest {
+        val earlier = FakeUpdateRepository().apply { remainingSkips = 2 }
+        store(earlier).disposeAfter { store ->
+            assertFalse(store.state.lastReminder)
+        }
+
+        val manual = FakeUpdateRepository().apply { remainingSkips = 1 }
+        store(manual, trigger = UpdateTrigger.ManualCheck).disposeAfter { store ->
+            assertFalse(store.state.lastReminder)
         }
     }
 

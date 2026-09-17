@@ -24,6 +24,7 @@ private fun HeroPreview(
     connectionState: ConnectionState,
     connectedSinceMillis: Long? = null,
     hasActiveProfile: Boolean = true,
+    pendingSwitchName: String? = null,
 ) {
     BedlamTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
@@ -31,12 +32,25 @@ private fun HeroPreview(
                 connectionState = connectionState,
                 connectedSinceMillis = connectedSinceMillis,
                 hasActiveProfile = hasActiveProfile,
+                pendingSwitchName = pendingSwitchName,
                 onToggle = {},
+                onConfirmSwitch = {},
+                onCancelSwitch = {},
                 onOpenSession = {},
             )
         }
     }
 }
+
+private fun previewConnected(connectedSince: Long) = ConnectionState.Connected(
+    info = ConnectionInfo(
+        serverAddress = "vpn.example.com:443",
+        udpEnabled = true,
+        attempt = 0,
+    ),
+    connectedSinceMillis = connectedSince,
+    connectedSinceElapsedRealtime = connectedSince,
+)
 
 @HeroPreviews
 @Composable
@@ -67,16 +81,19 @@ private fun ConnectionHeroConnectingPreview() {
 private fun ConnectionHeroConnectedPreview() {
     val connectedSince = System.currentTimeMillis() - 3_725_000L
     HeroPreview(
-        connectionState = ConnectionState.Connected(
-            info = ConnectionInfo(
-                serverAddress = "vpn.example.com:443",
-                udpEnabled = true,
-                attempt = 0,
-            ),
-            connectedSinceMillis = connectedSince,
-            connectedSinceElapsedRealtime = connectedSince,
-        ),
+        connectionState = previewConnected(connectedSince),
         connectedSinceMillis = connectedSince,
+    )
+}
+
+@HeroPreviews
+@Composable
+private fun ConnectionHeroConfirmSwitchPreview() {
+    val connectedSince = System.currentTimeMillis() - 3_725_000L
+    HeroPreview(
+        connectionState = previewConnected(connectedSince),
+        connectedSinceMillis = connectedSince,
+        pendingSwitchName = "Work",
     )
 }
 
