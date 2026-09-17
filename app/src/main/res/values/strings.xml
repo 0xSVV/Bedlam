@@ -84,6 +84,13 @@
     <string name="settings_quick_tile_subtitle_manual">Open quick settings edit mode to add Bedlam</string>
     <string name="settings_quick_tile_manual_hint">Open quick settings edit mode and add Bedlam</string>
 
+    <string name="settings_updates_title">Check for updates</string>
+    <string name="settings_updates_subtitle_idle">Look for a newer version on GitHub</string>
+    <string name="settings_updates_subtitle_checking">Checking…</string>
+    <string name="settings_updates_subtitle_up_to_date">You have the latest version</string>
+    <string name="settings_updates_subtitle_available">Version %1$s is available</string>
+    <string name="settings_updates_subtitle_failed">Could not check for updates. Tap to try again</string>
+
     <string name="settings_reliability_title">Keep VPN alive</string>
     <string name="settings_reliability_subtitle_action">%1$s needs a reliability check</string>
     <string name="settings_reliability_subtitle_ok">%1$s looks good</string>

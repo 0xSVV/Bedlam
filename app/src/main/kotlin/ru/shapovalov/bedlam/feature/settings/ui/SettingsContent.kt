@@ -55,6 +55,7 @@ import ru.shapovalov.bedlam.feature.appselection.ui.AppSelectionContent
 import ru.shapovalov.bedlam.feature.routing.ui.RoutingContent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child
+import ru.shapovalov.bedlam.feature.settings.presentation.SettingsStore.State.UpdateCheck
 import ru.shapovalov.bedlam.ui.theme.spacing
 
 @OptIn(ExperimentalDecomposeApi::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -81,6 +82,9 @@ fun SettingsContent(component: SettingsComponent, modifier: Modifier = Modifier)
                 onQuickSettingsTileAdded = component::onSetQuickSettingsTileAdded,
                 reliabilitySnapshot = state.reliabilitySnapshot,
                 confirmedReliabilityFingerprint = state.confirmedReliabilityFingerprint,
+                availableVersion = state.availableVersion,
+                updateCheck = state.updateCheck,
+                onCheckForUpdates = component::onCheckForUpdates,
             )
 
             is Child.AppSelection -> AppSelectionContent(child.component)
@@ -107,6 +111,9 @@ internal fun SettingsRoot(
     onQuickSettingsTileAdded: (Boolean) -> Unit,
     reliabilitySnapshot: PowerReliabilitySnapshot?,
     confirmedReliabilityFingerprint: String?,
+    availableVersion: String?,
+    updateCheck: UpdateCheck,
+    onCheckForUpdates: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     val context = LocalContext.current
@@ -170,11 +177,33 @@ internal fun SettingsRoot(
         }
         SettingsDivider()
         SettingsRow(
+            title = stringResource(R.string.settings_updates_title),
+            subtitle = updatesSubtitle(updateCheck, availableVersion),
+            subtitleEmphasized = updateCheck == UpdateCheck.Failed ||
+                    (updateCheck != UpdateCheck.Checking && availableVersion != null),
+            trailingIcon = null,
+            onClick = onCheckForUpdates,
+        )
+        SettingsDivider()
+        SettingsRow(
             title = stringResource(R.string.settings_about_title),
             subtitle = stringResource(R.string.settings_about_subtitle, versionName),
             onClick = onOpenAbout,
         )
     }
+}
+
+@Composable
+private fun updatesSubtitle(updateCheck: UpdateCheck, availableVersion: String?): String = when {
+    updateCheck == UpdateCheck.Checking -> stringResource(R.string.settings_updates_subtitle_checking)
+    updateCheck == UpdateCheck.Failed -> stringResource(R.string.settings_updates_subtitle_failed)
+    availableVersion != null ->
+        stringResource(R.string.settings_updates_subtitle_available, availableVersion)
+
+    updateCheck == UpdateCheck.UpToDate ->
+        stringResource(R.string.settings_updates_subtitle_up_to_date)
+
+    else -> stringResource(R.string.settings_updates_subtitle_idle)
 }
 
 private fun requestQuickSettingsTile(context: Context, onAddedChanged: (Boolean) -> Unit) {
