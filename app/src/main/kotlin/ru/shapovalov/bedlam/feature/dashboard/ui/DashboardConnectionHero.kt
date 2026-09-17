@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.feature.dashboard.ui
 
+import android.graphics.BlurMaskFilter
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -35,10 +36,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -252,13 +256,25 @@ private fun ConnectionFab(
             addPath(p)
         }
     }
+    val density = LocalDensity.current
+    val shadowPaint = remember(density) {
+        Paint().apply {
+            color = ConnectionFabShadowColor
+            asFrameworkPaint().maskFilter = BlurMaskFilter(
+                with(density) { ConnectionFabShadowBlur.toPx() },
+                BlurMaskFilter.Blur.NORMAL,
+            )
+        }
+    }
     Box(
         modifier = modifier
-            .shadow(ConnectionFabShadowElevation, MaterialTheme.shapes.extraLarge, clip = false)
             .drawWithContent {
                 val path = morph.toPath(progress = progress())
                 path.transform(Matrix().apply { scale(x = size.width, y = size.height) })
                 path.translate(size.center - path.getBounds().center)
+                translate(top = ConnectionFabShadowOffset.toPx()) {
+                    drawIntoCanvas { it.drawPath(path, shadowPaint) }
+                }
                 drawPath(path, color = containerColor)
                 drawContent()
             }
@@ -292,5 +308,7 @@ private fun secondsSince(elapsedRealtimeMillis: Long): Long =
     (SystemClock.elapsedRealtime() - elapsedRealtimeMillis) / 1000
 
 private val ConnectionFabContainerSize = 96.dp
-private val ConnectionFabShadowElevation = 6.dp
+private val ConnectionFabShadowBlur = 10.dp
+private val ConnectionFabShadowOffset = 3.dp
+private val ConnectionFabShadowColor = Color.Black.copy(alpha = 0.3f)
 private val ChipTrailingIconSize = 18.dp
