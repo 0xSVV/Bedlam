@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -69,9 +70,11 @@ class UpdateRepositoryImpl(
             isUpdateSuppressed(
                 skippedVersion = prefs[KEY_SKIPPED_VERSION],
                 skippedAtMillis = prefs[KEY_SKIPPED_AT],
+                skipCount = prefs[KEY_SKIP_COUNT] ?: 0,
                 candidate = latestVersion,
                 nowMillis = now,
                 ttlMillis = SKIP_TTL_MS,
+                skipLimit = SKIP_LIMIT,
             )
         ) {
             return@withContext null
@@ -137,6 +140,11 @@ class UpdateRepositoryImpl(
 
     override suspend fun skipVersion(versionName: String) {
         dataStore.edit { prefs ->
+            prefs[KEY_SKIP_COUNT] = nextSkipCount(
+                skippedVersion = prefs[KEY_SKIPPED_VERSION],
+                skipCount = prefs[KEY_SKIP_COUNT] ?: 0,
+                version = versionName,
+            )
             prefs[KEY_SKIPPED_VERSION] = versionName
             prefs[KEY_SKIPPED_AT] = System.currentTimeMillis()
         }
@@ -150,8 +158,10 @@ class UpdateRepositoryImpl(
         const val DOWNLOAD_BUFFER_BYTES = 64 * 1024
         val KEY_SKIPPED_VERSION = stringPreferencesKey("skipped_version")
         val KEY_SKIPPED_AT = longPreferencesKey("skipped_at")
+        val KEY_SKIP_COUNT = intPreferencesKey("skip_count")
         val KEY_LAST_CHECK_AT = longPreferencesKey("last_check_at")
         const val SKIP_TTL_MS = 6 * 60 * 60 * 1000L
+        const val SKIP_LIMIT = 3
         const val CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
         const val MAX_APK_BYTES = 200L * 1024 * 1024
         const val MAX_NOTES_CHARS = 4000
@@ -209,10 +219,17 @@ private val TRUSTED_DOWNLOAD_HOSTS = setOf(
 internal fun isUpdateSuppressed(
     skippedVersion: String?,
     skippedAtMillis: Long?,
+    skipCount: Int,
     candidate: String,
     nowMillis: Long,
     ttlMillis: Long,
+    skipLimit: Int,
 ): Boolean {
-    if (skippedVersion != candidate || skippedAtMillis == null) return false
+    if (skippedVersion != candidate) return false
+    if (skipCount >= skipLimit) return true
+    if (skippedAtMillis == null) return false
     return nowMillis - skippedAtMillis in 0 until ttlMillis
 }
+
+internal fun nextSkipCount(skippedVersion: String?, skipCount: Int, version: String): Int =
+    if (skippedVersion == version) skipCount + 1 else 1
