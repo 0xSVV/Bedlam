@@ -5,4 +5,5 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class BehaviorOptions(
     val fastOpen: Boolean = true,
+    val lazy: Boolean = false,
 )
