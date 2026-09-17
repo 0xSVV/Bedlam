@@ -9,33 +9,46 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.MotionDurationScale
 import androidx.graphics.shapes.RoundedPolygon
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 internal class ConnectionButtonMorph(
     private val restingShape: RoundedPolygon,
     private val loadingShapes: List<RoundedPolygon>,
+    private val confirmShape: RoundedPolygon,
+    private val cancelShape: RoundedPolygon,
     connecting: Boolean,
+    confirming: Boolean = false,
 ) {
     init {
         require(loadingShapes.distinct().size > 1)
     }
 
-    var fromShape by mutableStateOf(if (connecting) loadingShapes.first() else restingShape)
+    val button = MorphingShape(
+        when {
+            confirming -> confirmShape
+            connecting -> loadingShapes.first()
+            else -> restingShape
+        }
+    )
+    val cancelButton = MorphingShape(if (confirming) cancelShape else restingShape)
+
+    var showIcon by mutableStateOf(confirming || !connecting)
         private set
-    var toShape by mutableStateOf(fromShape)
-        private set
-    var showIcon by mutableStateOf(!connecting)
+    var isSplit by mutableStateOf(confirming)
         private set
 
-    private val progressAnimatable = Animatable(0f)
-    val progress: Float get() = progressAnimatable.value
+    private val splitAnimatable = Animatable(if (confirming) 1f else 0f)
+    val split: Float get() = splitAnimatable.value
 
     suspend fun animateLoading(): Nothing {
         showIcon = false
+        merge()
         while (true) {
             for (shape in loadingShapes) {
-                morphTo(shape)
+                button.morphTo(shape)
                 awaitMotionEnabled()
             }
         }
@@ -43,26 +56,33 @@ internal class ConnectionButtonMorph(
 
     suspend fun settle() {
         showIcon = true
-        returnToCurrentShape()
-        morphTo(restingShape)
-    }
-
-    private suspend fun returnToCurrentShape() {
-        if (fromShape != toShape && progressAnimatable.value > 0f) {
-            progressAnimatable.animateTo(0f, ConnectionMorphAnimationSpec)
-            toShape = fromShape
-            progressAnimatable.snapTo(0f)
+        coroutineScope {
+            launch { button.morphTo(restingShape) }
+            launch { merge() }
         }
     }
 
-    private suspend fun morphTo(nextShape: RoundedPolygon) {
-        if (fromShape == nextShape) return
-        toShape = nextShape
-        progressAnimatable.snapTo(0f)
-        progressAnimatable.animateTo(1f, ConnectionMorphAnimationSpec)
-        fromShape = nextShape
-        toShape = nextShape
-        progressAnimatable.snapTo(0f)
+    suspend fun split() {
+        showIcon = true
+        if (!isSplit) {
+            button.returnToCurrentShape()
+            cancelButton.snapTo(button.fromShape)
+            isSplit = true
+        }
+        coroutineScope {
+            launch { button.morphTo(confirmShape) }
+            launch { cancelButton.morphTo(cancelShape) }
+            launch { splitAnimatable.animateTo(1f, SplitAnimationSpec) }
+        }
+    }
+
+    private suspend fun merge() {
+        if (!isSplit) return
+        coroutineScope {
+            launch { cancelButton.morphTo(restingShape) }
+            launch { splitAnimatable.animateTo(0f, SplitAnimationSpec) }
+        }
+        isSplit = false
     }
 
     private suspend fun awaitMotionEnabled() {
@@ -73,8 +93,8 @@ internal class ConnectionButtonMorph(
     }
 }
 
-private val ConnectionMorphAnimationSpec = spring<Float>(
-    dampingRatio = Spring.DampingRatioMediumBouncy,
+private val SplitAnimationSpec = spring<Float>(
+    dampingRatio = Spring.DampingRatioLowBouncy,
     stiffness = Spring.StiffnessLow,
-    visibilityThreshold = 0.1f,
+    visibilityThreshold = 0.001f,
 )

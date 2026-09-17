@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.feature.dashboard.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,6 +76,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     LaunchedEffect(inErrorState) {
         if (!inErrorState) connectionSnackbar.value?.cancel()
     }
+    BackHandler(enabled = state.pendingSwitchProfileId != null) { component.onCancelSwitch() }
 
     Box(
         modifier = modifier
@@ -109,7 +111,10 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 connectionState = state.connectionState,
                 connectedSinceMillis = state.connectedSinceMillis,
                 hasActiveProfile = state.activeProfile != null,
+                pendingSwitchName = state.pendingSwitchProfile?.name,
                 onToggle = component::onToggleConnection,
+                onConfirmSwitch = component::onConfirmSwitch,
+                onCancelSwitch = component::onCancelSwitch,
                 onOpenSession = component::onOpenSession,
             )
             Spacer(Modifier.height(spacing.xLarge))

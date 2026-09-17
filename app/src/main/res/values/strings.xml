@@ -38,6 +38,9 @@
 
     <string name="dashboard_action_import_cd">Import profile</string>
     <string name="dashboard_connection_time">Connection Time</string>
+    <string name="dashboard_confirm_switch_title">Confirm profile switch?</string>
+    <string name="dashboard_confirm_switch_cd">Switch to %1$s</string>
+    <string name="dashboard_cancel_switch_cd">Cancel profile switch</string>
     <string name="dashboard_empty_hint">Import a hysteria2:// link or a profile JSON to get started</string>
     <string name="dashboard_profiles_section">PROFILES</string>
 
