@@ -53,7 +53,11 @@ class RootComponent(
                     )
                 )
 
-                Config.Settings -> Child.Settings(settingsFactory.create(ctx))
+                Config.Settings -> Child.Settings(
+                    settingsFactory.create(ctx) { update ->
+                        navigation.bringToFront(Config.Update(update, UpdateTrigger.ManualCheck))
+                    }
+                )
 
                 Config.Logs -> Child.Logs(logsFactory.create(ctx))
 

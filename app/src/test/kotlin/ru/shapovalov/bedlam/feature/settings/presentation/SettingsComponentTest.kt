@@ -15,8 +15,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import ru.shapovalov.bedlam.core.power.domain.model.PowerRiskLevel
 import ru.shapovalov.bedlam.feature.settings.presentation.SettingsComponent.Child
+import ru.shapovalov.bedlam.feature.update.domain.model.AppUpdate
 import ru.shapovalov.bedlam.testing.MainDispatcherExtension
 import ru.shapovalov.bedlam.testing.TestGraph
+import ru.shapovalov.bedlam.testing.appUpdate
 import ru.shapovalov.bedlam.testing.powerSnapshot
 import ru.shapovalov.bedlam.testing.withComponentContext
 
@@ -31,7 +33,7 @@ class SettingsComponentTest {
     fun `opening app selection routing and battery pushes each screen`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
             assertEquals(Child.Root, settings.activeChild())
 
@@ -51,7 +53,7 @@ class SettingsComponentTest {
     fun `opening about pushes the about screen and back returns to the root`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
 
             settings.onOpenAbout()
@@ -67,7 +69,7 @@ class SettingsComponentTest {
     fun `back returns to the settings root`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
             settings.onOpenRouting()
 
@@ -82,7 +84,7 @@ class SettingsComponentTest {
     fun `nested screens close through their own back callbacks`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
 
             settings.onOpenAppSelection()
@@ -103,7 +105,7 @@ class SettingsComponentTest {
     fun `marking reliability confirmed stores the fingerprint`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
 
             settings.onMarkReliabilityConfirmed("fp")
@@ -117,7 +119,7 @@ class SettingsComponentTest {
     fun `switching the tile flag writes and reflects it`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
 
             settings.onSetQuickSettingsTileAdded(true)
@@ -131,7 +133,7 @@ class SettingsComponentTest {
     fun `creating the settings screen does not read power settings`() = runTest {
         val graph = TestGraph()
         withComponentContext { _, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
 
             advanceTimeBy(5_000)
 
@@ -145,7 +147,7 @@ class SettingsComponentTest {
         val graph = TestGraph()
         graph.power.snapshots.value = powerSnapshot(risk = PowerRiskLevel.High)
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
 
             lifecycle.resume()
             assertEquals(PowerRiskLevel.High, settings.state.value.reliabilitySnapshot?.riskLevel)
@@ -167,7 +169,7 @@ class SettingsComponentTest {
         graph.power.snapshotGate = gate
         graph.power.snapshots.value = powerSnapshot(risk = PowerRiskLevel.High)
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
             lifecycle.pause()
 
@@ -185,7 +187,7 @@ class SettingsComponentTest {
     fun `the battery screen polls every second while visible`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
 
             settings.onOpenBatteryReliability()
@@ -205,7 +207,7 @@ class SettingsComponentTest {
     fun `closing the battery screen stops polling`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
             settings.onOpenBatteryReliability()
 
@@ -221,7 +223,7 @@ class SettingsComponentTest {
     fun `pausing the settings component stops polling and resuming restarts it`() = runTest {
         val graph = TestGraph()
         withComponentContext { lifecycle, context ->
-            val settings = graph.settingsFactory.create(context)
+            val settings = graph.settingsFactory.create(context) {}
             lifecycle.resume()
             settings.onOpenBatteryReliability()
 
@@ -237,6 +239,41 @@ class SettingsComponentTest {
             advanceTimeBy(3_000)
             runCurrent()
             assertEquals(resumed + 3, graph.power.snapshotReads)
+        }
+    }
+
+    @Test
+    fun `an update found by a check is handed to the update screen`() = runTest {
+        val graph = TestGraph()
+        graph.updates.latest = appUpdate()
+        val opened = mutableListOf<AppUpdate>()
+        withComponentContext { lifecycle, context ->
+            val settings = graph.settingsFactory.create(context) { opened += it }
+            lifecycle.resume()
+
+            settings.onCheckForUpdates()
+
+            assertEquals(listOf(appUpdate()), opened)
+        }
+    }
+
+    @Test
+    fun `an update found after settings was left is not opened`() = runTest {
+        val graph = TestGraph()
+        val gate = CompletableDeferred<Unit>()
+        graph.updates.latest = appUpdate()
+        graph.updates.fetchGate = gate
+        val opened = mutableListOf<AppUpdate>()
+        withComponentContext { lifecycle, context ->
+            val settings = graph.settingsFactory.create(context) { opened += it }
+            lifecycle.resume()
+            settings.onCheckForUpdates()
+
+            lifecycle.pause()
+            gate.complete(Unit)
+
+            assertEquals(emptyList<AppUpdate>(), opened)
+            assertEquals(SettingsStore.State.UpdateCheck.Idle, settings.state.value.updateCheck)
         }
     }
 }

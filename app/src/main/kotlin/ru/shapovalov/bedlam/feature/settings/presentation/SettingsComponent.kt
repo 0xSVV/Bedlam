@@ -7,23 +7,28 @@ import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.router.stack.pop
 import com.arkivanov.decompose.router.stack.pushNew
 import com.arkivanov.decompose.value.Value
+import com.arkivanov.essenty.lifecycle.Lifecycle
 import com.arkivanov.essenty.lifecycle.doOnPause
 import com.arkivanov.essenty.lifecycle.doOnResume
 import com.arkivanov.mvikotlin.core.instancekeeper.getStore
+import com.arkivanov.mvikotlin.extensions.coroutines.labels
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import ru.shapovalov.bedlam.core.util.componentScope
 import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponent
 import ru.shapovalov.bedlam.feature.appselection.presentation.AppSelectionComponentFactory
 import ru.shapovalov.bedlam.feature.routing.presentation.RoutingComponent
 import ru.shapovalov.bedlam.feature.routing.presentation.RoutingComponentFactory
+import ru.shapovalov.bedlam.feature.update.domain.model.AppUpdate
 
 class SettingsComponent(
     componentContext: ComponentContext,
     private val appSelectionFactory: AppSelectionComponentFactory,
     private val routingFactory: RoutingComponentFactory,
     storeFactory: SettingsStoreFactory,
+    private val onOpenUpdate: OnOpenUpdate,
 ) : ComponentContext by componentContext {
 
     private val navigation = StackNavigation<Config>()
@@ -68,6 +73,14 @@ class SettingsComponent(
     init {
         lifecycle.doOnResume { store.accept(SettingsStore.Intent.SetForeground(true)) }
         lifecycle.doOnPause { store.accept(SettingsStore.Intent.SetForeground(false)) }
+        scope.launch {
+            store.labels.collect { label ->
+                when (label) {
+                    is SettingsStore.Label.OpenUpdate ->
+                        if (lifecycle.state == Lifecycle.State.RESUMED) onOpenUpdate.invoke(label.update)
+                }
+            }
+        }
     }
 
     fun onBack() {
@@ -96,6 +109,14 @@ class SettingsComponent(
 
     fun onMarkReliabilityConfirmed(fingerprint: String) {
         store.accept(SettingsStore.Intent.MarkReliabilityConfirmed(fingerprint))
+    }
+
+    fun onCheckForUpdates() {
+        store.accept(SettingsStore.Intent.CheckForUpdates)
+    }
+
+    fun interface OnOpenUpdate {
+        fun invoke(update: AppUpdate)
     }
 
     sealed interface Child {
