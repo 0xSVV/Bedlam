@@ -47,6 +47,8 @@ class DashboardComponent(
 
     fun onToggleConnection() = store.accept(DashboardStore.Intent.ToggleConnection)
     fun onSelectProfile(id: String) = store.accept(DashboardStore.Intent.SelectProfile(id))
+    fun onConfirmSwitch() = store.accept(DashboardStore.Intent.ConfirmSwitch)
+    fun onCancelSwitch() = store.accept(DashboardStore.Intent.CancelSwitch)
     fun onOpenImport(prefill: String) = store.accept(DashboardStore.Intent.OpenImport(prefill))
     fun onCloseImport() = store.accept(DashboardStore.Intent.CloseImport)
     fun onImportProfile(format: ProfileImportFormat, text: String, name: String) =

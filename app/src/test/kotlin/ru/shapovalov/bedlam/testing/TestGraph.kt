@@ -153,6 +153,7 @@ class TestGraph(
                     VpnServiceLauncher(android, profiles, Json),
                     runtimeState,
                 ),
+                idleReconnectProfile(client, profiles),
             )
         )
     }

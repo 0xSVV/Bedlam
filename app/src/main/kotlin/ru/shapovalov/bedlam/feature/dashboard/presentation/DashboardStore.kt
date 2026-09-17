@@ -12,6 +12,8 @@ interface DashboardStore :
     sealed interface Intent {
         data object ToggleConnection : Intent
         data class SelectProfile(val id: String) : Intent
+        data object ConfirmSwitch : Intent
+        data object CancelSwitch : Intent
         data class OpenImport(val prefill: String) : Intent
         data object CloseImport : Intent
         data class ImportProfile(
@@ -28,6 +30,7 @@ interface DashboardStore :
     data class State(
         val profiles: List<Profile> = emptyList(),
         val activeProfileId: String? = null,
+        val pendingSwitchProfileId: String? = null,
         val connectionState: ConnectionState = ConnectionState.Disconnected(),
         val connectedSinceMillis: Long? = null,
         val importSheet: ImportSheetSeed? = null,
@@ -38,6 +41,8 @@ interface DashboardStore :
         val latencies: Map<String, LatencyResult> = emptyMap(),
     ) {
         val activeProfile: Profile? get() = profiles.firstOrNull { it.id == activeProfileId }
+        val pendingSwitchProfile: Profile?
+            get() = profiles.firstOrNull { it.id == pendingSwitchProfileId }
     }
 
     data class ImportSheetSeed(val text: String, val format: ProfileImportFormat)

@@ -33,6 +33,7 @@ class DashboardExecutorTest {
 
     private val home = testProfile("a", name = "Home")
     private val work = testProfile("b", name = "Work")
+    private val cafe = testProfile("c", name = "Cafe")
     private val seed = DashboardStore.ImportSheetSeed(TEST_LINK, ProfileImportFormat.Link)
 
     private fun store(
@@ -41,6 +42,7 @@ class DashboardExecutorTest {
         client: FakeHysteriaClient = FakeHysteriaClient(),
         pinger: FakeProfilePinger = FakeProfilePinger(),
         bootstrapper: TestBootstrapper<Action>? = null,
+        switchProfile: suspend (String) -> Unit = {},
     ): Store<DashboardStore.Intent, DashboardStore.State, DashboardStore.Label> =
         DefaultStoreFactory().create(
             initialState = state,
@@ -50,9 +52,24 @@ class DashboardExecutorTest {
                     SetActiveProfileUseCase(repository),
                     ImportProfileUseCase(repository, client),
                     pinger::ping,
+                    switchProfile,
                 )
             },
             reducer = DashboardReducer,
+        )
+
+    private fun activeTunnelStates() = listOf(
+        ConnectionState.Connecting,
+        testConnected(),
+        ConnectionState.Reconnecting(1, "timeout"),
+    )
+
+    private fun pendingSwitchState(connection: ConnectionState = testConnected()) =
+        DashboardStore.State(
+            profiles = listOf(home, work, cafe),
+            activeProfileId = "a",
+            pendingSwitchProfileId = "b",
+            connectionState = connection,
         )
 
     @Test
@@ -70,12 +87,7 @@ class DashboardExecutorTest {
 
     @Test
     fun `toggle while the tunnel is active requests a stop`() = runTest {
-        val active = listOf(
-            ConnectionState.Connecting,
-            testConnected(),
-            ConnectionState.Reconnecting(1, "timeout"),
-        )
-        active.forEach { connection ->
+        activeTunnelStates().forEach { connection ->
             val state = DashboardStore.State(
                 profiles = listOf(home),
                 activeProfileId = "a",
@@ -115,6 +127,129 @@ class DashboardExecutorTest {
             store.accept(DashboardStore.Intent.SelectProfile("b"))
 
             assertEquals("b", repository.active.value)
+            assertNull(store.state.pendingSwitchProfileId)
+        }
+    }
+
+    @Test
+    fun `selecting another profile while the tunnel is active asks for confirmation`() = runTest {
+        activeTunnelStates().forEach { connection ->
+            val repository = FakeProfileRepository(listOf(home, work), activeId = "a")
+            val state = DashboardStore.State(
+                profiles = listOf(home, work),
+                activeProfileId = "a",
+                connectionState = connection,
+            )
+            store(state, repository).disposeAfter { store ->
+                store.accept(DashboardStore.Intent.SelectProfile("b"))
+
+                assertEquals("b", store.state.pendingSwitchProfileId, "$connection")
+                assertEquals(work, store.state.pendingSwitchProfile, "$connection")
+                assertEquals("a", repository.active.value, "$connection")
+            }
+        }
+    }
+
+    @Test
+    fun `confirming the switch activates the profile and restarts the tunnel with it`() = runTest {
+        val repository = FakeProfileRepository(listOf(home, work, cafe), activeId = "a")
+        val switches = mutableListOf<String>()
+        val switchProfile: suspend (String) -> Unit = { id ->
+            switches += "$id while ${repository.active.value} is active"
+        }
+        store(pendingSwitchState(), repository, switchProfile = switchProfile).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ConfirmSwitch)
+
+            assertNull(store.state.pendingSwitchProfileId)
+            assertEquals("b", repository.active.value)
+            assertEquals(listOf("b while b is active"), switches)
+        }
+    }
+
+    @Test
+    fun `cancelling the switch keeps the current profile`() = runTest {
+        val repository = FakeProfileRepository(listOf(home, work, cafe), activeId = "a")
+        val switches = mutableListOf<String>()
+        store(pendingSwitchState(), repository, switchProfile = { switches += it }).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.CancelSwitch)
+
+            assertNull(store.state.pendingSwitchProfileId)
+            assertEquals("a", repository.active.value)
+            assertEquals(emptyList<String>(), switches)
+        }
+    }
+
+    @Test
+    fun `selecting the active profile cancels a pending switch`() = runTest {
+        val repository = FakeProfileRepository(listOf(home, work, cafe), activeId = "a")
+        store(pendingSwitchState(), repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.SelectProfile("a"))
+
+            assertNull(store.state.pendingSwitchProfileId)
+            assertEquals("a", repository.active.value)
+        }
+    }
+
+    @Test
+    fun `selecting a third profile moves the pending switch`() = runTest {
+        val repository = FakeProfileRepository(listOf(home, work, cafe), activeId = "a")
+        store(pendingSwitchState(), repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.SelectProfile("c"))
+
+            assertEquals("c", store.state.pendingSwitchProfileId)
+            assertEquals("a", repository.active.value)
+        }
+    }
+
+    @Test
+    fun `a pending switch is applied without a restart when the tunnel stops`() = runTest {
+        listOf(ConnectionState.Disconnected(), ConnectionState.Error("tls")).forEach { stopped ->
+            val repository = FakeProfileRepository(listOf(home, work, cafe), activeId = "a")
+            val switches = mutableListOf<String>()
+            val bootstrapper = TestBootstrapper<Action>()
+            val store = store(
+                pendingSwitchState(),
+                repository,
+                bootstrapper = bootstrapper,
+                switchProfile = { switches += it },
+            )
+            store.disposeAfter {
+                bootstrapper.send(Action.ConnectionStateChanged(stopped, null))
+
+                assertNull(store.state.pendingSwitchProfileId, "$stopped")
+                assertEquals("b", repository.active.value, "$stopped")
+                assertEquals(emptyList<String>(), switches, "$stopped")
+            }
+        }
+    }
+
+    @Test
+    fun `a pending switch survives a tunnel that keeps reconnecting`() = runTest {
+        val repository = FakeProfileRepository(listOf(home, work, cafe), activeId = "a")
+        val bootstrapper = TestBootstrapper<Action>()
+        store(pendingSwitchState(), repository, bootstrapper = bootstrapper).disposeAfter { store ->
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Reconnecting(2, "lost"), null))
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Connecting, null))
+
+            assertEquals("b", store.state.pendingSwitchProfileId)
+            assertEquals("a", repository.active.value)
+        }
+    }
+
+    @Test
+    fun `confirming without a pending switch does nothing`() = runTest {
+        val repository = FakeProfileRepository(listOf(home, work), activeId = "a")
+        val switches = mutableListOf<String>()
+        val state = DashboardStore.State(
+            profiles = listOf(home, work),
+            activeProfileId = "a",
+            connectionState = testConnected(),
+        )
+        store(state, repository, switchProfile = { switches += it }).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ConfirmSwitch)
+
+            assertEquals("a", repository.active.value)
+            assertEquals(emptyList<String>(), switches)
         }
     }
 

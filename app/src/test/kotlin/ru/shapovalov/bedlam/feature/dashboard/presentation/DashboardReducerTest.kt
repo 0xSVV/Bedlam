@@ -249,4 +249,36 @@ class DashboardReducerTest {
             state.latencies,
         )
     }
+
+    @Test
+    fun `a switch request is kept until it is cleared`() {
+        val requested = DashboardReducer.reduceAll(
+            DashboardStore.State(profiles = listOf(home, work), activeProfileId = "a"),
+            Msg.SwitchRequested("b"),
+        )
+        assertEquals("b", requested.pendingSwitchProfileId)
+        assertEquals(work, requested.pendingSwitchProfile)
+
+        val cleared = DashboardReducer.reduceAll(requested, Msg.SwitchCleared)
+        assertNull(cleared.pendingSwitchProfileId)
+        assertNull(cleared.pendingSwitchProfile)
+    }
+
+    @Test
+    fun `loaded profiles drop a pending switch to a removed or activated profile`() {
+        val pending = DashboardStore.State(
+            profiles = listOf(home, work),
+            activeProfileId = "a",
+            pendingSwitchProfileId = "b",
+        )
+
+        val kept = DashboardReducer.reduceAll(pending, Msg.ProfilesLoaded(listOf(home, work), "a"))
+        assertEquals("b", kept.pendingSwitchProfileId)
+
+        val removed = DashboardReducer.reduceAll(pending, Msg.ProfilesLoaded(listOf(home), "a"))
+        assertNull(removed.pendingSwitchProfileId)
+
+        val activated = DashboardReducer.reduceAll(pending, Msg.ProfilesLoaded(listOf(home, work), "b"))
+        assertNull(activated.pendingSwitchProfileId)
+    }
 }

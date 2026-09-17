@@ -9,6 +9,7 @@ import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ObserveActiveProfileIdUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
 import ru.shapovalov.bedlam.core.vpn.ReconcileConnectionStateUseCase
+import ru.shapovalov.bedlam.core.vpn.ReconnectProfileUseCase
 import ru.shapovalov.bedlam.core.vpn.VpnRuntimeStateRepository
 import ru.shapovalov.hysteria.api.HysteriaClient
 
@@ -23,6 +24,7 @@ class DashboardStoreFactory(
     private val pingProfile: PingProfileUseCase,
     private val runtimeStateRepository: VpnRuntimeStateRepository,
     private val reconcileConnectionState: ReconcileConnectionStateUseCase,
+    private val reconnectProfile: ReconnectProfileUseCase,
 ) {
     fun create(): DashboardStore =
         object : DashboardStore,
@@ -42,6 +44,7 @@ class DashboardStoreFactory(
                         setActiveProfile,
                         importProfile,
                         pingProfile::invoke,
+                        reconnectProfile::switchTo,
                     )
                 },
                 reducer = DashboardReducer,
