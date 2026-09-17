@@ -397,7 +397,7 @@
     <string name="update_notes_empty">No release notes for this version.</string>
     <string name="update_action_install">Download and install</string>
     <string name="update_action_skip">Not now</string>
-    <string name="update_last_reminder">After Not now, Bedlam will not offer this version again. You can still install it from Check for updates in Settings.</string>
+    <string name="update_last_reminder">If you tap Not now, Bedlam will not offer this version again. You can still install it from Check for updates in Settings.</string>
     <string name="update_action_retry">Try again</string>
     <string name="update_downloading">Downloading %1$s of %2$s…</string>
     <string name="update_installing">Installing…</string>
