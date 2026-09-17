@@ -36,8 +36,16 @@ internal class UpdateExecutor(
         when (intent) {
             UpdateStore.Intent.Install -> startDownload()
             UpdateStore.Intent.Skip -> skip()
+            UpdateStore.Intent.Back -> if (state().phase.isBusy()) {
+                publish(UpdateStore.Label.Dismiss)
+            } else {
+                skip()
+            }
         }
     }
+
+    private fun UpdateStore.State.Phase.isBusy(): Boolean =
+        this is UpdateStore.State.Phase.Downloading || this == UpdateStore.State.Phase.Installing
 
     private fun startDownload() {
         if (downloadJob?.isActive == true) return

@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.feature.update.presentation
 
 import com.arkivanov.mvikotlin.main.store.DefaultStoreFactory
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -111,6 +112,68 @@ class UpdateExecutorTest {
             val labels = store.recordLabels()
 
             store.accept(UpdateStore.Intent.Skip)
+
+            assertEquals(emptyList<String>(), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `back on the offer counts as a skip`() = runTest {
+        val repository = FakeUpdateRepository()
+        store(repository).disposeAfter { store ->
+            val labels = store.recordLabels()
+
+            store.accept(UpdateStore.Intent.Back)
+
+            assertEquals(listOf("9.9.9"), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `back after a failed install counts as a skip`() = runTest {
+        val repository = FakeUpdateRepository()
+        val installer = FakeUpdateInstaller()
+        store(repository, installer).disposeAfter { store ->
+            val labels = store.recordLabels()
+            installer.status.value = InstallStatus.SignatureMismatch
+
+            store.accept(UpdateStore.Intent.Back)
+
+            assertEquals(listOf("9.9.9"), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `back while downloading closes without counting a skip`() = runTest {
+        val repository = FakeUpdateRepository(
+            download = flow {
+                emit(DownloadEvent.Progress(100, 1_000))
+                awaitCancellation()
+            },
+        )
+        store(repository).disposeAfter { store ->
+            val labels = store.recordLabels()
+            store.accept(UpdateStore.Intent.Install)
+
+            store.accept(UpdateStore.Intent.Back)
+
+            assertEquals(emptyList<String>(), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `back while installing closes without counting a skip`() = runTest {
+        val repository = FakeUpdateRepository()
+        val installer = FakeUpdateInstaller()
+        store(repository, installer).disposeAfter { store ->
+            val labels = store.recordLabels()
+            installer.status.value = InstallStatus.InProgress
+
+            store.accept(UpdateStore.Intent.Back)
 
             assertEquals(emptyList<String>(), repository.skipped)
             assertEquals(listOf(UpdateStore.Label.Dismiss), labels)

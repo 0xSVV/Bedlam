@@ -8,6 +8,7 @@ interface UpdateStore : Store<UpdateStore.Intent, UpdateStore.State, UpdateStore
     sealed interface Intent {
         data object Install : Intent
         data object Skip : Intent
+        data object Back : Intent
     }
 
     sealed interface Label {
