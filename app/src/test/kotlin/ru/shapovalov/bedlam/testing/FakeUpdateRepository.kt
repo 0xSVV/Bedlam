@@ -17,6 +17,10 @@ class FakeUpdateRepository(
 
     val skipped = mutableListOf<String>()
     var skipGate: CompletableDeferred<Unit>? = null
+    var fetchGate: CompletableDeferred<Unit>? = null
+    var fetchError: Exception? = null
+    var fetches = 0
+        private set
 
     override val availableVersion = MutableStateFlow<String?>(null)
 
@@ -24,7 +28,12 @@ class FakeUpdateRepository(
 
     override suspend fun checkForUpdate(): AppUpdate? = available
 
-    override suspend fun fetchUpdate(): AppUpdate? = latest
+    override suspend fun fetchUpdate(): AppUpdate? {
+        fetches++
+        fetchGate?.await()
+        fetchError?.let { throw it }
+        return latest
+    }
 
     override fun downloadApk(update: AppUpdate): Flow<DownloadEvent> = download
 
