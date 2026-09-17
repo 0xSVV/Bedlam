@@ -58,25 +58,30 @@ class UpdateRepositoryImpl(
             return@withContext null
         }
         dataStore.edit { it[KEY_LAST_CHECK_AT] = now }
+        val update = fetchUpdate() ?: return@withContext null
+        if (
+            isUpdateSuppressed(
+                skippedVersion = prefs[KEY_SKIPPED_VERSION],
+                skippedAtMillis = prefs[KEY_SKIPPED_AT],
+                skipCount = prefs[KEY_SKIP_COUNT] ?: 0,
+                candidate = update.versionName,
+                nowMillis = now,
+                ttlMillis = SKIP_TTL_MS,
+                skipLimit = SKIP_LIMIT,
+            )
+        ) {
+            return@withContext null
+        }
+        update
+    }
+
+    override suspend fun fetchUpdate(): AppUpdate? = withContext(Dispatchers.IO) {
         val release = json.decodeFromString(
             GitHubReleaseDto.serializer(),
             httpClient.get(LATEST_RELEASE_URL),
         )
         val latestVersion = release.tagName.removePrefix("v")
         if (!isNewer(candidate = latestVersion, installed = installedVersion())) {
-            return@withContext null
-        }
-        if (
-            isUpdateSuppressed(
-                skippedVersion = prefs[KEY_SKIPPED_VERSION],
-                skippedAtMillis = prefs[KEY_SKIPPED_AT],
-                skipCount = prefs[KEY_SKIP_COUNT] ?: 0,
-                candidate = latestVersion,
-                nowMillis = now,
-                ttlMillis = SKIP_TTL_MS,
-                skipLimit = SKIP_LIMIT,
-            )
-        ) {
             return@withContext null
         }
         val asset = pickAsset(release.assets, latestVersion, Build.SUPPORTED_ABIS.toList())

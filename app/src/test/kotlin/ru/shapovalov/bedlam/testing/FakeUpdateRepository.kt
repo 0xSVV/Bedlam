@@ -8,6 +8,7 @@ import ru.shapovalov.bedlam.feature.update.domain.repository.UpdateRepository
 
 class FakeUpdateRepository(
     var available: AppUpdate? = null,
+    var latest: AppUpdate? = null,
     var installed: String = "1.5.3",
     var download: Flow<DownloadEvent> = emptyFlow(),
 ) : UpdateRepository {
@@ -17,6 +18,8 @@ class FakeUpdateRepository(
     override fun installedVersion(): String = installed
 
     override suspend fun checkForUpdate(): AppUpdate? = available
+
+    override suspend fun fetchUpdate(): AppUpdate? = latest
 
     override fun downloadApk(update: AppUpdate): Flow<DownloadEvent> = download
 

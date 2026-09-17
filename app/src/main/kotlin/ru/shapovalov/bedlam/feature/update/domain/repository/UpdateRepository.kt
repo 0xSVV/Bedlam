@@ -7,6 +7,7 @@ import ru.shapovalov.bedlam.feature.update.domain.model.DownloadEvent
 interface UpdateRepository {
     fun installedVersion(): String
     suspend fun checkForUpdate(): AppUpdate?
+    suspend fun fetchUpdate(): AppUpdate?
     fun downloadApk(update: AppUpdate): Flow<DownloadEvent>
     suspend fun skipVersion(versionName: String)
 }
