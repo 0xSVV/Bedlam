@@ -19,6 +19,7 @@ internal class UpdateExecutor(
 ) :CoroutineExecutor<UpdateStore.Intent, Action, UpdateStore.State, Msg, UpdateStore.Label>() {
 
     private var downloadJob: Job? = null
+    private var skipJob: Job? = null
 
     override fun executeAction(action: Action) {
         when (action) {
@@ -73,7 +74,8 @@ internal class UpdateExecutor(
     }
 
     private fun skip() {
-        scope.launch {
+        if (skipJob != null) return
+        skipJob = scope.launch {
             if (trigger == UpdateTrigger.LaunchCheck) {
                 runCatching { skipUpdate(state().update) }
             }

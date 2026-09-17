@@ -1,5 +1,6 @@
 package ru.shapovalov.bedlam.testing
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
@@ -15,6 +16,7 @@ class FakeUpdateRepository(
 ) : UpdateRepository {
 
     val skipped = mutableListOf<String>()
+    var skipGate: CompletableDeferred<Unit>? = null
 
     override val availableVersion = MutableStateFlow<String?>(null)
 
@@ -28,5 +30,6 @@ class FakeUpdateRepository(
 
     override suspend fun skipVersion(versionName: String) {
         skipped += versionName
+        skipGate?.await()
     }
 }

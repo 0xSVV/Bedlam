@@ -119,6 +119,23 @@ class UpdateExecutorTest {
     }
 
     @Test
+    fun `taps that arrive while a skip is saved count once`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeUpdateRepository().apply { skipGate = gate }
+        store(repository).disposeAfter { store ->
+            val labels = store.recordLabels()
+
+            store.accept(UpdateStore.Intent.Skip)
+            store.accept(UpdateStore.Intent.Skip)
+            store.accept(UpdateStore.Intent.Back)
+            gate.complete(Unit)
+
+            assertEquals(listOf("9.9.9"), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
     fun `back on the offer counts as a skip`() = runTest {
         val repository = FakeUpdateRepository()
         store(repository).disposeAfter { store ->
