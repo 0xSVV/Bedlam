@@ -17,7 +17,7 @@ class UpdateStoreFactory(
     private val skipUpdate: SkipUpdateUseCase,
     private val installer: UpdateInstaller,
 ) {
-    fun create(update: AppUpdate): UpdateStore =
+    fun create(update: AppUpdate, trigger: UpdateTrigger): UpdateStore =
         object : UpdateStore, Store<UpdateStore.Intent, UpdateStore.State, UpdateStore.Label>
         by storeFactory.create(
             name = "UpdateStore",
@@ -26,7 +26,7 @@ class UpdateStoreFactory(
                 currentVersion = repository.installedVersion(),
             ),
             bootstrapper = UpdateBootstrapper(installer),
-            executorFactory = { UpdateExecutor(downloadUpdate, skipUpdate, installer) },
+            executorFactory = { UpdateExecutor(trigger, downloadUpdate, skipUpdate, installer) },
             reducer = UpdateReducer,
         ) {}
 }

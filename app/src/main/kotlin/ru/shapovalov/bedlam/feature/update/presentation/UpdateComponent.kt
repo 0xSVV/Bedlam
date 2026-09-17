@@ -13,10 +13,11 @@ class UpdateComponent(
     componentContext: ComponentContext,
     storeFactory: UpdateStoreFactory,
     update: AppUpdate,
+    trigger: UpdateTrigger,
     private val onDismiss: OnDismiss,
 ) : ComponentContext by componentContext {
 
-    private val store = instanceKeeper.getStore { storeFactory.create(update) }
+    private val store = instanceKeeper.getStore { storeFactory.create(update, trigger) }
     private val scope = componentScope()
 
     val state: StateFlow<UpdateStore.State> = store.stateFlow(scope)

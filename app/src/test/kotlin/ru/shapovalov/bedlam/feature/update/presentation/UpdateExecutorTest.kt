@@ -29,13 +29,14 @@ class UpdateExecutorTest {
     private fun store(
         repository: FakeUpdateRepository,
         installer: FakeUpdateInstaller = FakeUpdateInstaller(),
+        trigger: UpdateTrigger = UpdateTrigger.LaunchCheck,
     ): UpdateStore = UpdateStoreFactory(
         DefaultStoreFactory(),
         repository,
         DownloadUpdateUseCase(repository),
         SkipUpdateUseCase(repository),
         installer,
-    ).create(appUpdate())
+    ).create(appUpdate(), trigger)
 
     @Test
     fun `install downloads and hands the file to the installer`() = runTest {
@@ -99,6 +100,19 @@ class UpdateExecutorTest {
             store.accept(UpdateStore.Intent.Skip)
 
             assertEquals(listOf("9.9.9"), repository.skipped)
+            assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `skip after a manual check dismisses without counting a skip`() = runTest {
+        val repository = FakeUpdateRepository()
+        store(repository, trigger = UpdateTrigger.ManualCheck).disposeAfter { store ->
+            val labels = store.recordLabels()
+
+            store.accept(UpdateStore.Intent.Skip)
+
+            assertEquals(emptyList<String>(), repository.skipped)
             assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
         }
     }

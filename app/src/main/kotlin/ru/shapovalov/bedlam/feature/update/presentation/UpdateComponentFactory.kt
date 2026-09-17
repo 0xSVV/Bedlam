@@ -11,6 +11,7 @@ class UpdateComponentFactory(
     fun create(
         componentContext: ComponentContext,
         update: AppUpdate,
+        trigger: UpdateTrigger,
         onDismiss: UpdateComponent.OnDismiss,
-    ): UpdateComponent = UpdateComponent(componentContext, storeFactory, update, onDismiss)
+    ): UpdateComponent = UpdateComponent(componentContext, storeFactory, update, trigger, onDismiss)
 }
