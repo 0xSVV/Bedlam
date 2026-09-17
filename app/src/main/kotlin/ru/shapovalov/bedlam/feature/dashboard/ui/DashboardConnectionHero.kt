@@ -5,7 +5,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -34,6 +33,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Color
@@ -243,7 +244,7 @@ private fun ConnectionFab(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val morphShape = remember(morph) {
+    val morphClip = remember(morph) {
         GenericShape { size, _ ->
             val p = morph.toPath(progress = progress())
             p.transform(Matrix().apply { scale(x = size.width, y = size.height) })
@@ -253,8 +254,15 @@ private fun ConnectionFab(
     }
     Box(
         modifier = modifier
-            .shadow(ConnectionFabShadowElevation, morphShape)
-            .background(containerColor)
+            .shadow(ConnectionFabShadowElevation, MaterialTheme.shapes.extraLarge, clip = false)
+            .drawWithContent {
+                val path = morph.toPath(progress = progress())
+                path.transform(Matrix().apply { scale(x = size.width, y = size.height) })
+                path.translate(size.center - path.getBounds().center)
+                drawPath(path, color = containerColor)
+                drawContent()
+            }
+            .clip(morphClip)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(),
