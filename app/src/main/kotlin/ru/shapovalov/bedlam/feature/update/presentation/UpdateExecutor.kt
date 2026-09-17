@@ -30,6 +30,8 @@ internal class UpdateExecutor(
                 InstallStatus.SignatureMismatch -> dispatch(Msg.SignatureMismatch)
                 is InstallStatus.Failed -> dispatch(Msg.Failed(status.message))
             }
+
+            Action.LastReminder -> dispatch(Msg.LastReminder)
         }
     }
 

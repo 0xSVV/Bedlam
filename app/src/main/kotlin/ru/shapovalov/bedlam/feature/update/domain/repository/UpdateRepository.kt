@@ -11,4 +11,5 @@ interface UpdateRepository {
     suspend fun fetchUpdate(): AppUpdate?
     fun downloadApk(update: AppUpdate): Flow<DownloadEvent>
     suspend fun skipVersion(versionName: String)
+    suspend fun skipsLeft(versionName: String): Int
 }

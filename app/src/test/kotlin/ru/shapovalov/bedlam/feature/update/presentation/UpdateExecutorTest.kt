@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import ru.shapovalov.bedlam.feature.update.domain.model.DownloadEvent
@@ -194,6 +196,27 @@ class UpdateExecutorTest {
 
             assertEquals(emptyList<String>(), repository.skipped)
             assertEquals(listOf(UpdateStore.Label.Dismiss), labels)
+        }
+    }
+
+    @Test
+    fun `the offer with one skip left is marked as the last reminder`() = runTest {
+        val repository = FakeUpdateRepository().apply { remainingSkips = 1 }
+        store(repository).disposeAfter { store ->
+            assertTrue(store.state.lastReminder)
+        }
+    }
+
+    @Test
+    fun `earlier offers and manual checks are not marked as the last reminder`() = runTest {
+        val earlier = FakeUpdateRepository().apply { remainingSkips = 2 }
+        store(earlier).disposeAfter { store ->
+            assertFalse(store.state.lastReminder)
+        }
+
+        val manual = FakeUpdateRepository().apply { remainingSkips = 1 }
+        store(manual, trigger = UpdateTrigger.ManualCheck).disposeAfter { store ->
+            assertFalse(store.state.lastReminder)
         }
     }
 

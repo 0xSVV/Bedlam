@@ -8,6 +8,7 @@ internal sealed interface Msg {
     data object NeedsInstallPermission : Msg
     data object SignatureMismatch : Msg
     data class Failed(val message: String) : Msg
+    data object LastReminder : Msg
 }
 
 internal object UpdateReducer : Reducer<UpdateStore.State, Msg> {
@@ -20,5 +21,6 @@ internal object UpdateReducer : Reducer<UpdateStore.State, Msg> {
         Msg.NeedsInstallPermission -> copy(phase = UpdateStore.State.Phase.NeedsInstallPermission)
         Msg.SignatureMismatch -> copy(phase = UpdateStore.State.Phase.SignatureMismatch)
         is Msg.Failed -> copy(phase = UpdateStore.State.Phase.Failed(msg.message))
+        Msg.LastReminder -> copy(lastReminder = true)
     }
 }

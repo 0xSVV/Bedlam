@@ -117,6 +117,7 @@ fun UpdateContent(component: UpdateComponent, modifier: Modifier = Modifier) {
                 UpdateStore.State.Phase.Idle -> IdleActions(
                     onInstall = component::onInstall,
                     onSkip = component::onSkip,
+                    lastReminder = state.lastReminder,
                 )
 
                 is UpdateStore.State.Phase.Downloading -> DownloadProgress(phase)
@@ -185,7 +186,7 @@ internal fun ReleaseNotesCard(
 }
 
 @Composable
-internal fun IdleActions(onInstall: () -> Unit, onSkip: () -> Unit) {
+internal fun IdleActions(onInstall: () -> Unit, onSkip: () -> Unit, lastReminder: Boolean) {
     val spacing = MaterialTheme.spacing
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Button(onClick = onInstall, modifier = Modifier.fillMaxWidth()) {
@@ -194,6 +195,15 @@ internal fun IdleActions(onInstall: () -> Unit, onSkip: () -> Unit) {
         Spacer(Modifier.height(spacing.xSmall))
         TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.update_action_skip))
+        }
+        if (lastReminder) {
+            Spacer(Modifier.height(spacing.xSmall))
+            Text(
+                text = stringResource(R.string.update_last_reminder),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

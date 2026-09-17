@@ -33,4 +33,14 @@ class UpdateReducerTest {
 
         assertEquals(idle.copy(phase = UpdateStore.State.Phase.Failed("boom")), failed)
     }
+
+    @Test
+    fun `the last reminder flag survives phase changes`() {
+        val failed = UpdateReducer.reduceAll(idle, Msg.LastReminder, Msg.Failed("boom"))
+
+        assertEquals(
+            idle.copy(phase = UpdateStore.State.Phase.Failed("boom"), lastReminder = true),
+            failed,
+        )
+    }
 }

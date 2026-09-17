@@ -25,7 +25,7 @@ class UpdateStoreFactory(
                 update = update,
                 currentVersion = repository.installedVersion(),
             ),
-            bootstrapper = UpdateBootstrapper(installer),
+            bootstrapper = UpdateBootstrapper(update, trigger, repository, installer),
             executorFactory = { UpdateExecutor(trigger, downloadUpdate, skipUpdate, installer) },
             reducer = UpdateReducer,
         ) {}

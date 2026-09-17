@@ -17,6 +17,7 @@ class FakeUpdateRepository(
 
     val skipped = mutableListOf<String>()
     var skipGate: CompletableDeferred<Unit>? = null
+    var remainingSkips = 3
     var fetchGate: CompletableDeferred<Unit>? = null
     var fetchError: Exception? = null
     var fetches = 0
@@ -41,4 +42,6 @@ class FakeUpdateRepository(
         skipped += versionName
         skipGate?.await()
     }
+
+    override suspend fun skipsLeft(versionName: String): Int = remainingSkips
 }

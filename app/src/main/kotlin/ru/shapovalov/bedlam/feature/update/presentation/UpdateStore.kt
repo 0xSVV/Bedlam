@@ -19,6 +19,7 @@ interface UpdateStore : Store<UpdateStore.Intent, UpdateStore.State, UpdateStore
         val update: AppUpdate,
         val currentVersion: String,
         val phase: Phase = Phase.Idle,
+        val lastReminder: Boolean = false,
     ) {
         sealed interface Phase {
             data object Idle : Phase

@@ -166,6 +166,16 @@ class UpdateRepositoryImpl(
         }
     }
 
+    override suspend fun skipsLeft(versionName: String): Int {
+        val prefs = dataStore.data.first()
+        return skipsLeft(
+            skippedVersion = prefs[KEY_SKIPPED_VERSION],
+            skipCount = prefs[KEY_SKIP_COUNT] ?: 0,
+            version = versionName,
+            skipLimit = SKIP_LIMIT,
+        )
+    }
+
     private companion object {
         const val LATEST_RELEASE_URL =
             "https://api.github.com/repos/0xSVV/Bedlam/releases/latest"
@@ -250,3 +260,6 @@ internal fun isUpdateSuppressed(
 
 internal fun nextSkipCount(skippedVersion: String?, skipCount: Int, version: String): Int =
     if (skippedVersion == version) skipCount + 1 else 1
+
+internal fun skipsLeft(skippedVersion: String?, skipCount: Int, version: String, skipLimit: Int): Int =
+    if (skippedVersion == version) (skipLimit - skipCount).coerceAtLeast(0) else skipLimit

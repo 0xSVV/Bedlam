@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.shapovalov.bedlam.feature.update.data.isUpdateSuppressed
 import ru.shapovalov.bedlam.feature.update.data.nextSkipCount
+import ru.shapovalov.bedlam.feature.update.data.skipsLeft
 
 class UpdateSuppressionTest {
 
@@ -77,5 +78,22 @@ class UpdateSuppressionTest {
     @Test
     fun `skipping a newer version starts its count over`() {
         assertEquals(1, nextSkipCount(skippedVersion = "1.3.1", skipCount = 3, version = "1.4.0"))
+    }
+
+    private fun skipsLeftFor(skippedVersion: String?, skipCount: Int, version: String = "1.3.1"): Int =
+        skipsLeft(skippedVersion, skipCount, version, skipLimit)
+
+    @Test
+    fun `skips left count down to zero for the skipped version`() {
+        assertEquals(3, skipsLeftFor(skippedVersion = null, skipCount = 0))
+        assertEquals(2, skipsLeftFor(skippedVersion = "1.3.1", skipCount = 1))
+        assertEquals(1, skipsLeftFor(skippedVersion = "1.3.1", skipCount = 2))
+        assertEquals(0, skipsLeftFor(skippedVersion = "1.3.1", skipCount = 3))
+        assertEquals(0, skipsLeftFor(skippedVersion = "1.3.1", skipCount = 5))
+    }
+
+    @Test
+    fun `a version other than the skipped one has every skip left`() {
+        assertEquals(3, skipsLeftFor(skippedVersion = "1.3.1", skipCount = 3, version = "1.4.0"))
     }
 }
