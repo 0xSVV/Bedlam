@@ -79,7 +79,7 @@ func TestMarkDead_skippedWhenFatal(t *testing.T) {
 func TestNewReconnectClient_initialNonTerminalFailureRetries(t *testing.T) {
 	rec := &recordingHandler{}
 	cf := func() (*client.Config, error) { return nil, errors.New("network down") }
-	rc, err := newReconnectClient(cf, rec, func() (int64, int64) { return 0, 0 }, false)
+	rc, err := newReconnectClient(cf, rec, func() (int64, int64) { return 0, 0 }, false, false)
 	if err != nil {
 		t.Fatalf("non-terminal initial failure should not fail the session, got %v", err)
 	}
@@ -95,12 +95,62 @@ func TestNewReconnectClient_initialNonTerminalFailureRetries(t *testing.T) {
 func TestNewReconnectClient_initialTerminalFailureReturnsError(t *testing.T) {
 	rec := &recordingHandler{}
 	cf := func() (*client.Config, error) { return nil, coreErrs.AuthError{StatusCode: 401} }
-	rc, err := newReconnectClient(cf, rec, func() (int64, int64) { return 0, 0 }, false)
+	rc, err := newReconnectClient(cf, rec, func() (int64, int64) { return 0, 0 }, false, false)
 	if err == nil {
 		t.Fatal("terminal initial failure should fail the session")
 	}
 	if rc != nil {
 		t.Error("expected nil client on terminal failure")
+	}
+}
+
+func TestNewReconnectClient_lazyWaitsForFirstUse(t *testing.T) {
+	rec := &recordingHandler{}
+	calls := 0
+	cf := func() (*client.Config, error) {
+		calls++
+		return nil, errors.New("network down")
+	}
+	rc, err := newReconnectClient(cf, rec, func() (int64, int64) { return 0, 0 }, false, true)
+	if err != nil {
+		t.Fatalf("lazy client should start without dialing, got %v", err)
+	}
+	defer rc.Close()
+	rc.tick()
+	rc.checkNow()
+	rc.reset()
+	if calls != 0 {
+		t.Errorf("lazy client dialed %d times before any connection used it", calls)
+	}
+	if got := rec.snapshot(); len(got) != 0 {
+		t.Errorf("lazy client should emit nothing before first use, got %v", got)
+	}
+}
+
+func TestNewReconnectClient_lazyDialsOnFirstUse(t *testing.T) {
+	rec := &recordingHandler{}
+	calls := 0
+	cf := func() (*client.Config, error) {
+		calls++
+		return nil, errors.New("network down")
+	}
+	rc, err := newReconnectClient(cf, rec, func() (int64, int64) { return 0, 0 }, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	if _, err := rc.TCP("example.com:443"); err == nil {
+		t.Fatal("expected the failed dial to surface")
+	}
+	if calls != 1 {
+		t.Errorf("first TCP should dial once, got %d", calls)
+	}
+	if got := rec.snapshot(); !reflect.DeepEqual(got, []string{"reconnecting"}) {
+		t.Errorf("expected a reconnecting emit after the first dial failed, got %v", got)
+	}
+	rc.reset()
+	if calls != 2 {
+		t.Errorf("after first use the watchdog paths should dial again, got %d dials", calls)
 	}
 }
 

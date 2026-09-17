@@ -46,6 +46,9 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 
 	log(LogLevelInfo, srcTunnel, "Starting client for %s (auth=%s)",
 		cfg.Server, authSummary(cfg.Auth))
+	if cfg.Lazy {
+		log(LogLevelInfo, srcTunnel, "Lazy mode: connecting when the first connection needs the tunnel")
+	}
 
 	s := &Session{
 		protector:   protector,
@@ -83,6 +86,7 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 			return s.txBytes.Load(), s.rxBytes.Load()
 		},
 		cfg.TLSECH != "",
+		cfg.Lazy,
 	)
 	if err != nil {
 		log(LogLevelError, srcTunnel, "Connection failed: %s", err.Error())
