@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.feature.logs
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test
 import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
 import ru.shapovalov.bedlam.testing.FakeHysteriaClient
 import ru.shapovalov.bedlam.testing.logEntry
+import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LogBufferTest {
@@ -90,6 +92,25 @@ class LogBufferTest {
         val published = record(buffer)
         runCurrent()
         assertEquals((0L..10L).toList(), published.lastSeqs())
+    }
+
+    @Test
+    fun `app lines are kept in arrival order with the native lines`() = runTest {
+        val client = FakeHysteriaClient()
+        val appLog = MutableSharedFlow<LogEntry>(extraBufferCapacity = 16)
+        val published = record(LogBuffer(client, backgroundScope, appLog))
+        runCurrent()
+
+        client.logEntries.emit(logEntry(1))
+        runCurrent()
+        appLog.emit(logEntry(2).copy(source = "app", seq = -1L))
+        runCurrent()
+        client.logEntries.emit(logEntry(3))
+        advanceTimeBy(100)
+        runCurrent()
+
+        assertEquals(listOf(1L, -1L, 3L), published.lastSeqs())
+        assertEquals("app", published.last().entries[1].source)
     }
 
     @Test
