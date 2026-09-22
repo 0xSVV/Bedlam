@@ -211,6 +211,7 @@ func (h *tunHandler) newConnection(ctx context.Context, conn net.Conn, source M.
 	}
 
 	if h.rejectIPv6(destination) {
+		log(LogLevelDebug, srcTun, "TCP refused, IPv6 disabled: %s → %s", source, destination)
 		return fmt.Errorf("IPv6 disabled: %s", destination)
 	}
 
@@ -271,6 +272,7 @@ func (h *tunHandler) newPacketConnection(ctx context.Context, conn N.PacketConn,
 	defer conn.Close()
 
 	if h.rejectIPv6(destination) {
+		log(LogLevelDebug, srcTun, "UDP refused, IPv6 disabled: %s → %s", source, destination)
 		return fmt.Errorf("IPv6 disabled: %s", destination)
 	}
 
