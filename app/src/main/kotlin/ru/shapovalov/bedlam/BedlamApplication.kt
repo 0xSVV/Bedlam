@@ -6,6 +6,7 @@ import android.app.ActivityManager
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import ru.shapovalov.bedlam.core.log.AppLog
 import ru.shapovalov.bedlam.core.routing.work.RouteRefreshWorker
 import ru.shapovalov.bedlam.di.AppComponent
 import ru.shapovalov.bedlam.di.create
@@ -30,11 +31,10 @@ class BedlamApplication : Application() {
             .getHistoricalProcessExitReasons(packageName, 0, 1)
             .firstOrNull()
             ?: return
-        Log.i(
-            TAG,
-            "Last process exit: reason=${info.reasonLabel()}, " +
-                    "importance=${info.importance}, description=${info.description.orEmpty()}",
-        )
+        val message = "Last process exit: ${info.reasonLabel()}, importance ${info.importance}" +
+                info.description?.let { ", $it" }.orEmpty()
+        Log.i(TAG, message)
+        component.appLog.info(AppLog.SOURCE_APP, message)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
