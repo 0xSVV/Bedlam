@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import ru.shapovalov.bedlam.core.crash.CrashRecorder
+import ru.shapovalov.bedlam.core.datastore.PreferencesCorruption
 import ru.shapovalov.bedlam.core.log.AppLog
 import ru.shapovalov.bedlam.core.routing.work.RouteRefreshWorker
 import ru.shapovalov.bedlam.di.AppComponent
@@ -25,6 +26,10 @@ class BedlamApplication : Application() {
         val crashRecorder = CrashRecorder(this)
         crashRecorder.install()
         component = AppComponent::class.create(this)
+        PreferencesCorruption.reporter = { name, error ->
+            PreferencesCorruption.logReporter(name, error)
+            component.appLog.warn(AppLog.SOURCE_APP, "Replaced the corrupt $name preferences: $error")
+        }
         try {
             component.logBuffer
         } catch (error: LinkageError) {

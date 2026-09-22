@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Inject
+import ru.shapovalov.bedlam.core.datastore.PreferencesCorruption
 import ru.shapovalov.bedlam.core.network.AppHttpClient
 import ru.shapovalov.bedlam.feature.update.domain.model.AppUpdate
 import ru.shapovalov.bedlam.feature.update.domain.model.DownloadEvent
@@ -31,6 +32,7 @@ import java.net.URL
 
 private val Context.updateDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "update",
+    corruptionHandler = PreferencesCorruption.handler("update"),
 )
 
 @Inject
