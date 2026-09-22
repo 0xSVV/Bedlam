@@ -3,4 +3,7 @@
     <cache-path
         name="logs"
         path="logs/" />
+    <files-path
+        name="crash"
+        path="crash/" />
 </paths>

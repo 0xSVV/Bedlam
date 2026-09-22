@@ -6,6 +6,7 @@ import android.app.ActivityManager
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import ru.shapovalov.bedlam.core.crash.CrashRecorder
 import ru.shapovalov.bedlam.core.log.AppLog
 import ru.shapovalov.bedlam.core.routing.work.RouteRefreshWorker
 import ru.shapovalov.bedlam.di.AppComponent
@@ -18,8 +19,13 @@ class BedlamApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val crashRecorder = CrashRecorder(this)
+        crashRecorder.install()
         component = AppComponent::class.create(this)
         component.logBuffer
+        crashRecorder.unreportedCrash()?.let { report ->
+            component.appLog.error(AppLog.SOURCE_APP, "Previous launch crashed\n$report")
+        }
         logLastProcessExitReason()
         RouteRefreshWorker.schedule(this)
     }
