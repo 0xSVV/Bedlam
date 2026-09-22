@@ -128,6 +128,21 @@ func (h *tunHandler) isResolverAddr(dest M.Socksaddr) bool {
 	return h.dns != nil && h.dns.isListenAddr(dest.Addr)
 }
 
+func (h *tunHandler) answerLocally(query []byte) []byte {
+	if h.ipv6Enabled {
+		return nil
+	}
+	qtype, ok := dnsQuestionType(query)
+	if !ok || qtype != dnsTypeAAAA {
+		return nil
+	}
+	resp := buildNoData(query)
+	if resp != nil {
+		log(LogLevelDebug, srcDNS, "AAAA query answered empty: IPv6 disabled")
+	}
+	return resp
+}
+
 func (h *tunHandler) countDNS(tx, rx int) {
 	h.session.addTx(tx)
 	h.session.addRx(rx)
@@ -196,6 +211,7 @@ func (h *tunHandler) newConnection(ctx context.Context, conn net.Conn, source M.
 	}
 
 	if h.rejectIPv6(destination) {
+		log(LogLevelDebug, srcTun, "TCP refused, IPv6 disabled: %s → %s", source, destination)
 		return fmt.Errorf("IPv6 disabled: %s", destination)
 	}
 
@@ -256,6 +272,7 @@ func (h *tunHandler) newPacketConnection(ctx context.Context, conn N.PacketConn,
 	defer conn.Close()
 
 	if h.rejectIPv6(destination) {
+		log(LogLevelDebug, srcTun, "UDP refused, IPv6 disabled: %s → %s", source, destination)
 		return fmt.Errorf("IPv6 disabled: %s", destination)
 	}
 
@@ -302,6 +319,13 @@ func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, def
 		var src M.Socksaddr
 		if ap, perr := netip.ParseAddrPort(dnsAddr); perr == nil {
 			src = M.SocksaddrFromNetIP(ap)
+		}
+
+		if resp := h.answerLocally(query); resp != nil {
+			if werr := conn.WritePacket(buf.As(resp), src); werr != nil {
+				log(LogLevelDebug, srcDNS, "DNS write to local error: %s", werr)
+			}
+			continue
 		}
 
 		if resp := h.session.dnsCache.tryCached(resolver, query); resp != nil {
@@ -353,14 +377,17 @@ func (h *tunHandler) serveDNSStream(ctx context.Context, conn net.Conn) error {
 		}
 		_ = conn.SetReadDeadline(time.Time{})
 
-		qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
-		resp, err := h.session.dnsCache.resolve(qctx, h.dns, query, h.countDNS)
-		cancel()
-		if err != nil {
-			logDNSError(h.dns.id(), err)
-			resp = buildServFail(query)
-			if resp == nil {
-				return err
+		resp := h.answerLocally(query)
+		if resp == nil {
+			qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
+			resp, err = h.session.dnsCache.resolve(qctx, h.dns, query, h.countDNS)
+			cancel()
+			if err != nil {
+				logDNSError(h.dns.id(), err)
+				resp = buildServFail(query)
+				if resp == nil {
+					return err
+				}
 			}
 		}
 		_ = conn.SetWriteDeadline(time.Now().Add(dnsIOTimeout))

@@ -7,6 +7,7 @@ import me.tatarka.inject.annotations.Component
 import me.tatarka.inject.annotations.Provides
 import ru.shapovalov.bedlam.core.appfilter.di.AppFilterModule
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
+import ru.shapovalov.bedlam.core.log.AppLog
 import ru.shapovalov.bedlam.core.power.di.PowerModule
 import ru.shapovalov.bedlam.core.power.domain.repository.PowerReliabilityRepository
 import ru.shapovalov.bedlam.core.profile.di.ProfileModule
@@ -61,6 +62,7 @@ abstract class AppComponent(
     abstract val powerReliabilityRepository: PowerReliabilityRepository
     abstract val quickSettingsTileRepository: QuickSettingsTileRepository
     abstract val logBuffer: LogBuffer
+    abstract val appLog: AppLog
     abstract val apkInstaller: ApkInstallerImpl
 
     abstract val rootComponentFactory: RootComponentFactory

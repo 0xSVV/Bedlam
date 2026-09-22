@@ -45,8 +45,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
+import ru.shapovalov.bedlam.BedlamApplication
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
+import ru.shapovalov.bedlam.core.log.AppLog
 import ru.shapovalov.bedlam.core.power.domain.model.AlwaysOnVpnState
 import ru.shapovalov.bedlam.core.power.domain.repository.PowerReliabilityRepository
 import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
@@ -70,6 +72,7 @@ class BedlamVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val client: HysteriaClient by injected { hysteriaClient }
+    private val appLog: AppLog by injected { appLog }
     private val json: Json by injected { json }
     private val buildRoutePlan: BuildRoutePlanUseCase by injected { buildRoutePlan }
     private val routePlanApplier: RoutePlanApplier by injected { routePlanApplier }
@@ -131,7 +134,11 @@ class BedlamVpnService : VpnService() {
         scheduleAlwaysOnVpnStateUpdate()
     }
 
-    override fun onRevoke() = stop(DisconnectReason.REVOKED)
+    override fun onRevoke() {
+        appLog.warn(AppLog.SOURCE_VPN, "Android revoked the tunnel: another VPN app took over")
+        notifications.postRevokedWarning()
+        stop(DisconnectReason.REVOKED)
+    }
 
     override fun onDestroy() {
         persistUnexpectedDestroyIfNeeded()
@@ -163,6 +170,11 @@ class BedlamVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         lastStartId = startId
+        if ((application as BedlamApplication).nativeLoadError != null) {
+            startAsForeground()
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         when (intent?.action) {
             ACTION_STOP -> {
                 startAsForeground()
@@ -172,6 +184,7 @@ class BedlamVpnService : VpnService() {
 
             ACTION_RECONNECT -> {
                 startAsForeground()
+                appLog.info(AppLog.SOURCE_VPN, "Reconnect requested")
                 if (client.stats() == null) {
                     Log.i(TAG, "Reconnect requested with no active session; stopping")
                     stop(startId = startId)
@@ -188,6 +201,7 @@ class BedlamVpnService : VpnService() {
         stopWasRequested = false
 
         if (!startAsForeground()) {
+            appLog.error(AppLog.SOURCE_VPN, "Android refused to start the VPN service")
             scope.launch {
                 runtimeStateRepository.markInterrupted(
                     serviceEpoch,
@@ -245,6 +259,7 @@ class BedlamVpnService : VpnService() {
                     profileName = request.profileName,
                 )
                 startProfileNameWatcher(request.profileId)
+                appLog.info(AppLog.SOURCE_VPN, "Starting the tunnel for ${request.profileName}")
                 launchTunnel(request.config)
             }
         }
@@ -381,6 +396,7 @@ class BedlamVpnService : VpnService() {
         currentConfig = null
         startJob?.cancel()
         startJob = null
+        if (reason == DisconnectReason.USER) appLog.info(AppLog.SOURCE_VPN, "Disconnect requested")
         scope.launch(Dispatchers.Main.immediate) {
             runtimeStateRepository.markStopping(serviceEpoch, reason.name, requestId)
             releaseForegroundResources()
@@ -392,6 +408,7 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun stopAfterInterruption(reason: String) {
+        appLog.warn(AppLog.SOURCE_VPN, "Tunnel interrupted: $reason")
         stopWasRequested = true
         currentConfig = null
         startJob?.cancel()
@@ -406,6 +423,7 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun stopAfterTerminalFailure(reason: String) {
+        appLog.error(AppLog.SOURCE_VPN, "Tunnel failed: $reason")
         stopWasRequested = true
         currentConfig = null
         startJob?.cancel()
@@ -471,6 +489,7 @@ class BedlamVpnService : VpnService() {
             onSettledChange = {
                 scope.launch { handleUnderlyingNetworkChange() }
             },
+            onEvent = { appLog.info(AppLog.SOURCE_VPN, it) },
         ).also { it.start() }
     }
 
@@ -521,6 +540,7 @@ class BedlamVpnService : VpnService() {
                                 delay(RECONNECT_WARNING_MS.milliseconds)
                                 if (client.state.value is ConnectionState.Reconnecting) {
                                     Log.w(TAG, "Still reconnecting; keeping service alive to retry")
+                                    appLog.warn(AppLog.SOURCE_VPN, "Still reconnecting after 3 minutes")
                                     notifications.postReconnectTimeoutWarning()
                                 }
                             }

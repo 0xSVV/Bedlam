@@ -190,3 +190,34 @@ func buildServFail(query []byte) []byte {
 	resp[10], resp[11] = 0, 0
 	return resp
 }
+
+const dnsTypeAAAA = 28
+
+func dnsQuestionType(query []byte) (uint16, bool) {
+	if !validDNSQuery(query) {
+		return 0, false
+	}
+	end := skipName(query, dnsHeaderLen)
+	if end < 0 || end+4 > len(query) {
+		return 0, false
+	}
+	return binary.BigEndian.Uint16(query[end : end+2]), true
+}
+
+func buildNoData(query []byte) []byte {
+	if len(query) < dnsHeaderLen {
+		return nil
+	}
+	end := skipName(query, dnsHeaderLen)
+	if end < 0 || end+4 > len(query) {
+		return nil
+	}
+	resp := make([]byte, end+4)
+	copy(resp, query[:end+4])
+	resp[2] |= 0x80
+	resp[3] = 0x80
+	for i := 6; i < dnsHeaderLen; i++ {
+		resp[i] = 0
+	}
+	return resp
+}

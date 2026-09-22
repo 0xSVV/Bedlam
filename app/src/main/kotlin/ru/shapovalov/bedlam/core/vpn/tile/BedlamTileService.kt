@@ -22,6 +22,7 @@ import ru.shapovalov.bedlam.core.vpn.VpnRuntimeStateRepository
 import ru.shapovalov.bedlam.core.vpn.VpnServiceLauncher
 import ru.shapovalov.bedlam.core.vpn.effectiveWith
 import ru.shapovalov.bedlam.core.vpn.tile.domain.repository.QuickSettingsTileRepository
+import ru.shapovalov.bedlam.BedlamApplication
 import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.api.HysteriaClient
@@ -41,6 +42,9 @@ class BedlamTileService : TileService() {
     private var stateJob: Job? = null
     private var clickJob: Job? = null
 
+    private val nativeUnavailable: Boolean
+        get() = (application as BedlamApplication).nativeLoadError != null
+
     override fun onTileAdded() {
         super.onTileAdded()
         scope.launch { quickSettingsTileRepository.setAdded(true) }
@@ -54,6 +58,7 @@ class BedlamTileService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         scope.launch { quickSettingsTileRepository.setAdded(true) }
+        if (nativeUnavailable) return
         stateJob?.cancel()
         stateJob = scope.launch {
             combine(
@@ -76,6 +81,10 @@ class BedlamTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
+        if (nativeUnavailable) {
+            openMainActivity()
+            return
+        }
         if (isLocked) {
             unlockAndRun { handleClick() }
         } else {

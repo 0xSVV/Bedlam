@@ -11,11 +11,20 @@
     <string name="notification_state_reconnecting">Reconnecting (attempt %1$d)…</string>
     <string name="notification_state_disconnected">Disconnected</string>
     <string name="notification_reconnect_timeout">Still trying to reconnect — will restore protection when the network returns</string>
+    <string name="notification_revoked">Another VPN app took over the tunnel. Bedlam is disconnected.</string>
     <string name="notification_state_error">Error: %1$s</string>
     <string name="notification_traffic_rate">↑ %1$s · ↓ %2$s</string>
     <string name="notification_detail_session">Session: ↑ %1$s · ↓ %2$s</string>
     <string name="notification_detail_server">Server: %1$s</string>
     <string name="notification_detail_server_udp">Server: %1$s · UDP relay</string>
+    <string name="crash_channel_name">Crash reports</string>
+    <string name="crash_notification_title">Bedlam crashed</string>
+    <string name="crash_notification_text">Tap to share the crash report</string>
+    <string name="crash_notification_share">Share crash report</string>
+    <string name="native_load_error_title">Bedlam cannot start on this device</string>
+    <string name="native_load_error_body">The installed build has no native library this phone can load. Install the %1$s build from GitHub Releases.</string>
+    <string name="native_load_error_abis">Device ABIs: %1$s</string>
+    <string name="native_load_error_open_releases">Open releases</string>
     <string name="rate_per_second">%1$s/s</string>
 
     <string name="action_disconnect">Disconnect</string>

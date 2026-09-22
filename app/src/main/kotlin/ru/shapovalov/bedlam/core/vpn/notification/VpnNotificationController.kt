@@ -51,6 +51,7 @@ class VpnNotificationController(private val context: Context) {
 
     fun foregroundNotification(): Notification {
         synchronized(postLock) { closed = false }
+        notificationManager.cancel(REVOKED_NOTIFICATION_ID)
         return build(ConnectionState.Connecting, HysteriaClient.TrafficStats(0, 0), 0, 0)
     }
 
@@ -80,18 +81,23 @@ class VpnNotificationController(private val context: Context) {
     }
 
     fun postReconnectTimeoutWarning() {
-        val notification = Notification.Builder(context, CHANNEL_ID)
+        notificationManager.notify(WARNING_NOTIFICATION_ID, warning(R.string.notification_reconnect_timeout))
+    }
+
+    fun postRevokedWarning() {
+        notificationManager.notify(REVOKED_NOTIFICATION_ID, warning(R.string.notification_revoked))
+    }
+
+    private fun warning(textRes: Int): Notification {
+        val text = context.getString(textRes)
+        return Notification.Builder(context, CHANNEL_ID)
             .setContentTitle(title())
             .setSmallIcon(R.drawable.ic_stat_bedlam)
-            .setContentText(context.getString(R.string.notification_reconnect_timeout))
-            .setStyle(
-                Notification.BigTextStyle()
-                    .bigText(context.getString(R.string.notification_reconnect_timeout))
-            )
+            .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
             .setContentIntent(openAppIntent)
             .setAutoCancel(true)
             .build()
-        notificationManager.notify(WARNING_NOTIFICATION_ID, notification)
     }
 
     private fun build(
@@ -254,6 +260,7 @@ class VpnNotificationController(private val context: Context) {
     companion object {
         const val NOTIFICATION_ID = 1
         private const val WARNING_NOTIFICATION_ID = 2
+        private const val REVOKED_NOTIFICATION_ID = 4
         private const val CHANNEL_ID = "bedlam_vpn"
         private const val REQ_STOP = 1
         private const val REQ_RECONNECT = 2

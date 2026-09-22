@@ -16,10 +16,12 @@ import com.arkivanov.decompose.defaultComponentContext
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
+import ru.shapovalov.bedlam.core.util.openUrl
 import ru.shapovalov.bedlam.core.vpn.VpnServiceLauncher
 import ru.shapovalov.bedlam.di.appComponent
 import ru.shapovalov.bedlam.di.injected
 import ru.shapovalov.bedlam.navigation.RootComponent
+import ru.shapovalov.bedlam.ui.NativeLoadErrorContent
 import ru.shapovalov.bedlam.ui.theme.BedlamTheme
 
 class MainActivity : ComponentActivity() {
@@ -54,6 +56,19 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val nativeLoadError = (application as BedlamApplication).nativeLoadError
+        if (nativeLoadError != null) {
+            setContent {
+                BedlamTheme {
+                    NativeLoadErrorContent(
+                        error = nativeLoadError,
+                        supportedAbis = Build.SUPPORTED_ABIS.toList(),
+                        onOpenReleases = { openUrl(RELEASES_URL) },
+                    )
+                }
+            }
+            return
+        }
         pendingStartProfileId = savedInstanceState?.getString(KEY_PENDING_PROFILE_ID)
         notificationPermissionRequested =
             savedInstanceState?.getBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED) == true
@@ -76,6 +91,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleImportIntent(intent: Intent?) {
+        if (!::root.isInitialized) return
         if (intent?.action != Intent.ACTION_VIEW) return
         val link = intent.dataString ?: return
         root.onImportLink(link)
@@ -117,6 +133,7 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "Bedlam"
+        const val RELEASES_URL = "https://github.com/0xSVV/Bedlam/releases"
         const val KEY_PENDING_PROFILE_ID = "pending_start_profile_id"
         const val KEY_NOTIFICATION_PERMISSION_REQUESTED = "notification_permission_requested"
     }

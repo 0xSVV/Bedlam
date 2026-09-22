@@ -139,7 +139,7 @@ private val PreviewReadme = """
 
     | Output | versionCode |
     |---|---|
-    | universal | base |
+    | universal | base × 10 + 9 |
     | arm64-v8a | base × 10 + 2 |
 
     ```sh

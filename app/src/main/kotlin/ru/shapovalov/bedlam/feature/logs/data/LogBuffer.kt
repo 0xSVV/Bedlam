@@ -5,14 +5,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import me.tatarka.inject.annotations.Inject
+import ru.shapovalov.bedlam.core.log.AppLog
 import ru.shapovalov.bedlam.di.AppScope
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
@@ -22,12 +26,14 @@ import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
 class LogBuffer internal constructor(
     client: HysteriaClient,
     scope: CoroutineScope,
+    appLog: Flow<LogEntry> = emptyFlow(),
 ) {
 
     @Inject
-    constructor(client: HysteriaClient) : this(
+    constructor(client: HysteriaClient, appLog: AppLog) : this(
         client = client,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        appLog = appLog.flow,
     )
 
     data class Snapshot(
@@ -45,7 +51,7 @@ class LogBuffer internal constructor(
 
     init {
         scope.launch {
-            client.logs(LogLevel.DEBUG).collect { entry ->
+            merge(client.logs(LogLevel.DEBUG), appLog).collect { entry ->
                 synchronized(lock) {
                     ring.add(entry)
                     unpublished = true

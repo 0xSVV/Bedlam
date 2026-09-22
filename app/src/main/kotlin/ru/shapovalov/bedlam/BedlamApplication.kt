@@ -6,6 +6,8 @@ import android.app.ActivityManager
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import ru.shapovalov.bedlam.core.crash.CrashRecorder
+import ru.shapovalov.bedlam.core.log.AppLog
 import ru.shapovalov.bedlam.core.routing.work.RouteRefreshWorker
 import ru.shapovalov.bedlam.di.AppComponent
 import ru.shapovalov.bedlam.di.create
@@ -15,10 +17,23 @@ class BedlamApplication : Application() {
     lateinit var component: AppComponent
         private set
 
+    var nativeLoadError: LinkageError? = null
+        private set
+
     override fun onCreate() {
         super.onCreate()
+        val crashRecorder = CrashRecorder(this)
+        crashRecorder.install()
         component = AppComponent::class.create(this)
-        component.logBuffer
+        try {
+            component.logBuffer
+        } catch (error: LinkageError) {
+            Log.e(TAG, "The native library failed to load", error)
+            nativeLoadError = error
+        }
+        crashRecorder.unreportedCrash()?.let { report ->
+            component.appLog.error(AppLog.SOURCE_APP, "Previous launch crashed\n$report")
+        }
         logLastProcessExitReason()
         RouteRefreshWorker.schedule(this)
     }
@@ -30,11 +45,10 @@ class BedlamApplication : Application() {
             .getHistoricalProcessExitReasons(packageName, 0, 1)
             .firstOrNull()
             ?: return
-        Log.i(
-            TAG,
-            "Last process exit: reason=${info.reasonLabel()}, " +
-                    "importance=${info.importance}, description=${info.description.orEmpty()}",
-        )
+        val message = "Last process exit: ${info.reasonLabel()}, importance ${info.importance}" +
+                info.description?.let { ", $it" }.orEmpty()
+        Log.i(TAG, message)
+        component.appLog.info(AppLog.SOURCE_APP, message)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)

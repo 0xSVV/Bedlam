@@ -23,7 +23,7 @@ The UI is Jetpack Compose and Material 3 over a unidirectional architecture. It 
 
 Routing is rule based. Three kinds of source decide what bypasses the tunnel and what goes through it: CIDR ranges, autonomous systems (Bedlam expands an ASN to its announced prefixes, live from RIPEstat), and domains (Bedlam resolves them to addresses). The engine coalesces and subtracts those into a minimal route set, with LAN bypass. You can tunnel IPv6, block it, or leave it outside the VPN.
 
-DNS goes through the tunnel to Cloudflare, Google, your own servers, or your network's resolvers. Choose plain UDP or TCP, DNS over TLS, DNS over QUIC, DNS over HTTPS, or DNS over HTTP/3. IPv4 and IPv6 resolvers both work. The Cloudflare and Google presets for DNS over TLS and DNS over HTTPS name the provider by hostname, so your Hysteria server has to resolve it.
+DNS goes through the tunnel to Cloudflare, Google, your own servers, or your network's resolvers. Choose plain UDP or TCP, DNS over TLS, DNS over QUIC, DNS over HTTPS, or DNS over HTTP/3. IPv4 and IPv6 resolvers both work. The Cloudflare and Google presets for DNS over TLS and DNS over HTTPS name the provider by hostname first and fall back to its IPv4 addresses, so they keep answering when your Hysteria server cannot resolve the name or reach it over IPv6.
 
 You can set the tunnel MTU from 1280 to 9000 bytes. Auto uses 1280. 1280 is the minimum link MTU of IPv6. The interface always holds an IPv6 address, so `VpnService.Builder.establish` refuses a smaller value.
 

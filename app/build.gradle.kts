@@ -72,6 +72,7 @@ val abiVersionCodes = mapOf(
     "arm64-v8a" to 2,
     "x86_64" to 4,
 )
+val universalVersionCodeDigit = 9
 
 val readmeFile: RegularFile = rootProject.layout.projectDirectory.file("README.md")
 
@@ -107,9 +108,9 @@ androidComponents {
             val abi = output.filters
                 .find { it.filterType == FilterConfiguration.FilterType.ABI }
                 ?.identifier
-            if (abi != null) {
-                output.versionCode.set(baseVersionCode * 10 + (abiVersionCodes[abi] ?: 0))
-            }
+            val versionCodeDigit =
+                if (abi == null) universalVersionCodeDigit else abiVersionCodes[abi] ?: 0
+            output.versionCode.set(baseVersionCode * 10 + versionCodeDigit)
             output.outputFileName.set(
                 output.versionName.map { versionName ->
                     "bedlam-v$versionName-${abi ?: "universal"}.apk"
