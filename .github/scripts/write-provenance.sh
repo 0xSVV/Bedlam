@@ -58,7 +58,7 @@ aar=hysteria/libs/golib.aar
 package=ru.shapovalov.bedlam
 go_abis=(armeabi-v7a arm64-v8a x86_64)
 variants=(armeabi-v7a arm64-v8a x86_64 universal)
-declare -A abi_version_digit=([armeabi-v7a]=1 [arm64-v8a]=2 [x86_64]=4)
+declare -A abi_version_digit=([armeabi-v7a]=1 [arm64-v8a]=2 [x86_64]=4 [universal]=9)
 declare -A abi_goarch=([armeabi-v7a]=arm [arm64-v8a]=arm64 [x86_64]=amd64)
 
 version_name=$(catalog_value versionName)
@@ -209,11 +209,7 @@ for variant in "${variants[@]}"; do
   apk_package=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$badging")
   apk_version_code=$(sed -n "s/.* versionCode='\([0-9]*\)'.*/\1/p" <<< "$badging")
   apk_version_name=$(sed -n "s/.* versionName='\([^']*\)'.*/\1/p" <<< "$badging")
-  if [ "$variant" = universal ]; then
-    expected_version_code=$version_code
-  else
-    expected_version_code=$((version_code * 10 + ${abi_version_digit[$variant]}))
-  fi
+  expected_version_code=$((version_code * 10 + ${abi_version_digit[$variant]}))
   [ "$apk_package" = "$package" ] || fail "$file is package ${apk_package:-unknown}, expected $package"
   [ "$apk_version_name" = "$version_name" ] || fail "$file has versionName ${apk_version_name:-unknown}, expected $version_name"
   [ "$apk_version_code" = "$expected_version_code" ] || fail "$file has versionCode ${apk_version_code:-unknown}, expected $expected_version_code"
