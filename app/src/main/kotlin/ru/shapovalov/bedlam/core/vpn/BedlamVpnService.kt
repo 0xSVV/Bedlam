@@ -136,6 +136,7 @@ class BedlamVpnService : VpnService() {
 
     override fun onRevoke() {
         appLog.warn(AppLog.SOURCE_VPN, "Android revoked the tunnel: another VPN app took over")
+        notifications.postRevokedWarning()
         stop(DisconnectReason.REVOKED)
     }
 
