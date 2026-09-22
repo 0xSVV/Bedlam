@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import me.tatarka.inject.annotations.Inject
+import ru.shapovalov.bedlam.core.datastore.PreferencesCorruption
 import ru.shapovalov.bedlam.core.power.domain.PowerReliabilityRules
 import ru.shapovalov.bedlam.core.power.domain.model.AlwaysOnVpnState
 import ru.shapovalov.bedlam.core.power.domain.model.PowerReliabilitySnapshot
@@ -31,6 +32,7 @@ import ru.shapovalov.bedlam.core.power.domain.repository.PowerReliabilityReposit
 
 private val Context.powerReliabilityDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "power_reliability",
+    corruptionHandler = PreferencesCorruption.handler("power_reliability"),
     produceMigrations = { context ->
         listOf(
             SharedPreferencesMigration(

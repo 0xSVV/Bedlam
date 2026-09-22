@@ -12,10 +12,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import me.tatarka.inject.annotations.Inject
+import ru.shapovalov.bedlam.core.datastore.PreferencesCorruption
 import ru.shapovalov.hysteria.ConnectionState
 
 private val Context.vpnRuntimeDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "vpn_runtime_state",
+    corruptionHandler = PreferencesCorruption.handler("vpn_runtime_state"),
 )
 
 class VpnRuntimeStateRepository internal constructor(
