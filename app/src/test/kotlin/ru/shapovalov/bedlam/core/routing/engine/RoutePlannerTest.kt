@@ -363,7 +363,7 @@ class RoutePlannerTest {
                 AppFilter(),
             )
             assertEquals(
-                DnsUpstream(DnsTransport.Https, listOf("https://cloudflare-dns.com/dns-query")),
+                DnsUpstream(DnsTransport.Https, DnsPresets.cloudflare(DnsTransport.Https)),
                 plan.dnsUpstream,
             )
             assertTrue(plan.claimedV4.containsAll(cloudflareV4))
@@ -376,7 +376,7 @@ class RoutePlannerTest {
                 RoutingConfig(dnsMode = DnsMode.Google, dnsTransport = DnsTransport.Tls),
                 AppFilter(),
             )
-            assertEquals(DnsUpstream(DnsTransport.Tls, listOf("dns.google:853")), plan.dnsUpstream)
+            assertEquals(DnsUpstream(DnsTransport.Tls, DnsPresets.google(DnsTransport.Tls)), plan.dnsUpstream)
             assertTrue(plan.claimedV4.containsAll(googleV4))
             assertTrue(plan.claimedV6.containsAll(googleV6))
         }
@@ -384,14 +384,14 @@ class RoutePlannerTest {
         @Test
         fun `an unusable encrypted custom list falls back to the Cloudflare host`() {
             val dot = planner().plan(customDnsConfig(DnsTransport.Tls, "not a host"), AppFilter())
-            assertEquals(DnsUpstream(DnsTransport.Tls, listOf("one.one.one.one:853")), dot.dnsUpstream)
+            assertEquals(DnsUpstream(DnsTransport.Tls, DnsPresets.cloudflare(DnsTransport.Tls)), dot.dnsUpstream)
 
             val doq = planner().plan(customDnsConfig(DnsTransport.Doq, "nope!"), AppFilter())
-            assertEquals(DnsUpstream(DnsTransport.Tls, listOf("one.one.one.one:853")), doq.dnsUpstream)
+            assertEquals(DnsUpstream(DnsTransport.Tls, DnsPresets.cloudflare(DnsTransport.Tls)), doq.dnsUpstream)
 
             val doh = planner().plan(customDnsConfig(DnsTransport.Https), AppFilter())
             assertEquals(
-                DnsUpstream(DnsTransport.Https, listOf("https://cloudflare-dns.com/dns-query")),
+                DnsUpstream(DnsTransport.Https, DnsPresets.cloudflare(DnsTransport.Https)),
                 doh.dnsUpstream,
             )
         }

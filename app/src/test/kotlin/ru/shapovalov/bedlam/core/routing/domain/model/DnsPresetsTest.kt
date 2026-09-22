@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.core.routing.domain.model
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -59,16 +60,35 @@ class DnsPresetsTest {
     }
 
     @Test
-    fun `dns over tls and https presets name the provider host`() {
-        assertEquals(listOf("one.one.one.one:853"), DnsPresets.cloudflare(DnsTransport.Tls))
-        assertEquals(listOf("dns.google:853"), DnsPresets.google(DnsTransport.Tls))
-        assertEquals(listOf("https://cloudflare-dns.com/dns-query"), DnsPresets.cloudflare(DnsTransport.Https))
-        assertEquals(listOf("https://dns.google/dns-query"), DnsPresets.google(DnsTransport.Https))
+    fun `dns over tls and https presets name the provider host first and fall back to its IPv4 addresses`() {
+        assertEquals(
+            listOf("one.one.one.one:853", "1.1.1.1:853", "1.0.0.1:853"),
+            DnsPresets.cloudflare(DnsTransport.Tls),
+        )
+        assertEquals(
+            listOf("dns.google:853", "8.8.8.8:853", "8.8.4.4:853"),
+            DnsPresets.google(DnsTransport.Tls),
+        )
+        assertEquals(
+            listOf(
+                "https://cloudflare-dns.com/dns-query",
+                "https://1.1.1.1/dns-query",
+                "https://1.0.0.1/dns-query",
+            ),
+            DnsPresets.cloudflare(DnsTransport.Https),
+        )
+        assertEquals(
+            listOf("https://dns.google/dns-query", "https://8.8.8.8/dns-query", "https://8.8.4.4/dns-query"),
+            DnsPresets.google(DnsTransport.Https),
+        )
         assertNotEquals(DnsPresets.cloudflare(DnsTransport.Https), DnsPresets.cloudflare(DnsTransport.Http3))
         assertNotEquals(DnsPresets.google(DnsTransport.Https), DnsPresets.google(DnsTransport.Http3))
         for (transport in listOf(DnsTransport.Tls, DnsTransport.Https)) {
-            for (server in DnsPresets.cloudflare(transport) + DnsPresets.google(transport)) {
-                assertNull(DnsServer.literalHostOf(server), server)
+            for (servers in listOf(DnsPresets.cloudflare(transport), DnsPresets.google(transport))) {
+                assertNull(DnsServer.literalHostOf(servers.first()), servers.first())
+                for (server in servers.drop(1)) {
+                    assertNotNull(DnsServer.literalHostOf(server), server)
+                }
             }
         }
     }
