@@ -45,6 +45,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
+import ru.shapovalov.bedlam.BedlamApplication
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.core.appfilter.domain.repository.AppFilterRepository
 import ru.shapovalov.bedlam.core.log.AppLog
@@ -168,6 +169,11 @@ class BedlamVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         lastStartId = startId
+        if ((application as BedlamApplication).nativeLoadError != null) {
+            startAsForeground()
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         when (intent?.action) {
             ACTION_STOP -> {
                 startAsForeground()

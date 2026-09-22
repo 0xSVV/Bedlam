@@ -17,12 +17,20 @@ class BedlamApplication : Application() {
     lateinit var component: AppComponent
         private set
 
+    var nativeLoadError: LinkageError? = null
+        private set
+
     override fun onCreate() {
         super.onCreate()
         val crashRecorder = CrashRecorder(this)
         crashRecorder.install()
         component = AppComponent::class.create(this)
-        component.logBuffer
+        try {
+            component.logBuffer
+        } catch (error: LinkageError) {
+            Log.e(TAG, "The native library failed to load", error)
+            nativeLoadError = error
+        }
         crashRecorder.unreportedCrash()?.let { report ->
             component.appLog.error(AppLog.SOURCE_APP, "Previous launch crashed\n$report")
         }

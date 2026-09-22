@@ -20,6 +20,10 @@
     <string name="crash_notification_title">Bedlam crashed</string>
     <string name="crash_notification_text">Tap to share the crash report</string>
     <string name="crash_notification_share">Share crash report</string>
+    <string name="native_load_error_title">Bedlam cannot start on this device</string>
+    <string name="native_load_error_body">The installed build has no native library this phone can load. Install the %1$s build from GitHub Releases.</string>
+    <string name="native_load_error_abis">Device ABIs: %1$s</string>
+    <string name="native_load_error_open_releases">Open releases</string>
     <string name="rate_per_second">%1$s/s</string>
 
     <string name="action_disconnect">Disconnect</string>
