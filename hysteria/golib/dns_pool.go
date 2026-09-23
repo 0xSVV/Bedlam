@@ -41,12 +41,11 @@ type streamPool struct {
 }
 
 type streamResult struct {
-	conn     *pooledConn
-	pooled   bool
-	resp     []byte
-	reusable bool
-	stream   string
-	err      error
+	conn   *pooledConn
+	pooled bool
+	resp   []byte
+	stream string
+	err    error
 }
 
 type openResult struct {
@@ -127,9 +126,7 @@ func (p *streamPool) exchange(ctx context.Context, callerQuery []byte) ([]byte, 
 	if result.err != nil {
 		return nil, p.failed(append(failures, result))
 	}
-	if result.reusable {
-		p.put(result.conn)
-	}
+	p.put(result.conn)
 	return result.resp, nil
 }
 
@@ -164,9 +161,7 @@ func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, q
 			if !result.pooled && (pooledPending || isTimeoutClass(failures[0].err)) {
 				p.drain()
 			}
-			if result.reusable {
-				p.put(result.conn)
-			}
+			p.put(result.conn)
 			if running > 0 {
 				go p.reclaim(results, running)
 			}
@@ -262,7 +257,7 @@ func (p *streamPool) open() *flight[openResult] {
 
 func (p *streamPool) reclaim(results <-chan streamResult, pending int) {
 	for ; pending > 0; pending-- {
-		if result := <-results; result.err == nil && result.reusable {
+		if result := <-results; result.err == nil {
 			p.put(result.conn)
 		}
 	}
@@ -322,7 +317,7 @@ func (p *streamPool) send(ctx context.Context, c *pooledConn, query []byte, stre
 		_ = c.conn.SetDeadline(time.Time{})
 		c.last = time.Now()
 		c.answered++
-		if !exchanging.deliver(streamResult{conn: c, pooled: pooled, resp: resp, reusable: true, stream: stream}) {
+		if !exchanging.deliver(streamResult{conn: c, pooled: pooled, resp: resp, stream: stream}) {
 			p.put(c)
 			late(resp)
 		}
