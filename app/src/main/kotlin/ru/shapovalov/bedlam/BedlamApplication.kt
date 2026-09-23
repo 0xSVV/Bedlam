@@ -9,9 +9,13 @@ import androidx.annotation.RequiresApi
 import ru.shapovalov.bedlam.core.crash.CrashRecorder
 import ru.shapovalov.bedlam.core.datastore.PreferencesCorruption
 import ru.shapovalov.bedlam.core.log.AppLog
+import ru.shapovalov.bedlam.core.log.processExitLevel
+import ru.shapovalov.bedlam.core.log.processExitMessage
 import ru.shapovalov.bedlam.core.routing.work.RouteRefreshWorker
 import ru.shapovalov.bedlam.di.AppComponent
 import ru.shapovalov.bedlam.di.create
+import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
+import java.time.ZoneId
 
 class BedlamApplication : Application() {
 
@@ -50,28 +54,28 @@ class BedlamApplication : Application() {
             .getHistoricalProcessExitReasons(packageName, 0, 1)
             .firstOrNull()
             ?: return
-        val message = "Last process exit: ${info.reasonLabel()}, importance ${info.importance}" +
-                info.description?.let { ", $it" }.orEmpty()
-        Log.i(TAG, message)
-        component.appLog.info(AppLog.SOURCE_APP, message)
+        logProcessExit(info)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun ApplicationExitInfo.reasonLabel(): String = when (reason) {
-        ApplicationExitInfo.REASON_ANR -> "ANR"
-        ApplicationExitInfo.REASON_CRASH -> "CRASH"
-        ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
-        ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
-        ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
-        ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
-        ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
-        ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
-        ApplicationExitInfo.REASON_OTHER -> "OTHER"
-        ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "PERMISSION_CHANGE"
-        ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
-        ApplicationExitInfo.REASON_UNKNOWN -> "UNKNOWN"
-        ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
-        else -> reason.toString()
+    private fun logProcessExit(info: ApplicationExitInfo) {
+        val level = processExitLevel(info.reason, info.importance)
+        val message = processExitMessage(
+            code = info.reason,
+            importance = info.importance,
+            description = info.description,
+            timestampMillis = info.timestamp,
+            zone = ZoneId.systemDefault(),
+        )
+        Log.println(level.priority(), TAG, message)
+        component.appLog.log(level, AppLog.SOURCE_APP, message)
+    }
+
+    private fun LogLevel.priority(): Int = when (this) {
+        LogLevel.DEBUG -> Log.DEBUG
+        LogLevel.INFO -> Log.INFO
+        LogLevel.WARN -> Log.WARN
+        LogLevel.ERROR -> Log.ERROR
     }
 
     private companion object {
