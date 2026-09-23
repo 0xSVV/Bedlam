@@ -87,11 +87,10 @@ interface HysteriaClient {
     /**
      * Forces live upstream sockets to close so the core re-dials on the
      * current default network. No-op if the tunnel isn't running.
-     *
-     * Call this on Android connectivity handoff (Wi-Fi ↔ mobile) to skip
-     * the QUIC idle-timeout wait.
      */
     suspend fun resetConnections()
+
+    suspend fun resetConnectionsKeepingDnsCache()
 
     /**
      * Runs an immediate liveness probe and reconnects if the tunnel is dead.

@@ -74,6 +74,7 @@ class ImportProfileUseCaseTest {
         override fun shutdown(reason: DisconnectReason) = Unit
         override suspend fun closeSession() = Unit
         override suspend fun resetConnections() = Unit
+        override suspend fun resetConnectionsKeepingDnsCache() = Unit
         override suspend fun checkConnection() = Unit
         override fun stats(): HysteriaClient.TrafficStats? = null
         override fun logs(minLevel: HysteriaClient.LogLevel): Flow<HysteriaClient.LogEntry> =
