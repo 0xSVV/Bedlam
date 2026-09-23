@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.core.log
 
 import android.app.ApplicationExitInfo
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
@@ -99,7 +100,7 @@ class ProcessExitTest {
     fun `an exit while the tunnel ran in the foreground is at least a warning`(reason: ProcessExitReason) {
         listOf(foreground, foregroundService).forEach { importance ->
             val level = processExitLevel(reason.code, importance)
-            assert(level >= LogLevel.WARN) { "$reason $importance gave $level" }
+            assertTrue(level >= LogLevel.WARN, "$reason $importance gave $level")
         }
     }
 
