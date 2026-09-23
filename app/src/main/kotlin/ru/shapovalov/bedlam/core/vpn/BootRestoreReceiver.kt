@@ -8,18 +8,31 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import ru.shapovalov.bedlam.core.log.AppLog
+import ru.shapovalov.bedlam.core.vpn.notification.ConnectionAlerts
 import ru.shapovalov.bedlam.di.appComponent
 
 class BootRestoreReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        restoreTriggerFor(intent.action) ?: return
+        val trigger = restoreTriggerFor(intent.action) ?: return
 
-        val reconcile = context.applicationContext.appComponent.reconcileConnectionState
+        val appContext = context.applicationContext
+        val component = appContext.appComponent
+        val reconcile = component.reconcileConnectionState
+        val appLog = component.appLog
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             try {
-                reconcile()
+                val outcome = trigger.outcomeOf(reconcile())
+                if (outcome != null) {
+                    if (outcome.alertReason == null) {
+                        appLog.info(AppLog.SOURCE_VPN, outcome.logLine)
+                    } else {
+                        appLog.error(AppLog.SOURCE_VPN, outcome.logLine)
+                        ConnectionAlerts(appContext).postStopped(outcome.alertReason)
+                    }
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Boot restore failed", e)
             } finally {
