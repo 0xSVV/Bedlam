@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.shapovalov.bedlam.core.profile.domain.model.DuplicateProfileException
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFailure
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.repository.ProfileRepository
 import ru.shapovalov.hysteria.ConnectionState
@@ -139,6 +140,65 @@ class ImportProfileUseCaseTest {
 
         assertTrue(result.isSuccess)
         assertEquals(2, repo.profiles.size)
+    }
+
+    @Test
+    fun `imports every link of a paste as its own profile`() = runTest {
+        val repo = FakeRepo()
+        val text = "hysteria2://a@one.example:443/#One\nhysteria2://b@two.example:443/#Two\n"
+
+        val batch = useCase(repo).importAll(text, ProfileImportFormat.Link)
+
+        assertEquals(listOf("One", "Two"), batch.imported.map { it.name })
+        assertEquals(emptyList<ProfileImportFailure>(), batch.failures)
+        assertEquals(listOf("One", "Two"), repo.profiles.map { it.name })
+    }
+
+    @Test
+    fun `reports which links of a paste failed and keeps the rest`() = runTest {
+        val repo = FakeRepo()
+        val text = "hysteria2://a@one.example:443/#One " +
+            "hysteria2://b@two.example:70000/#Two " +
+            "hysteria2://a@one.example:443/#Again " +
+            "hysteria2://c@three.example:443/#Three"
+
+        val batch = useCase(repo).importAll(text, ProfileImportFormat.Link)
+
+        assertEquals(listOf("One", "Three"), batch.imported.map { it.name })
+        assertEquals(
+            listOf(
+                ProfileImportFailure.Invalid(2, "Port 70000 in the link is not between 1 and 65535"),
+                ProfileImportFailure.Duplicate(3, "One"),
+            ),
+            batch.failures,
+        )
+        assertEquals(4, batch.total)
+    }
+
+    @Test
+    fun `a requested name applies only to a single link`() = runTest {
+        val single = FakeRepo()
+        useCase(single).importAll(link, ProfileImportFormat.Link, name = "Office")
+        val several = FakeRepo()
+        useCase(several).importAll(
+            "hysteria2://a@one.example:443/#One\nhysteria2://b@two.example:443/#Two",
+            ProfileImportFormat.Link,
+            name = "Office",
+        )
+
+        assertEquals(listOf("Office"), single.profiles.map { it.name })
+        assertEquals(listOf("One", "Two"), several.profiles.map { it.name })
+    }
+
+    @Test
+    fun `a JSON paste imports as one profile`() = runTest {
+        val repo = FakeRepo()
+        val json = """{"name":"Json","server":{"server":"json.example:443","auth":"hysteria2://x"},"tls":{}}"""
+
+        val batch = useCase(repo).importAll(json, ProfileImportFormat.Json)
+
+        assertEquals(listOf("Json"), batch.imported.map { it.name })
+        assertEquals(emptyList<ProfileImportFailure>(), batch.failures)
     }
 
     @Test
