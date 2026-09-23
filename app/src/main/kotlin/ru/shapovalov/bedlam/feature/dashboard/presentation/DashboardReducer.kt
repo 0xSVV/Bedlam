@@ -3,6 +3,7 @@ package ru.shapovalov.bedlam.feature.dashboard.presentation
 import com.arkivanov.mvikotlin.core.store.Reducer
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFailure
 import ru.shapovalov.hysteria.ConnectionState
 import ru.shapovalov.hysteria.isActiveTunnel
 
@@ -17,6 +18,8 @@ internal sealed interface Msg {
     data object ImportSucceeded : Msg
     data class ImportFailed(val message: String) : Msg
     data class ImportRejectedAsDuplicate(val name: String) : Msg
+    data class LinksImported(val imported: Int, val total: Int, val failures: List<ProfileImportFailure>) : Msg
+    data class LinksFailed(val failures: List<ProfileImportFailure>) : Msg
     data class ErrorRaised(val reason: DashboardStore.ErrorReason) : Msg
     data object ErrorDismissed : Msg
     data class LatencyUpdated(val id: String, val result: LatencyResult) : Msg
@@ -49,10 +52,17 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             importSheet = msg.seed,
             importSheetClosing = false,
             importError = null,
+            importFailures = emptyList(),
         )
 
-        Msg.ImportSheetClosed -> copy(importSheet = null, importSheetClosing = false, importError = null)
-        Msg.ImportStarted -> copy(isImporting = true, importError = null)
+        Msg.ImportSheetClosed -> copy(
+            importSheet = null,
+            importSheetClosing = false,
+            importError = null,
+            importFailures = emptyList(),
+        )
+
+        Msg.ImportStarted -> copy(isImporting = true, importError = null, importFailures = emptyList())
         Msg.ImportSucceeded -> copy(
             isImporting = false,
             importSheetClosing = importSheet != null,
@@ -72,6 +82,24 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             importError = null,
             error = DashboardStore.ErrorReason.DuplicateProfile(msg.name),
         )
+
+        is Msg.LinksImported -> copy(
+            isImporting = false,
+            importSheetClosing = importSheet != null,
+            importError = null,
+            error = DashboardStore.ErrorReason.ProfilesImported(msg.imported, msg.total, msg.failures),
+        )
+
+        is Msg.LinksFailed ->
+            if (importSheet != null) {
+                copy(isImporting = false, importFailures = msg.failures)
+            } else {
+                copy(
+                    isImporting = false,
+                    error = DashboardStore.ErrorReason.ProfilesImported(0, msg.failures.size, msg.failures),
+                )
+            }
+
         is Msg.ErrorRaised -> copy(error = msg.reason)
         Msg.ErrorDismissed -> copy(error = null)
         is Msg.LatencyUpdated ->

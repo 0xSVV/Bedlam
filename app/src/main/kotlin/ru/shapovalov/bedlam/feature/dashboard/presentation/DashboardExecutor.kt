@@ -4,8 +4,9 @@ import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.latency.LatencyResult
-import ru.shapovalov.bedlam.core.profile.domain.model.DuplicateProfileException
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportBatch
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFailure
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.model.detectProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
@@ -122,19 +123,23 @@ internal class DashboardExecutor(
         if (trimmed.isEmpty()) return
         dispatch(Msg.ImportStarted)
         scope.launch {
-            importProfile(trimmed, format, name.trim().ifEmpty { null })
-                .onSuccess { profile ->
-                    dispatch(Msg.ImportSucceeded)
-                    if (state().activeProfileId == null) setActiveProfile(profile.id)
-                }
-                .onFailure { e ->
-                    when (e) {
-                        is DuplicateProfileException ->
-                            dispatch(Msg.ImportRejectedAsDuplicate(e.existingName))
+            val batch = importProfile.importAll(trimmed, format, name.trim().ifEmpty { null })
+            dispatch(batch.toMsg())
+            val first = batch.imported.firstOrNull()
+            if (first != null && state().activeProfileId == null) setActiveProfile(first.id)
+        }
+    }
 
-                        else -> dispatch(Msg.ImportFailed(e.message.orEmpty()))
-                    }
-                }
+    private fun ProfileImportBatch.toMsg(): Msg {
+        val failure = failures.singleOrNull()
+        return when {
+            total == 1 && failure is ProfileImportFailure.Duplicate ->
+                Msg.ImportRejectedAsDuplicate(failure.existingName)
+
+            total == 1 && failure is ProfileImportFailure.Invalid -> Msg.ImportFailed(failure.message)
+            total == 1 -> Msg.ImportSucceeded
+            imported.isEmpty() -> Msg.LinksFailed(failures)
+            else -> Msg.LinksImported(imported.size, total, failures)
         }
     }
 

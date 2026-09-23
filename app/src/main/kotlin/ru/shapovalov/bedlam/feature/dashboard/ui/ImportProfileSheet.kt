@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.R
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFailure
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.model.detectProfileImportFormat
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardStore
@@ -57,6 +58,7 @@ internal fun ImportProfileSheet(
     seed: DashboardStore.ImportSheetSeed,
     isImporting: Boolean,
     error: String?,
+    failures: List<ProfileImportFailure>,
     closing: Boolean,
     onDismiss: () -> Unit,
     onImport: (ProfileImportFormat, String, String) -> Unit,
@@ -74,9 +76,13 @@ internal fun ImportProfileSheet(
     // Keep following the text — including a system paste, which never reaches
     // the Paste button — until the user picks a format themselves.
     var formatPinned by rememberSaveable(seed) { mutableStateOf(false) }
-    val shownError = error
+    val failuresText = if (failures.isEmpty()) {
+        null
+    } else {
+        stringResource(R.string.import_links_none, failures.size) + "\n" + importFailuresText(failures)
+    }
+    val shownError = (failuresText ?: error?.ifEmpty { stringResource(R.string.import_error_failed) })
         ?.takeIf { attemptedText == text }
-        ?.ifEmpty { stringResource(R.string.import_error_failed) }
     val formats = remember { ProfileImportFormat.entries.toList() }
 
     ModalBottomSheet(
@@ -132,9 +138,8 @@ internal fun ImportProfileSheet(
                 },
                 label = { Text(format.fieldLabel()) },
                 placeholder = { Text(format.placeholder()) },
-                singleLine = format == ProfileImportFormat.Link,
                 minLines = if (format == ProfileImportFormat.Json) 4 else 1,
-                maxLines = if (format == ProfileImportFormat.Json) 8 else 1,
+                maxLines = if (format == ProfileImportFormat.Json) 8 else 4,
                 isError = shownError != null,
                 supportingText = shownError?.let { { Text(it) } },
                 keyboardOptions = KeyboardOptions(
@@ -223,6 +228,21 @@ internal fun ImportProfileSheet(
             if (isActive) onDismiss()
         }
     }
+}
+
+@Composable
+internal fun importFailuresText(failures: List<ProfileImportFailure>): String =
+    failures.map { it.describe() }.joinToString("\n")
+
+@Composable
+private fun ProfileImportFailure.describe(): String = when (this) {
+    is ProfileImportFailure.Duplicate -> stringResource(R.string.import_link_duplicate, position, existingName)
+    is ProfileImportFailure.Invalid ->
+        if (message.isBlank()) {
+            stringResource(R.string.import_link_failed_unknown, position)
+        } else {
+            stringResource(R.string.import_link_failed, position, message)
+        }
 }
 
 @Composable

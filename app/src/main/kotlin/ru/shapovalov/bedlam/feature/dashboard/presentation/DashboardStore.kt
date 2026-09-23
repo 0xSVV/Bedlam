@@ -3,6 +3,7 @@ package ru.shapovalov.bedlam.feature.dashboard.presentation
 import com.arkivanov.mvikotlin.core.store.Store
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFailure
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.hysteria.ConnectionState
 
@@ -37,6 +38,7 @@ interface DashboardStore :
         val importSheetClosing: Boolean = false,
         val isImporting: Boolean = false,
         val importError: String? = null,
+        val importFailures: List<ProfileImportFailure> = emptyList(),
         val error: ErrorReason? = null,
         val latencies: Map<String, LatencyResult> = emptyMap(),
     ) {
@@ -52,6 +54,11 @@ interface DashboardStore :
         data class DuplicateProfile(val name: String) : ErrorReason
         data class ConnectionFailed(val message: String) : ErrorReason
         data class ImportFailed(val message: String) : ErrorReason
+        data class ProfilesImported(
+            val imported: Int,
+            val total: Int,
+            val failures: List<ProfileImportFailure>,
+        ) : ErrorReason
     }
 
     sealed interface Label {

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import ru.shapovalov.bedlam.core.latency.LatencyResult
+import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFailure
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
 import ru.shapovalov.bedlam.core.profile.domain.usecase.ImportProfileUseCase
 import ru.shapovalov.bedlam.core.profile.domain.usecase.SetActiveProfileUseCase
@@ -325,6 +326,99 @@ class DashboardExecutorTest {
     }
 
     @Test
+    fun `importing several links saves each, activates the first and reports the count`() = runTest {
+        val repository = FakeProfileRepository()
+        val text = "$ONE_LINK\n$TWO_LINK"
+        val state = DashboardStore.State(importSheet = DashboardStore.ImportSheetSeed(text, ProfileImportFormat.Link))
+        store(state, repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, text, "Ignored"))
+
+            assertEquals(listOf("One", "Two"), repository.profiles.value.map { it.name })
+            assertEquals(repository.profiles.value.first().id, repository.active.value)
+            assertTrue(store.state.importSheetClosing)
+            assertFalse(store.state.isImporting)
+            assertEquals(DashboardStore.ErrorReason.ProfilesImported(2, 2, emptyList()), store.state.error)
+        }
+    }
+
+    @Test
+    fun `a paste with a failing link keeps the others and names the failure`() = runTest {
+        val repository = FakeProfileRepository()
+        val text = "$ONE_LINK hysteria2://x@bad.example:0/#Bad"
+        val state = DashboardStore.State(importSheet = DashboardStore.ImportSheetSeed(text, ProfileImportFormat.Link))
+        store(state, repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, text, ""))
+
+            assertEquals(listOf("One"), repository.profiles.value.map { it.name })
+            assertTrue(store.state.importSheetClosing)
+            assertEquals(
+                DashboardStore.ErrorReason.ProfilesImported(
+                    imported = 1,
+                    total = 2,
+                    failures = listOf(
+                        ProfileImportFailure.Invalid(2, "Port 0 in the link is not between 1 and 65535"),
+                    ),
+                ),
+                store.state.error,
+            )
+        }
+    }
+
+    @Test
+    fun `a paste where every link fails stays in the sheet with each failure`() = runTest {
+        val existing = home.copy(config = parseHysteriaUri(ONE_LINK).config)
+        val repository = FakeProfileRepository(listOf(existing), activeId = "a")
+        val text = "$ONE_LINK\nhysteria2://x@bad.example:0/"
+        val seed = DashboardStore.ImportSheetSeed(text, ProfileImportFormat.Link)
+        store(DashboardStore.State(importSheet = seed), repository).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, text, ""))
+
+            assertEquals(
+                DashboardStore.State(
+                    importSheet = seed,
+                    importFailures = listOf(
+                        ProfileImportFailure.Duplicate(1, "Home"),
+                        ProfileImportFailure.Invalid(2, "Port 0 in the link is not between 1 and 65535"),
+                    ),
+                ),
+                store.state,
+            )
+        }
+    }
+
+    @Test
+    fun `a paste that fails after the sheet was dismissed is reported on the dashboard`() = runTest {
+        val text = "hysteria2://x@bad.example:0/\nhysteria2://y@bad.example:0/"
+        store(DashboardStore.State()).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, text, ""))
+
+            val failure = "Port 0 in the link is not between 1 and 65535"
+            assertEquals(
+                DashboardStore.ErrorReason.ProfilesImported(
+                    imported = 0,
+                    total = 2,
+                    failures = listOf(
+                        ProfileImportFailure.Invalid(1, failure),
+                        ProfileImportFailure.Invalid(2, failure),
+                    ),
+                ),
+                store.state.error,
+            )
+        }
+    }
+
+    @Test
+    fun `retrying in the sheet clears the previous failures`() = runTest {
+        val failures = listOf(ProfileImportFailure.Invalid(1, "bad"))
+        val state = DashboardStore.State(importSheet = seed, importFailures = failures)
+        store(state).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.ImportProfile(ProfileImportFormat.Link, TEST_LINK, ""))
+
+            assertEquals(emptyList<ProfileImportFailure>(), store.state.importFailures)
+        }
+    }
+
+    @Test
     fun `blank import text and a second import while importing are ignored`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val repository = FakeProfileRepository()
@@ -492,3 +586,6 @@ class DashboardExecutorTest {
         }
     }
 }
+
+private const val ONE_LINK = "hysteria2://a@one.example:443/#One"
+private const val TWO_LINK = "hysteria2://b@two.example:443/#Two"
