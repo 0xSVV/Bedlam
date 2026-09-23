@@ -104,7 +104,7 @@ fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
     val params = parseQuery(rawQuery)
     val sniParam = params["sni"].orEmpty()
     val sni = sniParam.ifEmpty { if (isIpLiteral(parsedHost.host)) "" else parsedHost.host }
-    val insecure = params["insecure"] == "1"
+    val insecure = params["insecure"] in GO_TRUE_SPELLINGS
     val pinSHA256 = params["pinSHA256"].orEmpty()
     val ech = params["ech"].orEmpty()
     val obfs = params["obfs"].orEmpty()
@@ -180,3 +180,5 @@ private fun isIpLiteral(host: String): Boolean {
 }
 
 private const val DEFAULT_PORT = 443
+
+private val GO_TRUE_SPELLINGS = setOf("1", "t", "T", "TRUE", "true", "True")

@@ -78,15 +78,16 @@ class HysteriaUriTest {
         assertEquals("other.example", r.config.tls.tlsSni)
     }
 
-    @Test
-    fun `insecure=1 sets tlsInsecure`() {
-        val r = parseHysteriaUri("hysteria2://token@host.example/?insecure=1")
+    @ParameterizedTest
+    @ValueSource(strings = ["1", "t", "T", "TRUE", "true", "True"])
+    fun `insecure reads every spelling Go parses as true`(value: String) {
+        val r = parseHysteriaUri("hysteria2://token@host.example/?insecure=$value")
         assertEquals(true, r.config.tls.tlsInsecure)
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["0", "true", "yes", ""])
-    fun `insecure=anything_else stays false`(value: String) {
+    @ValueSource(strings = ["0", "f", "F", "FALSE", "false", "False", "yes", "on", ""])
+    fun `insecure stays false for false spellings and values Go rejects`(value: String) {
         val r = parseHysteriaUri("hysteria2://token@host.example/?insecure=$value")
         assertEquals(false, r.config.tls.tlsInsecure)
     }
