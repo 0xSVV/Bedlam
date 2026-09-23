@@ -42,6 +42,44 @@ class HysteriaUriTest {
     }
 
     @Test
+    fun `keeps a plus sign in the auth`() {
+        val r = parseHysteriaUri("hysteria2://abc+def@host.example/")
+        assertEquals("abc+def", r.config.server.auth)
+    }
+
+    @Test
+    fun `keeps a plus sign in the name`() {
+        val r = parseHysteriaUri("hysteria2://t@host.example/#Home+Office")
+        assertEquals("Home+Office", r.name)
+    }
+
+    @Test
+    fun `decodes UTF-8 escapes in the name`() {
+        val r = parseHysteriaUri("hysteria2://t@host.example/#%F0%9F%9A%80%20Fast")
+        assertEquals("🚀 Fast", r.name)
+    }
+
+    @Test
+    fun `turns a plus sign in a query value into a space as Go does`() {
+        val r = parseHysteriaUri("hysteria2://t@host.example/?obfs=salamander&obfs-password=p+w%2B")
+        assertEquals("p w+", r.config.obfuscation!!.obfuscationPassword)
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+        strings = [
+            "hysteria2://ab%zz@host.example/",
+            "hysteria2://ab%4@host.example/",
+            "hysteria2://t@host.example/#name%",
+            "hysteria2://t@host.example/?sni=a%g1",
+        ],
+    )
+    fun `rejects a malformed percent-escape with a clear message`(link: String) {
+        val e = assertThrows(IllegalArgumentException::class.java) { parseHysteriaUri(link) }
+        assertEquals("The link has an invalid %-escape", e.message)
+    }
+
+    @Test
     fun `uses last at-sign to split userinfo`() {
         val r = parseHysteriaUri("hysteria2://a@b@host.example/")
         assertEquals("a@b", r.config.server.auth)

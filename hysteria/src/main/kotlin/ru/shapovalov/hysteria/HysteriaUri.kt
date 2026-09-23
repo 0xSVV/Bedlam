@@ -10,7 +10,7 @@ import ru.shapovalov.hysteria.config.ObfuscationOptions
 import ru.shapovalov.hysteria.config.ServerCredentials
 import ru.shapovalov.hysteria.config.TlsOptions
 import ru.shapovalov.hysteria.config.defaultTlsOptions
-import java.net.URLDecoder
+import java.io.ByteArrayOutputStream
 
 /**
  * Result of parsing a Hysteria 2 URI or a Bedlam profile JSON: a fully-formed
@@ -91,7 +91,7 @@ fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
     val atIdx = authority.lastIndexOf('@')
     val rawUserInfo = if (atIdx >= 0) authority.substring(0, atIdx) else ""
     val hostPort = if (atIdx >= 0) authority.substring(atIdx + 1) else authority
-    val auth = URLDecoder.decode(rawUserInfo, "UTF-8")
+    val auth = percentDecode(rawUserInfo, plusAsSpace = false)
 
     val parsedHost = parseHostPort(hostPort)
     require(parsedHost.host.isNotEmpty()) { "URI must contain a hostname" }
@@ -109,7 +109,7 @@ fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
     val ech = params["ech"].orEmpty()
     val obfs = params["obfs"].orEmpty()
     val obfsPassword = params["obfs-password"].orEmpty()
-    val name = URLDecoder.decode(rawFragment, "UTF-8")
+    val name = percentDecode(rawFragment, plusAsSpace = false)
 
     val config = HysteriaConfig(
         server = ServerCredentials(address = server, auth = auth),
@@ -166,9 +166,38 @@ private fun parseQuery(query: String): Map<String, String> {
         val idx = pair.indexOf('=')
         val key = if (idx < 0) pair else pair.substring(0, idx)
         val value = if (idx < 0) "" else pair.substring(idx + 1)
-        result[URLDecoder.decode(key, "UTF-8")] = URLDecoder.decode(value, "UTF-8")
+        result.putIfAbsent(percentDecode(key, plusAsSpace = true), percentDecode(value, plusAsSpace = true))
     }
     return result
+}
+
+private fun percentDecode(text: String, plusAsSpace: Boolean): String {
+    if ('%' !in text && !(plusAsSpace && '+' in text)) return text
+    val bytes = ByteArrayOutputStream(text.length)
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        when {
+            c == '%' -> {
+                val high = text.getOrNull(i + 1)?.hexValue()
+                val low = text.getOrNull(i + 2)?.hexValue()
+                require(high != null && low != null) { "The link has an invalid %-escape" }
+                bytes.write(high * 16 + low)
+                i += 3
+                continue
+            }
+
+            c == '+' && plusAsSpace -> bytes.write(' '.code)
+            else -> {
+                val end = if (c.isHighSurrogate() && i + 1 < text.length) i + 2 else i + 1
+                bytes.write(text.substring(i, end).toByteArray(Charsets.UTF_8))
+                i = end
+                continue
+            }
+        }
+        i++
+    }
+    return bytes.toString(Charsets.UTF_8)
 }
 
 private fun isIpLiteral(host: String): Boolean {
@@ -182,3 +211,10 @@ private fun isIpLiteral(host: String): Boolean {
 private const val DEFAULT_PORT = 443
 
 private val GO_TRUE_SPELLINGS = setOf("1", "t", "T", "TRUE", "true", "True")
+
+private fun Char.hexValue(): Int? = when (this) {
+    in '0'..'9' -> this - '0'
+    in 'a'..'f' -> this - 'a' + 10
+    in 'A'..'F' -> this - 'A' + 10
+    else -> null
+}
