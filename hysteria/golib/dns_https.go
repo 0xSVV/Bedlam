@@ -90,13 +90,12 @@ func (r *httpsResolver) newTransport() *dohTransport {
 		DialTLSContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return r.dialTLS(ctx, t)
 		},
-		ForceAttemptHTTP2:     true,
-		MaxConnsPerHost:       2,
-		MaxIdleConns:          2,
-		MaxIdleConnsPerHost:   2,
-		IdleConnTimeout:       90 * time.Second,
-		ResponseHeaderTimeout: dnsIOTimeout,
-		DisableCompression:    true,
+		ForceAttemptHTTP2:   true,
+		MaxConnsPerHost:     2,
+		MaxIdleConns:        2,
+		MaxIdleConnsPerHost: 2,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true,
 	}
 	t.hc = &http.Client{
 		Transport: t.rt,

@@ -543,6 +543,22 @@ func TestHTTPSResolver_givesUpADialAtTheOpenTimeout(t *testing.T) {
 	}
 }
 
+func TestHTTPSResolver_slowHeadersWithinTheBudgetStillAnswer(t *testing.T) {
+	d := newDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	d.delay.Store(int64(dnsIOTimeout + 500*time.Millisecond))
+	r, err := newHTTPSResolver(d.client(), d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsIOTimeout+3*time.Second)
+	defer cancel()
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("the answer arrives %v into a %v budget, so the query must succeed: %v", dnsIOTimeout+500*time.Millisecond, dnsIOTimeout+3*time.Second, err)
+	}
+}
+
 func TestDNSUpstream_http413EverywhereKeepsTheStatus(t *testing.T) {
 	var resolvers []dnsResolver
 	var servers []*dohServer
