@@ -32,6 +32,7 @@ import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponentFac
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardContainerComponentFactory
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardStoreFactory
 import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
+import ru.shapovalov.bedlam.feature.logs.data.LogExporter
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsComponentFactory
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsStoreFactory
 import ru.shapovalov.bedlam.feature.profileconfig.presentation.ProfileConfigComponentFactory
@@ -133,7 +134,10 @@ class TestGraph(
     val logBuffer by lazy { LogBuffer(client, logScope) }
 
     val logsFactory by lazy {
-        LogsComponentFactory(LogsStoreFactory(storeFactory, logBuffer))
+        LogsComponentFactory(
+            LogsStoreFactory(storeFactory, logBuffer),
+            LogExporter(logBuffer, client, routing, appFilter),
+        )
     }
 
     val dashboardFactory by lazy {

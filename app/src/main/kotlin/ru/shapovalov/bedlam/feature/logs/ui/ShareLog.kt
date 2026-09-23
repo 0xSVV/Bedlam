@@ -8,32 +8,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import ru.shapovalov.bedlam.R
-import ru.shapovalov.bedlam.feature.logs.data.LogExportHeader
-import ru.shapovalov.bedlam.feature.logs.data.formatLogExport
-import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
-import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
+import ru.shapovalov.bedlam.feature.logs.data.LogExportDevice
+import ru.shapovalov.hysteria.api.HysteriaCore
 import java.io.File
+import java.time.ZonedDateTime
 
 private val exportLock = Mutex()
 
 internal suspend fun Context.shareLog(
-    entries: List<LogEntry>,
-    minLevel: LogLevel,
-    droppedCount: Long,
+    export: suspend (LogExportDevice, ZonedDateTime) -> String,
 ) {
     if (!exportLock.tryLock()) return
     val uri = try {
         withContext(Dispatchers.IO) {
-            val text = formatLogExport(
-                entries = entries,
-                header = LogExportHeader(
-                    appVersion = appVersionName(),
-                    device = "${Build.MANUFACTURER} ${Build.MODEL}",
-                    sdkInt = Build.VERSION.SDK_INT,
-                    minLevel = minLevel,
-                    droppedCount = droppedCount,
-                ),
-            )
+            val text = export(exportDevice(), ZonedDateTime.now())
             val directory = File(cacheDir, "logs").apply { mkdirs() }
             val file = File(directory, "bedlam-log.txt")
             file.writeText(text)
@@ -54,6 +42,16 @@ internal suspend fun Context.shareLog(
     )
 }
 
-private fun Context.appVersionName(): String = runCatching {
-    packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
-}.getOrDefault("")
+private fun Context.exportDevice(): LogExportDevice {
+    val packageInfo = runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull()
+    return LogExportDevice(
+        appVersionName = packageInfo?.versionName.orEmpty(),
+        appVersionCode = packageInfo?.longVersionCode ?: 0L,
+        coreVersion = HysteriaCore.VERSION,
+        manufacturer = Build.MANUFACTURER,
+        model = Build.MODEL,
+        androidRelease = Build.VERSION.RELEASE,
+        sdkInt = Build.VERSION.SDK_INT,
+        abis = Build.SUPPORTED_ABIS.toList(),
+    )
+}

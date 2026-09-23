@@ -132,12 +132,7 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
             isPaused = state.isPaused,
             onTogglePause = component::onTogglePause,
             onClear = component::onClear,
-            onShare = {
-                val entries = state.visibleEntries
-                val minLevel = state.minLevel
-                val droppedCount = state.droppedCount
-                scope.launch { context.shareLog(entries, minLevel, droppedCount) }
-            },
+            onShare = { scope.launch { context.shareLog(component::exportLog) } },
             modifier = Modifier.align(Alignment.BottomEnd),
         )
     }
