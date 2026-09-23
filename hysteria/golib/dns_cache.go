@@ -387,13 +387,10 @@ func clampDuration(d, lo, hi time.Duration) time.Duration {
 // A cached answer has to age. Replaying the stored TTL would give the client a
 // full fresh lifetime on every hit, so the record could never expire.
 func decrementTTLs(response []byte, age time.Duration) {
-	if len(response) < 12 || age <= 0 {
+	if len(response) < 12 {
 		return
 	}
-	secs := uint32(age / time.Second)
-	if secs == 0 {
-		return
-	}
+	secs := uint32(max(age, 0) / time.Second)
 	qdCount := binary.BigEndian.Uint16(response[4:6])
 	anCount := int(binary.BigEndian.Uint16(response[6:8]))
 	nsCount := int(binary.BigEndian.Uint16(response[8:10]))
@@ -425,7 +422,7 @@ func decrementTTLs(response []byte, age time.Duration) {
 			}
 			if ttl > secs {
 				ttl -= secs
-			} else {
+			} else if secs > 0 {
 				ttl = 1
 			}
 			binary.BigEndian.PutUint32(response[np+4:np+8], ttl)

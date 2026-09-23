@@ -847,6 +847,7 @@ func TestDNSCache_lookupCountsDownNegativeAnswers(t *testing.T) {
 		{"NXDOMAIN from the SOA MINIMUM", negativeResponse("nope.example.com", 3, 900, 300), 100 * time.Second, 200, 300},
 		{"NODATA from the SOA MINIMUM", negativeResponse("example.com", 0, 3600, 250), 50 * time.Second, 200, 250},
 		{"an expired countdown floors at one", negativeResponse("nope.example.com", 3, 900, 60), 100 * time.Second, 1, 60},
+		{"a fresh hit takes the SOA MINIMUM", negativeResponse("nope.example.com", 3, 86400, 60), 0, 60, 60},
 	}
 	for _, tc := range cases {
 		c := newDNSCache()
@@ -891,6 +892,22 @@ func TestDNSCache_lookupLeavesTheStoredEntryIntact(t *testing.T) {
 		if ttl := firstAnswerTTL(t, resp); ttl != 200 {
 			t.Fatalf("lookup %d: ttl = %d, want 200 every time", i, ttl)
 		}
+	}
+}
+
+func TestDecrementTTLs_freshHitKeepsAZeroTTL(t *testing.T) {
+	resp := dnsResponse("example.com", 0, [4]byte{1, 1, 1, 1})
+	decrementTTLs(resp, 0)
+	if ttl := firstAnswerTTL(t, resp); ttl != 0 {
+		t.Errorf("ttl = %d, want 0", ttl)
+	}
+}
+
+func TestDecrementTTLs_freshHitTakesTheSOAMinimum(t *testing.T) {
+	resp := negativeResponse("nope.example.com", 3, 86400, 60)
+	decrementTTLs(resp, 0)
+	if ttl, _ := authoritySOA(t, resp); ttl != 60 {
+		t.Errorf("SOA ttl = %d, want 60", ttl)
 	}
 }
 
