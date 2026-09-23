@@ -223,7 +223,8 @@ class BedlamVpnService : VpnService() {
         startRuntimeHeartbeat()
         startReconnectWatchdog()
         startLivenessKick()
-        startConnectHaptic()
+        val userInitiated = intent?.getBooleanExtra(EXTRA_USER_INITIATED, false) == true
+        if (vibratesOnConnect(userInitiated, flags)) startConnectHaptic()
 
         scheduleAlwaysOnVpnStateUpdate()
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -687,6 +688,7 @@ class BedlamVpnService : VpnService() {
         const val EXTRA_PROFILE_ID = "profile_id"
         const val EXTRA_PROFILE_NAME = "profile_name"
         const val EXTRA_STOP_REQUEST_ID = "stop_request_id"
+        const val EXTRA_USER_INITIATED = "user_initiated"
     }
 
     private suspend fun updateConnectionName(name: String) {

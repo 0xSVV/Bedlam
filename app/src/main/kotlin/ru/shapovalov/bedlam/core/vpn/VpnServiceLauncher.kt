@@ -27,17 +27,18 @@ class VpnServiceLauncher(
         return am.getRunningServices(Int.MAX_VALUE).any { it.service.className == name }
     }
 
-    fun start(profile: Profile) {
+    fun start(profile: Profile, userInitiated: Boolean) {
         start(
             configJson = json.encodeToString(profile.config),
             profileName = profile.name,
             profileId = profile.id,
+            userInitiated = userInitiated,
         )
     }
 
-    suspend fun startActiveProfile(): StartActiveProfileResult {
+    suspend fun startActiveProfile(userInitiated: Boolean): StartActiveProfileResult {
         val profile = activeProfile() ?: return StartActiveProfileResult.NoActiveProfile
-        start(profile)
+        start(profile, userInitiated)
         return StartActiveProfileResult.Started
     }
 
@@ -54,11 +55,17 @@ class VpnServiceLauncher(
         ContextCompat.startForegroundService(appContext, intent)
     }
 
-    private fun start(configJson: String, profileName: String, profileId: String?) {
+    private fun start(
+        configJson: String,
+        profileName: String,
+        profileId: String?,
+        userInitiated: Boolean,
+    ) {
         val intent = Intent(appContext, BedlamVpnService::class.java).apply {
             putExtra(BedlamVpnService.EXTRA_CONFIG_JSON, configJson)
             putExtra(BedlamVpnService.EXTRA_PROFILE_NAME, profileName)
             putExtra(BedlamVpnService.EXTRA_PROFILE_ID, profileId)
+            putExtra(BedlamVpnService.EXTRA_USER_INITIATED, userInitiated)
         }
         ContextCompat.startForegroundService(appContext, intent)
     }

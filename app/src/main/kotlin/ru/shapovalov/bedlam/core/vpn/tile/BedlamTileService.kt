@@ -118,7 +118,7 @@ class BedlamTileService : TileService() {
             if (vpnServiceLauncher.prepareIntent() != null) {
                 openVpnPermissionActivity()
             } else {
-                vpnServiceLauncher.start(profile)
+                vpnServiceLauncher.start(profile, userInitiated = true)
                 updateTile(ConnectionState.Connecting, profile.id)
             }
         }

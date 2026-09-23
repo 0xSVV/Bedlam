@@ -22,7 +22,7 @@ class ReconcileConnectionStateUseCase internal constructor(
         client = client,
         isServiceRunning = launcher::isServiceRunning,
         consentRequired = { launcher.prepareIntent() != null },
-        startActiveProfile = launcher::startActiveProfile,
+        startActiveProfile = { launcher.startActiveProfile(userInitiated = false) },
         runtimeStateRepository = runtimeStateRepository,
     )
 
