@@ -499,7 +499,7 @@ class BedlamVpnService : VpnService() {
             if (newPlan != null && newPlan != currentRoutePlan) {
                 reapplyDnsForNetworkChange(newPlan)
             }
-            runCatching { client.resetConnections() }
+            runCatching { client.resetAfterNetworkChange() }
                 .onFailure { Log.w(TAG, "resetConnections failed", it) }
         }
     }
