@@ -176,6 +176,18 @@ class ImportProfileUseCaseTest {
     }
 
     @Test
+    fun `lines around the links are not counted as links`() = runTest {
+        val repo = FakeRepo()
+        val text = "My servers:\nhysteria2://a@one.example:443/#One\nhysteria2://b@two.example:443/#Two\nThanks!"
+
+        val batch = useCase(repo).importAll(text, ProfileImportFormat.Link)
+
+        assertEquals(listOf("One", "Two"), batch.imported.map { it.name })
+        assertEquals(emptyList<ProfileImportFailure>(), batch.failures)
+        assertEquals(2, batch.total)
+    }
+
+    @Test
     fun `a requested name applies only to a single link`() = runTest {
         val single = FakeRepo()
         useCase(single).importAll(link, ProfileImportFormat.Link, name = "Office")

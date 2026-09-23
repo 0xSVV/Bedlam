@@ -34,16 +34,36 @@ class HysteriaLinkListTest {
     }
 
     @Test
-    fun `keeps text before the first link as its own entry`() {
+    fun `drops a label line before the links`() {
         assertEquals(
-            listOf("servers:", "hysteria2://a@one.example/"),
-            splitHysteriaLinks("servers:\nhysteria2://a@one.example/"),
+            listOf("hysteria2://a@one.example/", "hysteria2://b@two.example/"),
+            splitHysteriaLinks("My servers:\nhysteria2://a@one.example/\nhysteria2://b@two.example/"),
         )
+    }
+
+    @Test
+    fun `drops a trailing line that is not a link`() {
+        assertEquals(
+            listOf("hysteria2://pw@h.example/#Home"),
+            splitHysteriaLinks("hysteria2://pw@h.example/#Home\nThanks!"),
+        )
+    }
+
+    @Test
+    fun `a trailing line does not leak into the last query value`() {
+        val link = splitHysteriaLinks("hysteria2://pw@h.example/?insecure=1\r\nsee you").single()
+
+        assertEquals(true, parseHysteriaUri(link).config.tls.tlsInsecure)
     }
 
     @Test
     fun `returns text without a link as one entry`() {
         assertEquals(listOf("not a link"), splitHysteriaLinks("  not a link \n"))
+    }
+
+    @Test
+    fun `returns several lines without a link as one entry`() {
+        assertEquals(listOf("not\na link"), splitHysteriaLinks("not\na link\n"))
     }
 
     @Test

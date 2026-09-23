@@ -28,8 +28,13 @@ fun buildHysteriaLink(config: HysteriaConfig, name: String): HysteriaLink {
     )
 }
 
-fun splitHysteriaLinks(text: String): List<String> =
-    text.split(LINK_BOUNDARY).map { it.trim() }.filter { it.isNotEmpty() }
+fun splitHysteriaLinks(text: String): List<String> {
+    val links = text.lines()
+        .flatMap { it.split(LINK_BOUNDARY) }
+        .map { it.trim() }
+        .filter { entry -> LINK_SCHEMES.any { entry.startsWith(it) } }
+    return links.ifEmpty { listOfNotNull(text.trim().takeIf { it.isNotEmpty() }) }
+}
 
 private fun hysteriaUri(config: HysteriaConfig, name: String): String {
     val server = splitServerAddress(config.server.address.trim())
@@ -138,5 +143,7 @@ private fun Char.isUnreserved(): Boolean =
 private const val HEX_DIGITS = "0123456789ABCDEF"
 
 private val MPORT_LITERALS = setOf(',')
+
+private val LINK_SCHEMES = listOf("hysteria2://", "hy2://")
 
 private val LINK_BOUNDARY = Regex("""(?<=\s)(?=(?:hysteria2|hy2)://)""")
