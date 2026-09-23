@@ -352,7 +352,7 @@ func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, def
 			resp, err := h.session.dnsCache.resolve(qctx, resolver, query, h.countDNS)
 
 			if err != nil {
-				logDNSError(resolver.id(), err)
+				logDNSError(resolver.id(), query, err)
 				if sf := buildServFail(query); sf != nil {
 					if werr := conn.WritePacket(buf.As(sf), src); werr != nil {
 						log(LogLevelDebug, srcDNS, "DNS servfail write error: %s", werr)
@@ -383,7 +383,7 @@ func (h *tunHandler) serveDNSStream(ctx context.Context, conn net.Conn) error {
 			resp, err = h.session.dnsCache.resolve(qctx, h.dns, query, h.countDNS)
 			cancel()
 			if err != nil {
-				logDNSError(h.dns.id(), err)
+				logDNSError(h.dns.id(), query, err)
 				resp = buildServFail(query)
 				if resp == nil {
 					return err
@@ -397,12 +397,14 @@ func (h *tunHandler) serveDNSStream(ctx context.Context, conn net.Conn) error {
 	}
 }
 
-func logDNSError(upstreamID string, err error) {
-	key := upstreamID
+func logDNSError(upstreamID string, query []byte, err error) {
 	if errors.Is(err, errDNSQueryInvalid) {
-		key = "invalid|" + upstreamID
+		if dnsErrLimiter.allow("invalid|" + upstreamID) {
+			log(LogLevelInfo, srcDNS, "Refused a packet on port 53 that is not a single DNS query (%d bytes)", len(query))
+		}
+		return
 	}
-	if dnsErrLimiter.allow(key) {
+	if dnsErrLimiter.allow(upstreamID) {
 		log(LogLevelWarn, srcDNS, "DNS error: %s: %s", upstreamID, err)
 	}
 }
