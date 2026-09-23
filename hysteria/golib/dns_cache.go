@@ -16,9 +16,17 @@ import (
 var errDNSQueryInvalid = errors.New("not a DNS query with one question")
 
 const (
-	dnsCacheMaxEntries = 1024
-	dnsCacheMinTTL     = 5 * time.Second
-	dnsCacheMaxTTL     = 1 * time.Hour
+	dnsCacheMaxEntries     = 1024
+	dnsCacheMinTTL         = 5 * time.Second
+	dnsCacheMaxTTL         = 1 * time.Hour
+	dnsCacheNegativeMaxTTL = 5 * time.Minute
+)
+
+const (
+	dnsRcodeNoError  = 0
+	dnsRcodeNXDomain = 3
+	dnsTypeSOA       = 6
+	soaMinRDataLen   = 22
 )
 
 type dnsCacheEntry struct {
@@ -281,7 +289,8 @@ func cacheableTTL(response []byte) time.Duration {
 	if len(response) < 12 {
 		return 0
 	}
-	if response[3]&0x0f != 0 {
+	rcode := response[3] & 0x0f
+	if rcode != dnsRcodeNoError && rcode != dnsRcodeNXDomain {
 		return 0
 	}
 	// A truncated answer is incomplete by definition; caching it would also
@@ -291,47 +300,88 @@ func cacheableTTL(response []byte) time.Duration {
 	}
 	qdCount := binary.BigEndian.Uint16(response[4:6])
 	anCount := binary.BigEndian.Uint16(response[6:8])
-	if qdCount != 1 || anCount == 0 {
+	nsCount := binary.BigEndian.Uint16(response[8:10])
+	if qdCount != 1 {
 		return 0
 	}
 
-	pos := 12
-	for i := uint16(0); i < qdCount; i++ {
-		np := skipName(response, pos)
-		if np < 0 || np+4 > len(response) {
-			return 0
-		}
-		pos = np + 4
+	pos := skipName(response, 12)
+	if pos < 0 || pos+4 > len(response) {
+		return 0
+	}
+	pos += 4
+
+	answerTTL, pos, ok := minRecordTTL(response, pos, anCount)
+	if !ok {
+		return 0
 	}
 
-	var minTTL uint32
-	for i := uint16(0); i < anCount; i++ {
-		np := skipName(response, pos)
-		if np < 0 || np+10 > len(response) {
+	if rcode == dnsRcodeNoError && anCount > 0 {
+		if answerTTL == 0 {
 			return 0
 		}
-		ttl := binary.BigEndian.Uint32(response[np+4 : np+8])
-		rdLen := binary.BigEndian.Uint16(response[np+8 : np+10])
+		return clampDuration(time.Duration(answerTTL)*time.Second, dnsCacheMinTTL, dnsCacheMaxTTL)
+	}
+
+	ttl, ok := negativeTTL(response, pos, nsCount)
+	if !ok {
+		return 0
+	}
+	if anCount > 0 && answerTTL < ttl {
+		ttl = answerTTL
+	}
+	if ttl == 0 {
+		return 0
+	}
+	return min(time.Duration(ttl)*time.Second, dnsCacheNegativeMaxTTL)
+}
+
+func minRecordTTL(msg []byte, pos int, count uint16) (uint32, int, bool) {
+	var minTTL uint32
+	for i := uint16(0); i < count; i++ {
+		np := skipName(msg, pos)
+		if np < 0 || np+10 > len(msg) {
+			return 0, 0, false
+		}
+		ttl := binary.BigEndian.Uint32(msg[np+4 : np+8])
 		if i == 0 || ttl < minTTL {
 			minTTL = ttl
 		}
-		pos = np + 10 + int(rdLen)
-		if pos > len(response) {
-			return 0
+		pos = np + 10 + int(binary.BigEndian.Uint16(msg[np+8:np+10]))
+		if pos > len(msg) {
+			return 0, 0, false
 		}
 	}
+	return minTTL, pos, true
+}
 
-	if minTTL == 0 {
-		return 0
+func negativeTTL(msg []byte, pos int, nsCount uint16) (uint32, bool) {
+	for i := uint16(0); i < nsCount; i++ {
+		np := skipName(msg, pos)
+		if np < 0 || np+10 > len(msg) {
+			return 0, false
+		}
+		end := np + 10 + int(binary.BigEndian.Uint16(msg[np+8:np+10]))
+		if end > len(msg) {
+			return 0, false
+		}
+		if minimum, ok := soaMinimum(msg, np, end); ok {
+			return min(binary.BigEndian.Uint32(msg[np+4:np+8]), minimum), true
+		}
+		pos = end
 	}
-	d := time.Duration(minTTL) * time.Second
-	if d < dnsCacheMinTTL {
-		d = dnsCacheMinTTL
+	return 0, false
+}
+
+func soaMinimum(msg []byte, typePos, end int) (uint32, bool) {
+	if binary.BigEndian.Uint16(msg[typePos:typePos+2]) != dnsTypeSOA || end-(typePos+10) < soaMinRDataLen {
+		return 0, false
 	}
-	if d > dnsCacheMaxTTL {
-		d = dnsCacheMaxTTL
-	}
-	return d
+	return binary.BigEndian.Uint32(msg[end-4 : end]), true
+}
+
+func clampDuration(d, lo, hi time.Duration) time.Duration {
+	return max(lo, min(d, hi))
 }
 
 // A cached answer has to age. Replaying the stored TTL would give the client a
@@ -345,9 +395,9 @@ func decrementTTLs(response []byte, age time.Duration) {
 		return
 	}
 	qdCount := binary.BigEndian.Uint16(response[4:6])
-	records := int(binary.BigEndian.Uint16(response[6:8])) +
-		int(binary.BigEndian.Uint16(response[8:10])) +
-		int(binary.BigEndian.Uint16(response[10:12]))
+	anCount := int(binary.BigEndian.Uint16(response[6:8]))
+	nsCount := int(binary.BigEndian.Uint16(response[8:10]))
+	records := anCount + nsCount + int(binary.BigEndian.Uint16(response[10:12]))
 
 	pos := 12
 	for i := uint16(0); i < qdCount; i++ {
@@ -362,9 +412,17 @@ func decrementTTLs(response []byte, age time.Duration) {
 		if np < 0 || np+10 > len(response) {
 			return
 		}
+		end := np + 10 + int(binary.BigEndian.Uint16(response[np+8:np+10]))
+		if end > len(response) {
+			return
+		}
 		// An OPT record keeps flags and the extended rcode in the TTL field.
 		if binary.BigEndian.Uint16(response[np:np+2]) != 41 {
 			ttl := binary.BigEndian.Uint32(response[np+4 : np+8])
+			inAuthority := i >= anCount && i < anCount+nsCount
+			if minimum, ok := soaMinimum(response, np, end); ok && inAuthority {
+				ttl = min(ttl, minimum)
+			}
 			if ttl > secs {
 				ttl -= secs
 			} else {
@@ -372,11 +430,7 @@ func decrementTTLs(response []byte, age time.Duration) {
 			}
 			binary.BigEndian.PutUint32(response[np+4:np+8], ttl)
 		}
-		rdLen := binary.BigEndian.Uint16(response[np+8 : np+10])
-		pos = np + 10 + int(rdLen)
-		if pos > len(response) {
-			return
-		}
+		pos = end
 	}
 }
 
