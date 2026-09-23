@@ -95,13 +95,13 @@ fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
 
     val parsedHost = parseHostPort(hostPort)
     require(parsedHost.host.isNotEmpty()) { "URI must contain a hostname" }
-    val server = when {
-        parsedHost.isHopping -> hostPort
-        ':' in parsedHost.host -> "[${parsedHost.host}]:${parsedHost.port}"
-        else -> "${parsedHost.host}:${parsedHost.port}"
-    }
+    parsedHost.portSpec?.let { validatePortSpec(it, "The link has an empty port after the host") }
 
     val params = parseQuery(rawQuery)
+    val hopPorts = params["mport"]?.also { validatePortSpec(it, "The link has an empty port in mport") }
+    val ports = hopPorts ?: parsedHost.portSpec ?: DEFAULT_PORT.toString()
+    val server = if (':' in parsedHost.host) "[${parsedHost.host}]:$ports" else "${parsedHost.host}:$ports"
+
     val sniParam = params["sni"].orEmpty()
     val sni = sniParam.ifEmpty { if (isIpLiteral(parsedHost.host)) "" else parsedHost.host }
     val insecure = params["insecure"] in GO_TRUE_SPELLINGS
@@ -130,7 +130,7 @@ fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
     return ParsedHysteriaUri(config = config, name = name)
 }
 
-private data class HostPort(val host: String, val port: Int, val isHopping: Boolean)
+private data class HostPort(val host: String, val portSpec: String?)
 
 private fun parseHostPort(hostPort: String): HostPort {
     if (hostPort.startsWith("[")) {
@@ -141,21 +141,33 @@ private fun parseHostPort(hostPort: String): HostPort {
         return parsePortAfterHost(host, rest)
     }
     val colon = hostPort.indexOf(':')
-    if (colon < 0) return HostPort(hostPort, DEFAULT_PORT, isHopping = false)
+    if (colon < 0) return HostPort(hostPort, portSpec = null)
     val host = hostPort.substring(0, colon)
     return parsePortAfterHost(host, hostPort.substring(colon))
 }
 
 private fun parsePortAfterHost(host: String, rest: String): HostPort {
-    if (rest.isEmpty()) return HostPort(host, DEFAULT_PORT, isHopping = false)
+    if (rest.isEmpty()) return HostPort(host, portSpec = null)
     require(rest.startsWith(":")) { "expected ':' between host and port" }
-    val portStr = rest.substring(1)
-    if (',' in portStr || '-' in portStr) {
-        return HostPort(host, 0, isHopping = true)
+    return HostPort(host, rest.substring(1))
+}
+
+private fun validatePortSpec(spec: String, emptyMessage: String) {
+    require(spec.isNotEmpty()) { emptyMessage }
+    for (part in spec.split(',')) {
+        val bounds = part.split('-')
+        require(bounds.none { it.isEmpty() }) { "The link has an empty port in $spec" }
+        require(bounds.size <= 2) { "Port range $part in the link is not low-high" }
+        val numbers = bounds.map(::linkPortNumber)
+        require(numbers.first() <= numbers.last()) { "Port range $part in the link starts after it ends" }
     }
-    val port = portStr.toIntOrNull()
-    require(port != null && port in 1..65535) { "invalid port in URI: $portStr" }
-    return HostPort(host, port, isHopping = false)
+}
+
+private fun linkPortNumber(text: String): Int {
+    require(text.all { it in '0'..'9' }) { "Port $text in the link is not a number" }
+    val port = text.toIntOrNull()
+    require(port != null && port in 1..65535) { "Port $text in the link is not between 1 and 65535" }
+    return port
 }
 
 private fun parseQuery(query: String): Map<String, String> {

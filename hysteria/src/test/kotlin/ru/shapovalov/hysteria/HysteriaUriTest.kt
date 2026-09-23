@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
 
 class HysteriaUriTest {
@@ -190,6 +191,45 @@ class HysteriaUriTest {
         assertThrows(IllegalArgumentException::class.java) {
             parseHysteriaUri("hysteria2://t@host.example:$port/")
         }
+    }
+
+    @Test
+    fun `mport turns a single-port link into a port-hopping profile`() {
+        val r = parseHysteriaUri("hysteria2://t@host.example:443/?mport=20000-30000,40000")
+        assertEquals("host.example:20000-30000,40000", r.config.server.address)
+    }
+
+    @Test
+    fun `mport keeps an IPv6 host in brackets`() {
+        val r = parseHysteriaUri("hysteria2://t@[2001:db8::1]:443/?mport=20000-30000")
+        assertEquals("[2001:db8::1]:20000-30000", r.config.server.address)
+    }
+
+    @Test
+    fun `mport applies to a link without a port`() {
+        val r = parseHysteriaUri("hysteria2://t@host.example/?mport=5000,6000")
+        assertEquals("host.example:5000,6000", r.config.server.address)
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        delimiter = '|',
+        value = [
+            "hysteria2://t@h.example:9000-8000/|Port range 9000-8000 in the link starts after it ends",
+            "hysteria2://t@h.example:0-100/|Port 0 in the link is not between 1 and 65535",
+            "hysteria2://t@h.example:1-70000/|Port 70000 in the link is not between 1 and 65535",
+            "hysteria2://t@h.example:8000,,9000/|The link has an empty port in 8000,,9000",
+            "hysteria2://t@h.example:80-/|The link has an empty port in 80-",
+            "hysteria2://t@h.example:a-b/|Port a in the link is not a number",
+            "hysteria2://t@h.example:443/?mport=abc|Port abc in the link is not a number",
+            "hysteria2://t@h.example:443/?mport=30000-20000|Port range 30000-20000 in the link starts after it ends",
+            "hysteria2://t@h.example:443/?mport=|The link has an empty port in mport",
+            "hysteria2://t@h.example:443/?mport=1-2-3|Port range 1-2-3 in the link is not low-high",
+        ],
+    )
+    fun `rejects invalid ports and port ranges with a clear message`(link: String, message: String) {
+        val e = assertThrows(IllegalArgumentException::class.java) { parseHysteriaUri(link) }
+        assertEquals(message, e.message)
     }
 
     @Test
