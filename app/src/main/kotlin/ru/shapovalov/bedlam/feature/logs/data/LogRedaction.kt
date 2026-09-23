@@ -30,12 +30,14 @@ fun redactAddresses(text: String, rules: RedactionRules): String {
     val kept = rules.keptAddresses.mapNotNull { addressBytes(it)?.let(::addressKey) }.toSet()
     val addressTokens = HashMap<String, String>()
     val withoutAddresses = ADDRESS_PATTERN.replace(text) { match ->
-        val bytes = addressBytes(match.value) ?: return@replace match.value
+        val end = longestAddressEnd(match.value) ?: return@replace match.value
+        val literal = match.value.substring(0, end)
+        val bytes = addressBytes(literal) ?: return@replace match.value
         val key = addressKey(bytes)
         if (key in kept || !isPublic(bytes)) {
             match.value
         } else {
-            addressTokens.getOrPut(key) { "<ip-${addressTokens.size + 1}>" }
+            addressTokens.getOrPut(key) { "<ip-${addressTokens.size + 1}>" } + match.value.substring(end)
         }
     }
     if (rules.hostNames.isEmpty()) return withoutAddresses
@@ -65,6 +67,16 @@ private fun serverHostName(address: String): String? {
     return name.takeIf { isName }
 }
 
+private fun longestAddressEnd(candidate: String): Int? {
+    if (addressBytes(candidate) != null) return candidate.length
+    var end = candidate.lastIndexOf(':')
+    while (end > 0 && ':' in candidate.substring(0, end)) {
+        if (addressBytes(candidate.substring(0, end)) != null) return end
+        end = candidate.lastIndexOf(':', end - 1)
+    }
+    return null
+}
+
 private fun addressBytes(literal: String): ByteArray? = runCatching {
     if (':' !in literal) return@runCatching parseIpv4ToBytes(literal)
     val tail = literal.substringAfterLast(':')
@@ -89,8 +101,8 @@ private fun isPublic(bytes: ByteArray): Boolean {
 }
 
 private val ADDRESS_PATTERN = Regex(
-    "(?<![0-9A-Za-z_:.])(?:[0-9A-Fa-f]{0,4}:){2,7}(?:[0-9A-Fa-f]{1,4}|\\d{1,3}(?:\\.\\d{1,3}){3})?" +
-            "(?![0-9A-Za-z_:]|\\.\\d)" +
+    "(?<![0-9A-Za-z_:.])(?:[0-9A-Fa-f]{0,4}:){2,8}(?:[0-9A-Fa-f]{1,4}|\\d{1,3}(?:\\.\\d{1,3}){3})?" +
+            "(?![0-9A-Za-z_]|\\.\\d)" +
             "|(?<![0-9A-Za-z_.])\\d{1,3}(?:\\.\\d{1,3}){3}(?![0-9A-Za-z_]|\\.\\d)"
 )
 

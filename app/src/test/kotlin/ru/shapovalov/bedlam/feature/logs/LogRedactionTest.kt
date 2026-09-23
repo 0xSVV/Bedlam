@@ -50,6 +50,22 @@ class LogRedactionTest {
     }
 
     @Test
+    fun `an IPv6 address followed by a colon is still masked`() {
+        assertEquals(
+            "dial <ip-1>: timeout, server <ip-2>: unreachable",
+            redact("dial 2a0c::a: timeout, server 2001:db8:1::5: unreachable"),
+        )
+    }
+
+    @Test
+    fun `an unbracketed IPv6 address with a port keeps the port`() {
+        assertEquals(
+            "addr <ip-1>:443 and <ip-2>:8443",
+            redact("addr 2a0c:9a46:1e00:5:0:0:0:a:443 and ::ffff:203.0.113.7:8443"),
+        )
+    }
+
+    @Test
     fun `IPv4 mapped IPv6 addresses follow the embedded address`() {
         assertEquals(
             "<ip-1> from ::ffff:192.168.1.10 and <ip-1>",
