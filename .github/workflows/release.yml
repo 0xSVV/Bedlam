@@ -32,7 +32,7 @@ jobs:
       BEDLAM_CERT_SHA256: 53dc7856de56620d6428a344662ee0b3c3bf5d09faa16312534945044ba2d109
       HAS_SIGNING_SECRETS: ${{ secrets.BEDLAM_STORE_BASE64 != '' && secrets.BEDLAM_STORE_PASSWORD != '' && secrets.BEDLAM_KEY_ALIAS != '' && secrets.BEDLAM_KEY_PASSWORD != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
           persist-credentials: false
@@ -103,7 +103,7 @@ jobs:
         run: bash .github/scripts/check-release-version.sh "$GITHUB_REF_NAME"
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: build/release/*
           body_path: release-notes/${{ steps.version.outputs.name }}.md
