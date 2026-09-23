@@ -17,6 +17,7 @@ const (
 	dnsPoolIdleTimeout = 30 * time.Second
 	dnsOpenTimeout     = 8 * time.Second
 	dnsPoolMaxOpening  = 2
+	dnsLateReadTimeout = 8 * time.Second
 )
 
 type pooledConn struct {
@@ -103,7 +104,8 @@ func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *
 	}
 }
 
-func (p *streamPool) exchange(ctx context.Context, query []byte) ([]byte, error) {
+func (p *streamPool) exchange(ctx context.Context, callerQuery []byte) ([]byte, error) {
+	query := bytes.Clone(callerQuery)
 	started := time.Now()
 	c, err := p.takeOrReserveOpen(ctx)
 	if err != nil {
@@ -131,16 +133,12 @@ func (p *streamPool) exchange(ctx context.Context, query []byte) ([]byte, error)
 	return result.resp, nil
 }
 
-func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, callerQuery []byte) ([]byte, []streamResult) {
-	query := bytes.Clone(callerQuery)
+func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, query []byte) ([]byte, []streamResult) {
 	streamCtx, stopStreams := context.WithCancel(ctx)
 	defer stopStreams()
 	results := make(chan streamResult, 2)
 	stream := pooled.describe()
-	go func() {
-		resp, reusable, err := p.exchangeOn(streamCtx, pooled, query)
-		results <- streamResult{conn: pooled, pooled: true, resp: resp, reusable: reusable, stream: stream, err: err}
-	}()
+	go func() { results <- p.exchangeOn(streamCtx, pooled, query, stream, true) }()
 	hedge := time.NewTimer(hedgeDelay(ctx))
 	defer hedge.Stop()
 	var failures []streamResult
@@ -192,11 +190,7 @@ func (p *streamPool) exchangeOnNewStream(ctx context.Context, query []byte, rese
 	if opened.err != nil {
 		return streamResult{err: opened.err}
 	}
-	resp, reusable, err := p.exchangeOn(ctx, opened.conn, query)
-	if err != nil {
-		return streamResult{stream: "new stream dialed in " + diagDuration(opened.took).String(), err: err}
-	}
-	return streamResult{conn: opened.conn, resp: resp, reusable: reusable}
+	return p.exchangeOn(ctx, opened.conn, query, "new stream dialed in "+diagDuration(opened.took).String(), false)
 }
 
 func notOpenSince(started time.Time, err error) streamResult {
@@ -304,31 +298,44 @@ func hedgeDelay(ctx context.Context) time.Duration {
 	return time.Until(deadline) / 2
 }
 
-func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte) ([]byte, bool, error) {
-	deadline, ok := ctx.Deadline()
+func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte, stream string, pooled bool) streamResult {
+	sent := time.Now()
+	result, ok := p.send(ctx, c, query, stream, pooled).await(ctx)
 	if !ok {
-		deadline = time.Now().Add(dnsIOTimeout)
+		return streamResult{pooled: pooled, stream: stream, err: fmt.Errorf("no response after %s: %w", diagDuration(time.Since(sent)), ctx.Err())}
 	}
-	_ = c.conn.SetDeadline(deadline)
-	stopInterrupt := context.AfterFunc(ctx, func() { _ = c.conn.SetDeadline(time.Now()) })
-	resp, err := dnsStreamExchange(c.conn, query)
-	interrupted := !stopInterrupt()
-	if err != nil || interrupted {
-		_ = c.conn.Close()
-	}
-	if err != nil {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return nil, false, ctx.Err()
+	return result
+}
+
+func (p *streamPool) send(ctx context.Context, c *pooledConn, query []byte, stream string, pooled bool) *flight[streamResult] {
+	exchanging := newFlight[streamResult]()
+	late := lateAnswer(ctx)
+	deadline := lateReadDeadline(ctx)
+	go func() {
+		_ = c.conn.SetDeadline(deadline)
+		resp, err := dnsStreamExchange(c.conn, query)
+		if err != nil {
+			_ = c.conn.Close()
+			exchanging.deliver(streamResult{pooled: pooled, stream: stream, err: err})
+			return
 		}
-		return nil, false, err
+		_ = c.conn.SetDeadline(time.Time{})
+		c.last = time.Now()
+		c.answered++
+		if !exchanging.deliver(streamResult{conn: c, pooled: pooled, resp: resp, reusable: true, stream: stream}) {
+			p.put(c)
+			late(resp)
+		}
+	}()
+	return exchanging
+}
+
+func lateReadDeadline(ctx context.Context) time.Time {
+	deadline := time.Now().Add(dnsLateReadTimeout)
+	if callerDeadline, ok := ctx.Deadline(); ok && callerDeadline.After(deadline) {
+		return callerDeadline
 	}
-	if interrupted {
-		return resp, false, nil
-	}
-	_ = c.conn.SetDeadline(time.Time{})
-	c.last = time.Now()
-	c.answered++
-	return resp, true, nil
+	return deadline
 }
 
 func (c *pooledConn) describe() string {

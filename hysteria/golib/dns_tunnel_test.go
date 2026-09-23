@@ -284,7 +284,7 @@ func TestTCPResolver_fastOpenReportsAHungServerDialAsAResponseTimeout(t *testing
 		fastOpen bool
 		want     string
 	}{
-		{true, "read response length"},
+		{true, ": no response after "},
 		{false, "DNS over TCP 8.8.8.8:53: new stream not open after "},
 	} {
 		tt := newTestTunnel(t, tc.fastOpen, hangingOutbound(t))
