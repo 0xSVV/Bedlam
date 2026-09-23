@@ -11,10 +11,12 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import ru.shapovalov.bedlam.feature.logs.data.DroppedLines
 import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
 import ru.shapovalov.bedlam.testing.FakeHysteriaClient
 import ru.shapovalov.bedlam.testing.logEntry
 import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
+import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LogBufferTest {
@@ -114,6 +116,42 @@ class LogBufferTest {
     }
 
     @Test
+    fun `a flood of debug lines never evicts info and above`() = runTest {
+        val client = FakeHysteriaClient()
+        val published = record(LogBuffer(client, backgroundScope))
+        runCurrent()
+        client.logEntries.emit(logEntry(1, LogLevel.INFO))
+        client.logEntries.emit(logEntry(2, LogLevel.WARN))
+        runCurrent()
+        repeat(LogBuffer.DEBUG_CAPACITY + 10) {
+            client.logEntries.emit(logEntry(10 + it, LogLevel.DEBUG))
+            runCurrent()
+        }
+        client.logEntries.emit(logEntry(1_000_000, LogLevel.ERROR))
+        advanceTimeBy(100)
+        runCurrent()
+
+        val snapshot = published.last()
+        assertEquals(listOf(1L, 2L, 1_000_000L), snapshot.entries.filter { it.level >= LogLevel.INFO }.map { it.seq })
+        assertEquals(listOf(1L, 2L, 20L), snapshot.entries.take(3).map { it.seq })
+        assertEquals(1_000_000L, snapshot.entries.last().seq)
+        assertEquals(DroppedLines(debug = 10L), snapshot.dropped)
+    }
+
+    @Test
+    fun `the current contents include lines not yet published`() = runTest {
+        val client = FakeHysteriaClient()
+        val buffer = LogBuffer(client, backgroundScope)
+        runCurrent()
+        client.logEntries.emit(logEntry(1, LogLevel.DEBUG))
+        client.logEntries.emit(logEntry(2, LogLevel.INFO))
+        runCurrent()
+
+        assertEquals(emptyList<Long>(), buffer.snapshot.value.entries.map { it.seq })
+        assertEquals(listOf(1L, 2L), buffer.current().entries.map { it.seq })
+    }
+
+    @Test
     fun `clear publishes an empty snapshot at once`() = runTest {
         val client = FakeHysteriaClient()
         val buffer = LogBuffer(client, backgroundScope)
@@ -126,7 +164,7 @@ class LogBufferTest {
 
         buffer.clear()
 
-        assertEquals(LogBuffer.Snapshot(firstIndex = 3), buffer.snapshot.value)
-        assertEquals(LogBuffer.Snapshot(firstIndex = 3), published.last())
+        assertEquals(LogBuffer.Snapshot(removedCount = 3), buffer.snapshot.value)
+        assertEquals(LogBuffer.Snapshot(removedCount = 3), published.last())
     }
 }

@@ -15,29 +15,27 @@ class LogRingTest {
         timestampMillis = index.toLong(),
     )
 
-    private fun LogRing.messages(): List<String> = snapshot().map { it.message }
+    private fun LogRing<LogEntry>.messages(): List<String> = snapshot().map { it.message }
 
     @Test
     fun `drops the oldest entries once capacity is reached`() {
-        val ring = LogRing(capacity = 1000)
+        val ring = LogRing<LogEntry>(capacity = 1000)
         repeat(1100) { ring.add(entry(it)) }
 
         val snapshot = ring.snapshot()
         assertEquals(1000, snapshot.size)
         assertEquals("line 100", snapshot.first().message)
         assertEquals("line 1099", snapshot.last().message)
-        assertEquals(100L, ring.droppedCount)
         assertEquals(100L, ring.firstIndex)
     }
 
     @Test
     fun `clear empties the ring and moves the first index past the cleared lines`() {
-        val ring = LogRing(capacity = 4)
+        val ring = LogRing<LogEntry>(capacity = 4)
         repeat(3) { ring.add(entry(it)) }
 
         ring.clear()
         assertEquals(emptyList<String>(), ring.messages())
-        assertEquals(0L, ring.droppedCount)
         assertEquals(3L, ring.firstIndex)
 
         ring.add(entry(9))
@@ -47,7 +45,7 @@ class LogRingTest {
 
     @Test
     fun `a snapshot does not change after later additions`() {
-        val ring = LogRing(capacity = 3)
+        val ring = LogRing<LogEntry>(capacity = 3)
         repeat(3) { ring.add(entry(it)) }
 
         val snapshot = ring.snapshot()
@@ -55,5 +53,14 @@ class LogRingTest {
 
         assertEquals(listOf("line 0", "line 1", "line 2"), snapshot.map { it.message })
         assertEquals(listOf("line 1", "line 2", "line 3"), ring.messages())
+    }
+
+    @Test
+    fun `add returns the entry it evicted`() {
+        val ring = LogRing<LogEntry>(capacity = 2)
+
+        assertEquals(null, ring.add(entry(0)))
+        assertEquals(null, ring.add(entry(1)))
+        assertEquals("line 0", ring.add(entry(2))?.message)
     }
 }
