@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.content.Intent
 import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -16,6 +17,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,6 +34,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -54,8 +58,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -101,6 +107,38 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
     }
     val clipboardLabel = stringResource(R.string.profile_config_clip_label)
     val copiedMessage = stringResource(R.string.profile_config_copy_success)
+    val linkClipLabel = stringResource(R.string.profile_config_link_clip_label)
+    val linkCopiedMessage = stringResource(R.string.profile_config_link_copy_success)
+    val linkShareTitle = stringResource(R.string.profile_config_action_share_link)
+    val linkUnavailableMessage = stringResource(R.string.profile_config_link_unavailable)
+    var pendingLink by remember { mutableStateOf<PendingLink?>(null) }
+
+    fun deliverLink(action: LinkAction, uri: String) {
+        when (action) {
+            LinkAction.Share -> {
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, uri)
+                context.startActivity(Intent.createChooser(send, linkShareTitle))
+            }
+
+            LinkAction.Copy -> {
+                val clip = ClipData.newPlainText(linkClipLabel, uri)
+                clip.description.extras = sensitiveClipExtras()
+                clipboardManager.setPrimaryClip(clip)
+                scope.launch { snackbarHostState.showSnackbar(linkCopiedMessage) }
+            }
+        }
+    }
+
+    fun exportLink(action: LinkAction) {
+        val current = state.draft ?: return
+        when (val export = planLinkExport(current, state.original?.name.orEmpty())) {
+            is LinkExport.Ready -> deliverLink(action, export.uri)
+            is LinkExport.NeedsConfirmation -> pendingLink = PendingLink(action, export)
+            LinkExport.Unavailable -> scope.launch { snackbarHostState.showSnackbar(linkUnavailableMessage) }
+        }
+    }
 
     BackHandler(enabled = state.editMode) { component.onBackPressed() }
 
@@ -195,7 +233,9 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
             ProfileActionsToolbar(
                 visible = state.toolbarVisible,
                 onDelete = component::onRequestDelete,
-                onCopy = {
+                onShareLink = { exportLink(LinkAction.Share) },
+                onCopyLink = { exportLink(LinkAction.Copy) },
+                onCopyConfig = {
                     val current = state.draft ?: return@ProfileActionsToolbar
                     val clip = ClipData.newPlainText(
                         clipboardLabel,
@@ -226,7 +266,78 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
             onDismiss = component::onKeepEditing,
         )
     }
+
+    pendingLink?.let { pending ->
+        LinkWarningDialog(
+            pending = pending,
+            onConfirm = {
+                pendingLink = null
+                deliverLink(pending.action, pending.export.uri)
+            },
+            onDismiss = { pendingLink = null },
+        )
+    }
 }
+
+private enum class LinkAction { Share, Copy }
+
+private data class PendingLink(val action: LinkAction, val export: LinkExport.NeedsConfirmation)
+
+@Composable
+private fun LinkWarningDialog(
+    pending: PendingLink,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val warnings = pending.export.warnings
+    val gaps = warnings - LinkWarning.InsecureWithoutPinElsewhere
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.profile_config_link_warning_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
+                if (LinkWarning.InsecureWithoutPinElsewhere in warnings) {
+                    Text(stringResource(R.string.profile_config_link_warning_insecure_pin))
+                }
+                if (gaps.isNotEmpty()) {
+                    Text(stringResource(R.string.profile_config_link_warning_intro))
+                    gaps.forEach { Text("• ${it.label()}") }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    stringResource(
+                        when (pending.action) {
+                            LinkAction.Share -> R.string.profile_config_action_share_link
+                            LinkAction.Copy -> R.string.profile_config_action_copy_link
+                        },
+                    ),
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun LinkWarning.label(): String = stringResource(
+    when (this) {
+        LinkWarning.InsecureWithoutPinElsewhere -> R.string.profile_config_link_warning_insecure_pin
+        LinkWarning.CustomCa -> R.string.profile_config_link_gap_ca
+        LinkWarning.ClientCertificate -> R.string.profile_config_link_gap_client_certificate
+        LinkWarning.Quic -> R.string.profile_config_link_gap_quic
+        LinkWarning.Congestion -> R.string.profile_config_link_gap_congestion
+        LinkWarning.Bandwidth -> R.string.profile_config_link_gap_bandwidth
+        LinkWarning.HopInterval -> R.string.profile_config_link_gap_hop_interval
+        LinkWarning.ObfuscationPacketSize -> R.string.profile_config_link_gap_packet_size
+    },
+)
 
 private fun SnackbarHostState.dismissShowing(message: String) {
     currentSnackbarData?.takeIf { it.visuals.message == message }?.dismiss()
@@ -283,10 +394,13 @@ private fun TopActions(
 internal fun ProfileActionsToolbar(
     visible: Boolean,
     onDelete: () -> Unit,
-    onCopy: () -> Unit,
+    onShareLink: () -> Unit,
+    onCopyLink: () -> Unit,
+    onCopyConfig: () -> Unit,
     onEdit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var copyMenuOpen by remember { mutableStateOf(false) }
     val motion = MaterialTheme.motionScheme
     AnimatedVisibility(
         visible = visible,
@@ -315,11 +429,35 @@ internal fun ProfileActionsToolbar(
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
-            IconButton(onClick = onCopy) {
+            IconButton(onClick = onShareLink) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_content_copy),
-                    contentDescription = stringResource(R.string.profile_config_action_copy),
+                    painter = painterResource(R.drawable.ic_share),
+                    contentDescription = stringResource(R.string.profile_config_action_share_link),
                 )
+            }
+            Box {
+                IconButton(onClick = { copyMenuOpen = true }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_content_copy),
+                        contentDescription = stringResource(R.string.profile_config_action_copy_menu),
+                    )
+                }
+                DropdownMenu(expanded = copyMenuOpen, onDismissRequest = { copyMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.profile_config_action_copy_link)) },
+                        onClick = {
+                            copyMenuOpen = false
+                            onCopyLink()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.profile_config_action_copy)) },
+                        onClick = {
+                            copyMenuOpen = false
+                            onCopyConfig()
+                        },
+                    )
+                }
             }
         }
     }

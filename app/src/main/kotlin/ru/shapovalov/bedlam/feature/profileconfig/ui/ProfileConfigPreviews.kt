@@ -145,6 +145,13 @@ private fun RealmSectionViewPreview() {
 @Composable
 private fun ProfileActionsToolbarPreview() {
     ProfileConfigPreview {
-        ProfileActionsToolbar(visible = true, onDelete = {}, onCopy = {}, onEdit = {})
+        ProfileActionsToolbar(
+            visible = true,
+            onDelete = {},
+            onShareLink = {},
+            onCopyLink = {},
+            onCopyConfig = {},
+            onEdit = {},
+        )
     }
 }
