@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -151,7 +152,9 @@ func (r *doqResolver) exchangeOnce(ctx context.Context, query []byte) ([]byte, e
 	resp, err := readDNSFrame(stream)
 	if err != nil {
 		stream.CancelRead(0)
-		r.drop(conn)
+		if !errors.Is(err, os.ErrDeadlineExceeded) || conn.Context().Err() != nil {
+			r.drop(conn)
+		}
 		return nil, err
 	}
 	if len(resp) >= 2 && len(query) >= 2 {

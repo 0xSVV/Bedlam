@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,6 +25,11 @@ type doqServer struct {
 }
 
 func newDoQServer(t *testing.T, ip [4]byte) *doqServer {
+	t.Helper()
+	return newDoQServerWith(t, func(q []byte) []byte { return dnsResponseFor(q, 60, ip) })
+}
+
+func newDoQServerWith(t *testing.T, respond func(q []byte) []byte) *doqServer {
 	t.Helper()
 	cert, pool := testCert(t)
 	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
@@ -58,7 +64,11 @@ func newDoQServer(t *testing.T, ip [4]byte) *doqServer {
 						}
 						d.wireID.Store(int32(binary.BigEndian.Uint16(q[:2])))
 						d.requests.Add(1)
-						_ = writeDNSFrame(st, dnsResponseFor(q, 60, ip))
+						resp := respond(q)
+						if resp == nil {
+							return
+						}
+						_ = writeDNSFrame(st, resp)
 						_ = st.Close()
 					}()
 				}
@@ -168,6 +178,40 @@ func TestDoQResolver_redialsAfterTheConnectionDies(t *testing.T) {
 	}
 	if n := len(bridges()); n != 2 {
 		t.Errorf("opened %d UDP sessions, want 2 (redial)", n)
+	}
+}
+
+func TestDoQResolver_streamTimeoutKeepsTheConnection(t *testing.T) {
+	release := blockUntilCleanup(t)
+	d := newDoQServerWith(t, func(q []byte) []byte {
+		if name, _ := dnsQuestion(q); strings.Contains(name, "slow") {
+			<-release
+			return nil
+		}
+		return dnsResponseFor(q, 60, [4]byte{5, 5, 5, 5})
+	})
+	fc, bridges := d.client(t)
+	r := newDoQResolver(fc, d.server(), &tls.Config{RootCAs: d.pool})
+	defer r.close()
+
+	warm, cancelWarm := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelWarm()
+	if _, err := r.exchange(warm, dnsQuery("warm.example")); err != nil {
+		t.Fatalf("warm-up: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	_, err := r.exchange(ctx, dnsQuery("slow.example"))
+	cancel()
+	if !isTimeoutClass(err) {
+		t.Fatalf("err = %v, want the slow query to time out", err)
+	}
+	next, cancelNext := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelNext()
+	if _, err := r.exchange(next, dnsQuery("fast.example")); err != nil {
+		t.Fatalf("a query after another timed out: %v", err)
+	}
+	if n := len(bridges()); n != 1 {
+		t.Errorf("opened %d UDP sessions, want the connection kept when one stream timed out", n)
 	}
 }
 
