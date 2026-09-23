@@ -555,6 +555,55 @@ func TestStreamPool_concurrentQueriesKeepTheirAnswers(t *testing.T) {
 	}
 }
 
+func TestStreamPool_burstOnAnEmptyPoolOpensAtMostTwoStreamsAtOnce(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
+	started := make(chan struct{}, 64)
+	gate := make(chan struct{})
+	var opening, peak atomic.Int32
+	p := newStreamPool("test", func(ctx context.Context) (net.Conn, error) {
+		n := opening.Add(1)
+		for m := peak.Load(); n > m && !peak.CompareAndSwap(m, n); m = peak.Load() {
+		}
+		started <- struct{}{}
+		<-gate
+		opening.Add(-1)
+		return srv.dial(ctx)
+	})
+	defer p.close()
+
+	const burst = 8
+	var wg sync.WaitGroup
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			query := dnsQuery(fmt.Sprintf("burst%d.example", i))
+			resp, err := p.exchange(ctx, query)
+			if err != nil {
+				t.Errorf("query %d: %v", i, err)
+				return
+			}
+			if got, _ := dnsQuestion(resp); got != string(query[12:]) {
+				t.Errorf("query %d received the answer to another query", i)
+			}
+		}(i)
+	}
+	for i := 0; i < dnsPoolMaxOpening; i++ {
+		<-started
+	}
+	select {
+	case <-started:
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(gate)
+	wg.Wait()
+	if n := peak.Load(); n > dnsPoolMaxOpening {
+		t.Errorf("%d streams were opening at once, want at most %d", n, dnsPoolMaxOpening)
+	}
+}
+
 func TestStreamPool_reportsWhetherTheFailedStreamWasPooled(t *testing.T) {
 	var stale atomic.Bool
 	srv := newFaultDNSServer(t, func(int, int) streamFault {

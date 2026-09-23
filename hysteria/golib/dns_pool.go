@@ -16,6 +16,7 @@ const (
 	dnsPoolSize        = 4
 	dnsPoolIdleTimeout = 30 * time.Second
 	dnsOpenTimeout     = 8 * time.Second
+	dnsPoolMaxOpening  = 2
 )
 
 type pooledConn struct {
@@ -31,6 +32,7 @@ type streamPool struct {
 	label       string
 	dial        func(context.Context) (net.Conn, error)
 	idle        chan *pooledConn
+	opening     chan struct{}
 	openTimeout time.Duration
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -94,6 +96,7 @@ func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *
 		label:       label,
 		dial:        dial,
 		idle:        make(chan *pooledConn, dnsPoolSize),
+		opening:     make(chan struct{}, dnsPoolMaxOpening),
 		openTimeout: dnsOpenTimeout,
 		ctx:         ctx,
 		cancel:      cancel,
@@ -101,8 +104,14 @@ func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *
 }
 
 func (p *streamPool) exchange(ctx context.Context, query []byte) ([]byte, error) {
+	started := time.Now()
+	c, err := p.takeOrReserveOpen(ctx)
+	if err != nil {
+		return nil, p.failed([]streamResult{notOpenSince(started, err)})
+	}
+	reserved := c == nil
 	var failures []streamResult
-	if c := p.take(); c != nil {
+	if c != nil {
 		resp, pooledFailures := p.exchangeOnPooled(ctx, c, query)
 		if pooledFailures == nil {
 			return resp, nil
@@ -112,7 +121,7 @@ func (p *streamPool) exchange(ctx context.Context, query []byte) ([]byte, error)
 			return nil, p.failed(failures)
 		}
 	}
-	result := p.exchangeOnNewStream(ctx, query)
+	result := p.exchangeOnNewStream(ctx, query, reserved)
 	if result.err != nil {
 		return nil, p.failed(append(failures, result))
 	}
@@ -140,7 +149,7 @@ func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, c
 		select {
 		case <-hedge.C:
 			running++
-			go func() { results <- p.exchangeOnNewStream(streamCtx, query) }()
+			go func() { results <- p.exchangeOnNewStream(streamCtx, query, false) }()
 		case result := <-results:
 			running--
 			if result.pooled {
@@ -169,11 +178,16 @@ func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, c
 	return nil, failures
 }
 
-func (p *streamPool) exchangeOnNewStream(ctx context.Context, query []byte) streamResult {
+func (p *streamPool) exchangeOnNewStream(ctx context.Context, query []byte, reserved bool) streamResult {
 	started := time.Now()
+	if !reserved {
+		if err := p.reserveOpen(ctx); err != nil {
+			return notOpenSince(started, err)
+		}
+	}
 	opened, ok := p.awaitOpen(ctx)
 	if !ok {
-		return streamResult{stream: "new stream not open after " + diagDuration(time.Since(started)).String(), err: ctx.Err()}
+		return notOpenSince(started, ctx.Err())
 	}
 	if opened.err != nil {
 		return streamResult{err: opened.err}
@@ -183,6 +197,43 @@ func (p *streamPool) exchangeOnNewStream(ctx context.Context, query []byte) stre
 		return streamResult{stream: "new stream dialed in " + diagDuration(opened.took).String(), err: err}
 	}
 	return streamResult{conn: opened.conn, resp: resp, reusable: reusable}
+}
+
+func notOpenSince(started time.Time, err error) streamResult {
+	return streamResult{stream: "new stream not open after " + diagDuration(time.Since(started)).String(), err: err}
+}
+
+func (p *streamPool) takeOrReserveOpen(ctx context.Context) (*pooledConn, error) {
+	for {
+		if c := p.take(); c != nil {
+			return c, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		select {
+		case c := <-p.idle:
+			if !p.closeIfStale(c) {
+				return c, nil
+			}
+		case p.opening <- struct{}{}:
+			return nil, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (p *streamPool) reserveOpen(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case p.opening <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (p *streamPool) awaitOpen(ctx context.Context) (openResult, bool) {
@@ -197,6 +248,7 @@ func (p *streamPool) awaitOpen(ctx context.Context) (openResult, bool) {
 func (p *streamPool) open() *flight[openResult] {
 	opening := newFlight[openResult]()
 	go func() {
+		defer func() { <-p.opening }()
 		ctx, cancel := context.WithTimeout(p.ctx, p.openTimeout)
 		defer cancel()
 		started := time.Now()
@@ -296,15 +348,21 @@ func (p *streamPool) take() *pooledConn {
 	for {
 		select {
 		case c := <-p.idle:
-			if time.Since(c.last) > dnsPoolIdleTimeout {
-				_ = c.conn.Close()
-				continue
+			if !p.closeIfStale(c) {
+				return c
 			}
-			return c
 		default:
 			return nil
 		}
 	}
+}
+
+func (p *streamPool) closeIfStale(c *pooledConn) bool {
+	if time.Since(c.last) > dnsPoolIdleTimeout {
+		_ = c.conn.Close()
+		return true
+	}
+	return false
 }
 
 func (p *streamPool) put(c *pooledConn) {
