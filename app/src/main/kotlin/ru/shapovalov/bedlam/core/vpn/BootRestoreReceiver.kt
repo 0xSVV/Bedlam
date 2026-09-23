@@ -13,7 +13,7 @@ import ru.shapovalov.bedlam.di.appComponent
 class BootRestoreReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        restoreTriggerFor(intent.action) ?: return
 
         val reconcile = context.applicationContext.appComponent.reconcileConnectionState
         val pendingResult = goAsync()
