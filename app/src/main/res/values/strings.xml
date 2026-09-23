@@ -3,6 +3,8 @@
 
     <string name="notification_channel_name">VPN status</string>
     <string name="notification_channel_description">Bedlam VPN tunnel status</string>
+    <string name="notification_alerts_channel_name">Connection alerts</string>
+    <string name="notification_alerts_channel_description">When the VPN stops or cannot reconnect</string>
 
     <string name="notification_title">Bedlam</string>
     <string name="notification_title_named">Bedlam · %1$s</string>

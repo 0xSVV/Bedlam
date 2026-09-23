@@ -130,7 +130,7 @@ class BedlamVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         notifications = VpnNotificationController(this)
-        notifications.createChannel()
+        notifications.createChannels()
         scheduleAlwaysOnVpnStateUpdate()
     }
 
