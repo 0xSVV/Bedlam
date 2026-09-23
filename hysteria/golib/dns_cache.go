@@ -72,6 +72,7 @@ func (c *dnsCache) resolve(ctx context.Context, r dnsResolver, query []byte, onT
 		// full budget instead of inheriting whatever the leader had left.
 		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dnsQueryTimeout)
 		defer cancel()
+		sctx = withLateAnswer(sctx, func(late []byte) { c.storeLate(cacheKey, late) })
 
 		resp, err := r.exchange(sctx, query)
 		countTunnelDNS(onTunnel, query, resp, err)
@@ -105,6 +106,25 @@ func (c *dnsCache) tryCached(r dnsResolver, query []byte) []byte {
 		return nil
 	}
 	return c.lookup(r.id()+"\x00"+qKey, txID)
+}
+
+type lateAnswerKey struct{}
+
+func withLateAnswer(ctx context.Context, store func(resp []byte)) context.Context {
+	return context.WithValue(ctx, lateAnswerKey{}, store)
+}
+
+func lateAnswer(ctx context.Context) func(resp []byte) {
+	if store, ok := ctx.Value(lateAnswerKey{}).(func([]byte)); ok {
+		return store
+	}
+	return func([]byte) {}
+}
+
+func (c *dnsCache) storeLate(key string, resp []byte) {
+	if ttl := cacheableTTL(resp); ttl > 0 {
+		c.store(key, resp, ttl)
+	}
 }
 
 func (c *dnsCache) lookup(key string, txID uint16) []byte {

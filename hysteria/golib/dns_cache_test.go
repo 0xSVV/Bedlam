@@ -750,6 +750,64 @@ func TestDNSCacheResolve_rewritesTxid(t *testing.T) {
 	}
 }
 
+type lateAnswerResolver struct {
+	name  string
+	calls atomic.Int32
+	hooks chan func([]byte)
+}
+
+func (r *lateAnswerResolver) exchange(ctx context.Context, _ []byte) ([]byte, error) {
+	r.calls.Add(1)
+	r.hooks <- lateAnswer(ctx)
+	return nil, context.DeadlineExceeded
+}
+
+func (r *lateAnswerResolver) id() string { return r.name }
+
+func (r *lateAnswerResolver) close() {}
+
+func TestDNSCacheResolve_servesTheRetryFromALateAnswer(t *testing.T) {
+	c := newDNSCache()
+	r := &lateAnswerResolver{name: "tls|late", hooks: make(chan func([]byte), 1)}
+	q := dnsQuery("example.com")
+	if _, err := c.resolve(context.Background(), r, q, nil); err == nil {
+		t.Fatal("the resolver gave no answer in time, so the query must fail")
+	}
+	(<-r.hooks)(dnsResponseFor(q, 60, [4]byte{9, 9, 9, 9}))
+
+	retry := dnsQuery("example.com")
+	binary.BigEndian.PutUint16(retry[:2], 0x7777)
+	resp, err := c.resolve(context.Background(), r, retry, nil)
+	if err != nil {
+		t.Fatalf("the retry: %v", err)
+	}
+	if r.calls.Load() != 1 {
+		t.Errorf("resolver called %d times, want the retry answered from the late answer in the cache", r.calls.Load())
+	}
+	if resp[len(resp)-1] != 9 || binary.BigEndian.Uint16(resp[:2]) != 0x7777 {
+		t.Errorf("retry answer = %v, want the late answer under the retry's ID", resp)
+	}
+}
+
+func TestDNSCacheResolve_dropsALateAnswerTheCacheCannotKeep(t *testing.T) {
+	c := newDNSCache()
+	r := &lateAnswerResolver{name: "tls|late", hooks: make(chan func([]byte), 1)}
+	q := dnsQuery("example.com")
+	if _, err := c.resolve(context.Background(), r, q, nil); err == nil {
+		t.Fatal("the resolver gave no answer in time, so the query must fail")
+	}
+	truncated := dnsResponseFor(q, 60, [4]byte{9, 9, 9, 9})
+	truncated[2] |= 0x02
+	(<-r.hooks)(truncated)
+
+	if _, err := c.resolve(context.Background(), r, dnsQuery("example.com"), nil); err == nil {
+		t.Fatal("the retry must go to the resolver and fail again")
+	}
+	if r.calls.Load() != 2 {
+		t.Errorf("resolver called %d times, want a truncated late answer kept out of the cache", r.calls.Load())
+	}
+}
+
 func TestDNSCacheResolve_singleflight(t *testing.T) {
 	c := newDNSCache()
 	release := make(chan struct{})
