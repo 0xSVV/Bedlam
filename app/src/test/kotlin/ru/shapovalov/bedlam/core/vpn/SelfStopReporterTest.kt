@@ -26,9 +26,11 @@ class SelfStopReporterTest {
     private fun logLines(): List<Pair<LogLevel, String>> =
         appLog.flow.replayCache.map { it.level to it.message }
 
-    private suspend fun shownAfterStop(): ConnectionState =
-        ConnectionState.Disconnected(DisconnectReason.USER)
-            .effectiveWith(runtime.snapshot(), System.currentTimeMillis())
+    private suspend fun shownAfterStop(): ConnectionState {
+        val state = runtime.snapshot()
+        return ConnectionState.Disconnected(DisconnectReason.USER)
+            .effectiveWith(state, nowMillis = state.heartbeatAtMillis)
+    }
 
     @Test
     fun `an interruption shows as failed with its reason instead of Connecting`() = runTest {
