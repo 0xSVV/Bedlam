@@ -244,7 +244,10 @@ class HysteriaLinkTest {
 
     @Test
     fun `reports the tuning a link leaves out`() {
-        val tuned = config(obfuscation = ObfuscationOptions("gecko", "pw", geckoMinPacketSize = 600)).copy(
+        val tuned = config(
+            address = "host.example:20000-30000",
+            obfuscation = ObfuscationOptions("gecko", "pw", geckoMinPacketSize = 600),
+        ).copy(
             quic = QuicOptions(maxIdleTimeoutSec = 60),
             congestion = CongestionOptions(congestionType = "bbr"),
             bandwidth = BandwidthOptions(maxTxMbps = 50),
@@ -262,6 +265,20 @@ class HysteriaLinkTest {
             ),
             link.tuningGaps,
         )
+    }
+
+    @Test
+    fun `hop intervals are not reported for a single-port profile`() {
+        val singlePort = config().copy(transport = TransportOptions(hopIntervalSec = 30))
+
+        assertEquals(emptySet<LinkTuningGap>(), buildHysteriaLink(singlePort, "").tuningGaps)
+    }
+
+    @Test
+    fun `turning off GSO on this device is not reported`() {
+        val noGso = config().copy(quic = QuicOptions(disableGso = true))
+
+        assertEquals(emptySet<LinkTuningGap>(), buildHysteriaLink(noGso, "").tuningGaps)
     }
 
     @Test

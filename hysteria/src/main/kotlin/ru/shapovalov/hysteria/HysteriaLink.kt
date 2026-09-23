@@ -38,7 +38,7 @@ fun splitHysteriaLinks(text: String): List<String> {
 
 private fun hysteriaUri(config: HysteriaConfig, name: String): String {
     val server = splitServerAddress(config.server.address.trim())
-    val hopPorts = server.ports?.takeIf { ',' in it || '-' in it }
+    val hopPorts = hopPorts(config.server.address)
     val port = hopPorts?.split(',', '-')?.first() ?: server.ports
     val query = sortedMapOf<String, String>()
     val tls = config.tls
@@ -73,6 +73,9 @@ private fun hysteriaUri(config: HysteriaConfig, name: String): String {
 
 private data class ServerAddress(val host: String, val ports: String?)
 
+private fun hopPorts(address: String): String? =
+    splitServerAddress(address.trim()).ports?.takeIf { ',' in it || '-' in it }
+
 private fun splitServerAddress(address: String): ServerAddress {
     if (address.startsWith("[")) {
         val close = address.indexOf(']')
@@ -96,10 +99,15 @@ private fun connectionGaps(config: HysteriaConfig, realm: Boolean): Set<LinkConn
 }
 
 private fun tuningGaps(config: HysteriaConfig): Set<LinkTuningGap> = buildSet {
-    if ((config.quic ?: defaultQuicOptions) != defaultQuicOptions) add(LinkTuningGap.Quic)
+    val quic = (config.quic ?: defaultQuicOptions).copy(disableGso = defaultQuicOptions.disableGso)
+    if (quic != defaultQuicOptions) add(LinkTuningGap.Quic)
     if ((config.congestion ?: defaultCongestionOptions) != defaultCongestionOptions) add(LinkTuningGap.Congestion)
     if ((config.bandwidth ?: defaultBandwidthOptions) != defaultBandwidthOptions) add(LinkTuningGap.Bandwidth)
-    if ((config.transport ?: defaultTransportOptions) != defaultTransportOptions) add(LinkTuningGap.HopInterval)
+    if (hopPorts(config.server.address) != null &&
+        (config.transport ?: defaultTransportOptions) != defaultTransportOptions
+    ) {
+        add(LinkTuningGap.HopInterval)
+    }
     val obfs = config.obfuscation
     if (obfs != null && obfs.obfuscationType.equals("gecko", ignoreCase = true) &&
         (obfs.geckoMinPacketSize != 0 || obfs.geckoMaxPacketSize != 0)

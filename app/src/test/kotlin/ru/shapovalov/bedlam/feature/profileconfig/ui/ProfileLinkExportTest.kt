@@ -28,7 +28,7 @@ class ProfileLinkExportTest {
 
     @Test
     fun `lists what the link leaves out, the pin warning first`() {
-        val config = testConfig().copy(
+        val config = testConfig("example.com:443,8443").copy(
             tls = TlsOptions(
                 tlsSni = "example.com",
                 tlsInsecure = true,
@@ -43,7 +43,7 @@ class ProfileLinkExportTest {
 
         assertEquals(
             LinkExport.NeedsConfirmation(
-                uri = "hysteria2://pw@example.com:443/?insecure=1&pinSHA256=ab",
+                uri = "hysteria2://pw@example.com:443/?insecure=1&mport=443,8443&pinSHA256=ab",
                 warnings = listOf(
                     LinkWarning.InsecureWithoutPinElsewhere,
                     LinkWarning.CustomCa,
