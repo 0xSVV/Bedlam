@@ -107,40 +107,97 @@ func newDNSResolver(c client.Client, transport, server string) (dnsResolver, err
 	}
 }
 
+type attemptResult struct {
+	index int
+	resp  []byte
+	err   error
+}
+
 func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error) {
 	n := len(u.resolvers)
 	if n == 0 {
 		return nil, errors.New("dns upstream has no resolvers")
 	}
-	start := int(u.preferred.Load()) % n
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	began := time.Now()
+	first := int(u.preferred.Load()) % n
+	results := make(chan attemptResult, n)
+	slice := time.NewTimer(u.attemptBudget(ctx, n))
+	defer slice.Stop()
+	started, pending, latest := 0, 0, first
+	latestStart := began
+	launch := func() {
+		latest = (first + started) % n
+		if started > 0 {
+			latestStart = time.Now()
+			slice.Reset(u.attemptBudget(ctx, n-started))
+		}
+		started++
+		pending++
+		index := latest
+		go func() {
+			resp, err := u.resolvers[index].exchange(ctx, query)
+			results <- attemptResult{index: index, resp: resp, err: err}
+		}()
+	}
+
+	launch()
+	done, sliceEnd := ctx.Done(), slice.C
 	var lastErr error
-	for i := 0; i < n; i++ {
-		if ctx.Err() != nil {
-			break
-		}
-		idx := (start + i) % n
-		r := u.resolvers[idx]
-		actx, cancel := context.WithTimeout(ctx, u.attemptBudget(ctx, n-i))
-		resp, err := r.exchange(actx, query)
-		cancel()
-		if err == nil {
-			if idx != start {
-				u.preferred.Store(int32(idx))
+	for {
+		select {
+		case res := <-results:
+			pending--
+			if res.err == nil {
+				if res.index != first {
+					u.preferred.Store(int32(res.index))
+				}
+				u.settleLate(ctx, results, pending)
+				return res.resp, nil
 			}
-			return resp, nil
-		}
-		lastErr = err
-		if i+1 < n && dnsFailoverLimiter.allow(r.id()) {
-			log(LogLevelWarn, srcDNS, "DNS %s failed, trying next: %s", r.id(), err)
+			lastErr = res.err
+			if res.index == latest && started < n && ctx.Err() == nil {
+				if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
+					log(LogLevelWarn, srcDNS, "DNS %s failed, trying next: %s", id, res.err)
+				}
+				launch()
+				continue
+			}
+			if pending == 0 {
+				u.preferred.Store(int32((first + 1) % n))
+				return nil, lastErr
+			}
+		case <-sliceEnd:
+			if started < n {
+				if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
+					log(LogLevelWarn, srcDNS, "DNS %s has not answered in %s, trying next", id, diagDuration(time.Since(latestStart)))
+				}
+				launch()
+				continue
+			}
+			u.settleLate(ctx, results, pending)
+			u.preferred.Store(int32((first + 1) % n))
+			return nil, fmt.Errorf("no answer in %s: %w", diagDuration(time.Since(began)), context.DeadlineExceeded)
+		case <-done:
+			done, sliceEnd = nil, nil
 		}
 	}
-	// Every server failed: start somewhere else next time so a dead first
-	// entry cannot pin every future query to the same losing order.
-	u.preferred.Store(int32((start + 1) % n))
-	if lastErr == nil {
-		lastErr = ctx.Err()
+}
+
+func (u *dnsUpstream) settleLate(ctx context.Context, results <-chan attemptResult, pending int) {
+	if pending == 0 {
+		return
 	}
-	return nil, lastErr
+	late := lateAnswer(ctx)
+	go func() {
+		for ; pending > 0; pending-- {
+			if res := <-results; res.err == nil {
+				late(res.resp)
+			}
+		}
+	}()
 }
 
 // attemptBudget shares whatever time is left across the servers still to try,

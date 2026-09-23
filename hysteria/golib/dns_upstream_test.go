@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -361,6 +362,133 @@ func TestDNSUpstream_stopsWhenContextDone(t *testing.T) {
 	}
 	if b.calls.Load() != 0 {
 		t.Errorf("resolver b called after cancellation")
+	}
+}
+
+func blockUntilCleanup(t *testing.T) <-chan struct{} {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	return release
+}
+
+func TestDNSUpstream_slowServerAnswersAfterItsSliceWhileTheNextIsPending(t *testing.T) {
+	release := blockUntilCleanup(t)
+	nextStarted := make(chan struct{})
+	slow := &stubResolver{name: "slow", reply: func(q []byte) ([]byte, error) {
+		<-nextStarted
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	pending := &stubResolver{name: "pending", reply: func([]byte) ([]byte, error) {
+		close(nextStarted)
+		<-release
+		return nil, errors.New("released")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{slow, pending}, ident: "tls|slow,pending"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("the first server answers after its slice while the next is pending, so the query must succeed: %v", err)
+	}
+	if resp[len(resp)-1] != 1 {
+		t.Errorf("answer = %v, want the first server's", resp)
+	}
+	if pending.calls.Load() != 1 {
+		t.Errorf("the next server was called %d times, want it started once the first had its slice", pending.calls.Load())
+	}
+}
+
+func TestDNSUpstream_keepsServerOrderWhileStaggering(t *testing.T) {
+	release := blockUntilCleanup(t)
+	var mu sync.Mutex
+	starts := map[string]time.Time{}
+	began := func(name string) {
+		mu.Lock()
+		starts[name] = time.Now()
+		mu.Unlock()
+	}
+	secondStarted := make(chan struct{})
+	first := &stubResolver{name: "first", reply: func([]byte) ([]byte, error) {
+		<-secondStarted
+		return nil, errors.New("first refused")
+	}}
+	second := &stubResolver{name: "second", reply: func([]byte) ([]byte, error) {
+		began("second")
+		close(secondStarted)
+		<-release
+		return nil, errors.New("released")
+	}}
+	third := &stubResolver{name: "third", reply: func(q []byte) ([]byte, error) {
+		began("third")
+		return echoAnswer([4]byte{3, 3, 3, 3})(q)
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{first, second, third}, ident: "tls|first,second,third"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*dnsMinAttemptTimeout)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("the third server answers, so the query must succeed: %v", err)
+	}
+	if resp[len(resp)-1] != 3 {
+		t.Errorf("answer = %v, want the third server's", resp)
+	}
+	mu.Lock()
+	gap := starts["third"].Sub(starts["second"])
+	mu.Unlock()
+	if gap < dnsMinAttemptTimeout-100*time.Millisecond {
+		t.Errorf("the third server started %v after the second, want the second given its whole slice although the first failed meanwhile", gap)
+	}
+}
+
+func TestDNSUpstream_failedServerStartsTheNextAtOnce(t *testing.T) {
+	failing := &stubResolver{name: "failing", reply: func([]byte) ([]byte, error) { return nil, errors.New("refused") }}
+	working := &stubResolver{name: "working", reply: echoAnswer([4]byte{2, 2, 2, 2})}
+	up := &dnsUpstream{resolvers: []dnsResolver{failing, working}, ident: "tls|failing,working"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	start := time.Now()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	if resp[len(resp)-1] != 2 {
+		t.Errorf("answer = %v, want the second server's", resp)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("the second server answered after %v, want it started as soon as the first failed", elapsed)
+	}
+}
+
+func TestDNSUpstream_lateAnswerFromAServerThatLostReachesTheHook(t *testing.T) {
+	release := make(chan struct{})
+	slow := &stubResolver{name: "slow", reply: func(q []byte) ([]byte, error) {
+		<-release
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	fast := &stubResolver{name: "fast", reply: echoAnswer([4]byte{2, 2, 2, 2})}
+	up := &dnsUpstream{resolvers: []dnsResolver{slow, fast}, ident: "tls|slow,fast"}
+
+	base, late := collectLateAnswers(context.Background())
+	ctx, cancel := context.WithTimeout(base, 3*time.Second)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	if resp[len(resp)-1] != 2 {
+		t.Fatalf("answer = %v, want the second server's", resp)
+	}
+	close(release)
+	select {
+	case answer := <-late:
+		if answer[len(answer)-1] != 1 {
+			t.Errorf("late answer = %v, want the first server's", answer)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the first server answered after the query returned, but its answer never reached the late-answer hook")
 	}
 }
 

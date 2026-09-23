@@ -291,11 +291,11 @@ func deadlineExpired(err error) bool {
 }
 
 func hedgeDelay(ctx context.Context) time.Duration {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		return dnsIOTimeout / 2
+	delay := dnsAttemptTimeout / 2
+	if deadline, ok := ctx.Deadline(); ok {
+		delay = min(delay, time.Until(deadline)/2)
 	}
-	return time.Until(deadline) / 2
+	return delay
 }
 
 func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte, stream string, pooled bool) streamResult {
