@@ -136,7 +136,7 @@ class TestGraph(
     val logsFactory by lazy {
         LogsComponentFactory(
             LogsStoreFactory(storeFactory, logBuffer),
-            LogExporter(logBuffer, client, routing, appFilter),
+            LogExporter(logBuffer, client, routing, appFilter, profiles),
         )
     }
 

@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -33,6 +34,7 @@ import androidx.compose.material3.FloatingActionButtonMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleFloatingActionButton
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.runtime.Composable
@@ -128,14 +130,50 @@ fun LogsContent(component: LogsComponent, modifier: Modifier = Modifier) {
 
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
+        var choosingShare by rememberSaveable { mutableStateOf(false) }
         LogsActionsMenu(
             isPaused = state.isPaused,
             onTogglePause = component::onTogglePause,
             onClear = component::onClear,
-            onShare = { scope.launch { context.shareLog(component::exportLog) } },
+            onShare = { choosingShare = true },
             modifier = Modifier.align(Alignment.BottomEnd),
         )
+        if (choosingShare) {
+            ShareLogDialog(
+                onShare = { hideAddresses ->
+                    choosingShare = false
+                    scope.launch {
+                        context.shareLog { device, exportedAt ->
+                            component.exportLog(device, exportedAt, hideAddresses)
+                        }
+                    }
+                },
+                onDismiss = { choosingShare = false },
+            )
+        }
     }
+}
+
+@Composable
+private fun ShareLogDialog(
+    onShare: (hideAddresses: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.logs_action_share_cd)) },
+        text = { Text(stringResource(R.string.logs_share_message)) },
+        confirmButton = {
+            TextButton(onClick = { onShare(true) }) {
+                Text(stringResource(R.string.logs_share_hide_addresses))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { onShare(false) }) {
+                Text(stringResource(R.string.logs_share_as_is))
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

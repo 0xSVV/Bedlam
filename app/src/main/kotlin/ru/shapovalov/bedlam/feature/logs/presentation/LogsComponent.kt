@@ -34,6 +34,10 @@ class LogsComponent(
     fun onTogglePause() = store.accept(LogsStore.Intent.TogglePaused)
     fun onClear() = store.accept(LogsStore.Intent.Clear)
 
-    suspend fun exportLog(device: LogExportDevice, exportedAt: ZonedDateTime): String =
-        exporter.export(device, exportedAt)
+    suspend fun exportLog(
+        device: LogExportDevice,
+        exportedAt: ZonedDateTime,
+        hideAddresses: Boolean,
+    ): String =
+        exporter.export(device, exportedAt, hideAddresses)
 }
