@@ -15,6 +15,7 @@ import (
 const (
 	dnsPoolSize        = 4
 	dnsPoolIdleTimeout = 30 * time.Second
+	dnsOpenTimeout     = 8 * time.Second
 )
 
 type pooledConn struct {
@@ -27,10 +28,13 @@ type pooledConn struct {
 // Without reuse every lookup opens its own tunnel stream, and a page that
 // resolves a dozen asset hosts at once outruns Android's own resolver timeout.
 type streamPool struct {
-	label  string
-	dial   func(context.Context) (net.Conn, error)
-	idle   chan *pooledConn
-	closed atomic.Bool
+	label       string
+	dial        func(context.Context) (net.Conn, error)
+	idle        chan *pooledConn
+	openTimeout time.Duration
+	ctx         context.Context
+	cancel      context.CancelFunc
+	closed      atomic.Bool
 }
 
 type streamResult struct {
@@ -42,11 +46,57 @@ type streamResult struct {
 	err      error
 }
 
+type openResult struct {
+	conn *pooledConn
+	took time.Duration
+	err  error
+}
+
+const (
+	flightPending int32 = iota
+	flightDelivered
+	flightAbandoned
+)
+
+type flight[T any] struct {
+	done  chan T
+	state atomic.Int32
+}
+
+func newFlight[T any]() *flight[T] {
+	return &flight[T]{done: make(chan T, 1)}
+}
+
+func (f *flight[T]) deliver(v T) bool {
+	if !f.state.CompareAndSwap(flightPending, flightDelivered) {
+		return false
+	}
+	f.done <- v
+	return true
+}
+
+func (f *flight[T]) await(ctx context.Context) (T, bool) {
+	select {
+	case v := <-f.done:
+		return v, true
+	case <-ctx.Done():
+		if f.state.CompareAndSwap(flightPending, flightAbandoned) {
+			var none T
+			return none, false
+		}
+		return <-f.done, true
+	}
+}
+
 func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *streamPool {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &streamPool{
-		label: label,
-		dial:  dial,
-		idle:  make(chan *pooledConn, dnsPoolSize),
+		label:       label,
+		dial:        dial,
+		idle:        make(chan *pooledConn, dnsPoolSize),
+		openTimeout: dnsOpenTimeout,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
@@ -120,17 +170,48 @@ func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, c
 }
 
 func (p *streamPool) exchangeOnNewStream(ctx context.Context, query []byte) streamResult {
-	dialStart := time.Now()
-	conn, err := p.dial(ctx)
-	if err != nil {
-		return streamResult{err: err}
+	started := time.Now()
+	opened, ok := p.awaitOpen(ctx)
+	if !ok {
+		return streamResult{stream: "new stream not open after " + diagDuration(time.Since(started)).String(), err: ctx.Err()}
 	}
-	c := &pooledConn{conn: conn, opened: time.Now()}
-	resp, reusable, err := p.exchangeOn(ctx, c, query)
-	if err != nil {
-		return streamResult{stream: "new stream dialed in " + diagDuration(c.opened.Sub(dialStart)).String(), err: err}
+	if opened.err != nil {
+		return streamResult{err: opened.err}
 	}
-	return streamResult{conn: c, resp: resp, reusable: reusable}
+	resp, reusable, err := p.exchangeOn(ctx, opened.conn, query)
+	if err != nil {
+		return streamResult{stream: "new stream dialed in " + diagDuration(opened.took).String(), err: err}
+	}
+	return streamResult{conn: opened.conn, resp: resp, reusable: reusable}
+}
+
+func (p *streamPool) awaitOpen(ctx context.Context) (openResult, bool) {
+	opened, ok := p.open().await(ctx)
+	if ok && opened.conn != nil && ctx.Err() != nil {
+		p.put(opened.conn)
+		return openResult{}, false
+	}
+	return opened, ok
+}
+
+func (p *streamPool) open() *flight[openResult] {
+	opening := newFlight[openResult]()
+	go func() {
+		ctx, cancel := context.WithTimeout(p.ctx, p.openTimeout)
+		defer cancel()
+		started := time.Now()
+		conn, err := p.dial(ctx)
+		if err != nil {
+			opening.deliver(openResult{err: err})
+			return
+		}
+		now := time.Now()
+		c := &pooledConn{conn: conn, opened: now, last: now}
+		if !opening.deliver(openResult{conn: c, took: now.Sub(started)}) {
+			p.put(c)
+		}
+	}()
+	return opening
 }
 
 func (p *streamPool) reclaim(results <-chan streamResult, pending int) {
@@ -243,6 +324,7 @@ func (p *streamPool) put(c *pooledConn) {
 
 func (p *streamPool) close() {
 	p.closed.Store(true)
+	p.cancel()
 	p.drain()
 }
 
