@@ -25,7 +25,7 @@ data class ParsedHysteriaUri(
 private val importJson = Json { ignoreUnknownKeys = true }
 
 /**
- * Parses a Bedlam profile JSON — the shape produced by the app's "Copy config"
+ * Parses a Bedlam profile JSON — the shape produced by the app's "Copy Bedlam config"
  * action: a [HysteriaConfig] object with an optional top-level `name`.
  *
  * The official Hysteria client config (`server` as a plain string) is a
@@ -61,7 +61,7 @@ fun parseHysteriaJson(input: String): ParsedHysteriaUri {
  * Also accepts the `hy2://` scheme.
  *
  * Supported query parameters: sni, insecure, pinSHA256, obfs, obfs-password,
- * ech.
+ * ech, mport (port hopping ports, replacing the port after the host).
  * The optional fragment is surfaced as [ParsedHysteriaUri.name].
  *
  * @see <a href="https://v2.hysteria.network/docs/developers/URI-Scheme/">Hysteria 2 URI Scheme</a>
