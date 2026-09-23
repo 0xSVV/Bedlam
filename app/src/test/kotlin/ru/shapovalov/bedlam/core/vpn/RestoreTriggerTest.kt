@@ -45,6 +45,18 @@ class RestoreTriggerTest {
     }
 
     @Test
+    fun `a restore that throws names the trigger and the exception`() {
+        assertEquals(
+            "Could not restore the tunnel after an app update: IOException: disk full",
+            RestoreTrigger.PackageReplaced.crashLogLine(java.io.IOException("disk full")),
+        )
+        assertEquals(
+            "Could not restore the tunnel after boot: IllegalStateException",
+            RestoreTrigger.Boot.crashLogLine(IllegalStateException()),
+        )
+    }
+
+    @Test
     fun `nothing to restore stays silent`() {
         assertNull(RestoreTrigger.Boot.outcomeOf(ReconcileResult.Unchanged))
     }

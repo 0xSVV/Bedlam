@@ -56,7 +56,7 @@ sealed interface SelfStop {
     }
 }
 
-private fun Throwable.describe(): String {
+internal fun Throwable.describe(): String {
     val name = this::class.java.simpleName
     val detail = message?.takeIf { it.isNotBlank() } ?: return name
     return "$name: $detail"

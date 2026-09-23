@@ -18,6 +18,9 @@ enum class RestoreTrigger(private val occasion: String) {
             alertReason = result.reason,
         )
     }
+
+    fun crashLogLine(error: Throwable): String =
+        "Could not restore the tunnel after $occasion: ${error.describe()}"
 }
 
 data class RestoreOutcome(val logLine: String, val alertReason: String?)

@@ -34,7 +34,9 @@ class BootRestoreReceiver : BroadcastReceiver() {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Boot restore failed", e)
+                val line = trigger.crashLogLine(e)
+                Log.w(TAG, line, e)
+                appLog.error(AppLog.SOURCE_VPN, line)
             } finally {
                 pendingResult.finish()
             }
