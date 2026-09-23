@@ -33,11 +33,12 @@ func (e *dohStatusError) Error() string {
 }
 
 type httpsResolver struct {
-	client client.Client
-	url    string
-	dial   string
-	tlsCfg *tls.Config
-	active atomic.Pointer[dohTransport]
+	client      client.Client
+	url         string
+	dial        string
+	tlsCfg      *tls.Config
+	openTimeout time.Duration
+	active      atomic.Pointer[dohTransport]
 }
 
 type dohTransport struct {
@@ -73,10 +74,11 @@ func newHTTPSResolver(c client.Client, rawURL string, base *tls.Config) (*httpsR
 		return nil, fmt.Errorf("DoH server %q: %w", rawURL, err)
 	}
 	r := &httpsResolver{
-		client: c,
-		url:    rawURL,
-		dial:   dial,
-		tlsCfg: dnsTLSConfig(base, host, []string{"h2", "http/1.1"}),
+		client:      c,
+		url:         rawURL,
+		dial:        dial,
+		tlsCfg:      dnsTLSConfig(base, host, []string{"h2", "http/1.1"}),
+		openTimeout: dnsOpenTimeout,
 	}
 	r.active.Store(r.newTransport())
 	return r, nil
@@ -89,6 +91,7 @@ func (r *httpsResolver) newTransport() *dohTransport {
 			return r.dialTLS(ctx, t)
 		},
 		ForceAttemptHTTP2:     true,
+		MaxConnsPerHost:       2,
 		MaxIdleConns:          2,
 		MaxIdleConnsPerHost:   2,
 		IdleConnTimeout:       90 * time.Second,
@@ -105,6 +108,8 @@ func (r *httpsResolver) newTransport() *dohTransport {
 }
 
 func (r *httpsResolver) dialTLS(ctx context.Context, owner *dohTransport) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.openTimeout)
+	defer cancel()
 	raw, err := dialTunnelTCP(ctx, r.client, r.dial)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", r.dial, err)

@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -456,6 +457,89 @@ func TestHTTPSResolver_timeoutIsNotAStatusError(t *testing.T) {
 	var statusErr *dohStatusError
 	if !isTimeoutClass(err) || errors.As(err, &statusErr) {
 		t.Fatalf("err = %v, want a timeout", err)
+	}
+}
+
+func TestHTTPSResolver_burstOpensAtMostTwoConnections(t *testing.T) {
+	d := newDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	started := make(chan struct{}, 64)
+	gate := make(chan struct{})
+	var dials atomic.Int32
+	fc := d.client()
+	inner := fc.tcp
+	fc.tcp = func(addr string) (net.Conn, error) {
+		dials.Add(1)
+		started <- struct{}{}
+		<-gate
+		return inner(addr)
+	}
+	r, err := newHTTPSResolver(fc, d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+
+	const burst = 8
+	var wg sync.WaitGroup
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+				t.Errorf("query %d: %v", i, err)
+			}
+		}(i)
+	}
+	<-started
+	for waiting := true; waiting; {
+		select {
+		case <-started:
+		case <-time.After(200 * time.Millisecond):
+			waiting = false
+		}
+	}
+	close(gate)
+	wg.Wait()
+	if n := dials.Load(); n > 2 {
+		t.Errorf("a burst of %d queries dialed %d connections, want the waiting queries to share at most 2", burst, n)
+	}
+}
+
+func TestHTTPSResolver_givesUpADialAtTheOpenTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { c.Close() })
+		}
+	}()
+	_, pool := testCert(t)
+	fc := &fakeClient{tcp: func(string) (net.Conn, error) { return net.Dial("tcp", ln.Addr().String()) }}
+	r, err := newHTTPSResolver(fc, "https://dns.test/dns-query", &tls.Config{RootCAs: pool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	r.openTimeout = 100 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err = r.exchange(ctx, dnsQuery("example.com"))
+	if !isTimeoutClass(err) || !strings.Contains(fmt.Sprint(err), "TLS handshake with dns.test:443") {
+		t.Errorf("err = %v, want the handshake given up", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("a hung handshake held the query for %v, want it given up at the %v open timeout", elapsed, r.openTimeout)
 	}
 }
 
