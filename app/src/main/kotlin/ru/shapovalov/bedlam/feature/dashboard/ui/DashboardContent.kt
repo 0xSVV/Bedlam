@@ -209,7 +209,7 @@ private fun DashboardStore.ErrorReason.resolve(): String = when (this) {
 
     is DashboardStore.ErrorReason.ProfilesImported -> when {
         failures.isEmpty() -> pluralStringResource(R.plurals.import_links_done, imported, imported)
-        imported == 0 -> stringResource(R.string.import_links_none, total) + "\n" + importFailuresText(failures)
+        imported == 0 -> stringResource(R.string.import_links_none) + "\n" + importFailuresText(failures)
         else -> stringResource(R.string.import_links_partial, imported, total) + "\n" + importFailuresText(failures)
     }
 }

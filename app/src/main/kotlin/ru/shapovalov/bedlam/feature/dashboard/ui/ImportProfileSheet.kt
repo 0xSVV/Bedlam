@@ -79,7 +79,7 @@ internal fun ImportProfileSheet(
     val failuresText = if (failures.isEmpty()) {
         null
     } else {
-        stringResource(R.string.import_links_none, failures.size) + "\n" + importFailuresText(failures)
+        stringResource(R.string.import_links_none) + "\n" + importFailuresText(failures)
     }
     val shownError = (failuresText ?: error?.ifEmpty { stringResource(R.string.import_error_failed) })
         ?.takeIf { attemptedText == text }

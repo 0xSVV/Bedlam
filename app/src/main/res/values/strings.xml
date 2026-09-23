@@ -78,10 +78,10 @@
     <string name="import_action_import">Import</string>
     <string name="import_error_failed">Failed to import profile</string>
     <string name="import_link_failed">Link %1$d: %2$s</string>
-    <string name="import_link_failed_unknown">Link %1$d could not be imported</string>
+    <string name="import_link_failed_unknown">Could not import link %1$d</string>
     <string name="import_link_duplicate">Link %1$d is already saved as \"%2$s\"</string>
-    <string name="import_links_none">None of the %1$d links were imported</string>
-    <string name="import_links_partial">Imported %1$d of %2$d links</string>
+    <string name="import_links_none">No links were imported</string>
+    <string name="import_links_partial">Links imported: %1$d of %2$d</string>
     <plurals name="import_links_done">
         <item quantity="one">Imported %1$d profile</item>
         <item quantity="other">Imported %1$d profiles</item>
