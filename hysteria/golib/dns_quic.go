@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"sync"
@@ -24,18 +25,29 @@ type doqResolver struct {
 	qcfg     *quic.Config
 	fallback *tlsResolver
 	gate     fallbackGate
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	mu      sync.Mutex
 	conn    *quic.Conn
 	tr      *quic.Transport
 	pkt     *hyPacketConn
+	dialing *doqDial
+	closed  bool
 	udpDown bool
 	byGate  bool
 	lastSeq uint64
 }
 
+type doqDial struct {
+	done chan struct{}
+	conn *quic.Conn
+	err  error
+}
+
 func newDoQResolver(c client.Client, server string, base *tls.Config) *doqResolver {
 	host, _, _ := net.SplitHostPort(server)
+	ctx, cancel := context.WithCancel(context.Background())
 	return &doqResolver{
 		client: c,
 		server: server,
@@ -48,6 +60,8 @@ func newDoQResolver(c client.Client, server string, base *tls.Config) *doqResolv
 			DisablePathMTUDiscovery: true,
 		},
 		fallback: newTLSResolver(c, server, base),
+		ctx:      ctx,
+		cancel:   cancel,
 		lastSeq:  sessionSeq(c),
 	}
 }
@@ -169,11 +183,50 @@ func (r *doqResolver) connection(ctx context.Context) (*quic.Conn, error) {
 		r.mu.Unlock()
 		return c, nil
 	}
+	dial := r.dialing
+	if dial == nil {
+		dial = &doqDial{done: make(chan struct{})}
+		r.dialing = dial
+		go r.dial(dial)
+	}
 	r.mu.Unlock()
 
+	started := time.Now()
+	select {
+	case <-dial.done:
+		return dial.conn, dial.err
+	case <-ctx.Done():
+		return nil, fmt.Errorf("DoQ connection to %s not ready after %s: %w", r.server, diagDuration(time.Since(started)), ctx.Err())
+	}
+}
+
+func (r *doqResolver) dial(d *doqDial) {
+	defer close(d.done)
+	ctx, cancel := context.WithTimeout(r.ctx, dnsOpenTimeout)
+	defer cancel()
+	conn, tr, pkt, err := r.open(ctx)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.dialing = nil
+	if err != nil {
+		d.err = err
+		return
+	}
+	if r.closed {
+		_ = conn.CloseWithError(0, "")
+		_ = tr.Close()
+		_ = pkt.Close()
+		d.err = net.ErrClosed
+		return
+	}
+	r.conn, r.tr, r.pkt = conn, tr, pkt
+	d.conn = conn
+}
+
+func (r *doqResolver) open(ctx context.Context) (*quic.Conn, *quic.Transport, *hyPacketConn, error) {
 	udp, err := r.client.UDP()
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	pkt := newHyPacketConn(udp, r.server)
 	tr := &quic.Transport{Conn: pkt}
@@ -181,21 +234,9 @@ func (r *doqResolver) connection(ctx context.Context) (*quic.Conn, error) {
 	if err != nil {
 		_ = tr.Close()
 		_ = pkt.Close()
-		return nil, err
+		return nil, nil, nil, err
 	}
-
-	r.mu.Lock()
-	if r.conn != nil {
-		winner := r.conn
-		r.mu.Unlock()
-		_ = qc.CloseWithError(0, "")
-		_ = tr.Close()
-		_ = pkt.Close()
-		return winner, nil
-	}
-	r.conn, r.tr, r.pkt = qc, tr, pkt
-	r.mu.Unlock()
-	return qc, nil
+	return qc, tr, pkt, nil
 }
 
 func (r *doqResolver) drop(c *quic.Conn) {
@@ -214,9 +255,11 @@ func (r *doqResolver) drop(c *quic.Conn) {
 
 func (r *doqResolver) close() {
 	r.mu.Lock()
+	r.closed = true
 	conn, tr, pkt := r.conn, r.tr, r.pkt
 	r.conn, r.tr, r.pkt = nil, nil, nil
 	r.mu.Unlock()
+	r.cancel()
 	if conn != nil {
 		_ = conn.CloseWithError(0, "")
 		_ = tr.Close()

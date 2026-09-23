@@ -181,6 +181,113 @@ func TestDoQResolver_redialsAfterTheConnectionDies(t *testing.T) {
 	}
 }
 
+type gatedUDP struct {
+	started chan struct{}
+	gate    chan struct{}
+	once    sync.Once
+}
+
+func gateUDP(fc *fakeClient) *gatedUDP {
+	g := &gatedUDP{started: make(chan struct{}, 16), gate: make(chan struct{})}
+	inner := fc.udp
+	fc.udp = func() (client.HyUDPConn, error) {
+		g.started <- struct{}{}
+		<-g.gate
+		return inner()
+	}
+	return g
+}
+
+func (g *gatedUDP) open() { g.once.Do(func() { close(g.gate) }) }
+
+func TestDoQResolver_concurrentCallersShareOneDial(t *testing.T) {
+	d := newDoQServer(t, [4]byte{5, 5, 5, 5})
+	fc, bridges := d.client(t)
+	g := gateUDP(fc)
+	r := newDoQResolver(fc, d.server(), &tls.Config{RootCAs: d.pool})
+	defer r.close()
+
+	const callers = 6
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if _, err := r.exchange(ctx, dnsQuery("example.com")); err != nil {
+				t.Errorf("caller %d: %v", i, err)
+			}
+		}(i)
+	}
+	<-g.started
+	for waiting := true; waiting; {
+		select {
+		case <-g.started:
+		case <-time.After(200 * time.Millisecond):
+			waiting = false
+		}
+	}
+	g.open()
+	wg.Wait()
+	if n := len(bridges()); n != 1 {
+		t.Errorf("%d callers opened %d UDP sessions, want them to share one dial", callers, n)
+	}
+}
+
+func TestDoQResolver_dialOutlivesTheCallerThatStartedIt(t *testing.T) {
+	d := newDoQServer(t, [4]byte{5, 5, 5, 5})
+	fc, bridges := d.client(t)
+	g := gateUDP(fc)
+	r := newDoQResolver(fc, d.server(), &tls.Config{RootCAs: d.pool})
+	defer r.close()
+	guard := time.AfterFunc(time.Second, g.open)
+	defer guard.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	start := time.Now()
+	_, err := r.exchange(ctx, dnsQuery("slow.example"))
+	cancel()
+	if !isTimeoutClass(err) {
+		t.Errorf("err = %v, want the caller's timeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Errorf("a caller whose connection was still dialing waited %v", elapsed)
+	}
+	g.open()
+
+	next, cancelNext := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelNext()
+	if _, err := r.exchange(next, dnsQuery("next.example")); err != nil {
+		t.Fatalf("the next query: %v", err)
+	}
+	if n := len(bridges()); n != 1 {
+		t.Errorf("opened %d UDP sessions, want the dial the first caller started to serve the next", n)
+	}
+}
+
+func TestDoQResolver_closeCancelsTheDialInFlight(t *testing.T) {
+	blackhole := newFakeUDPConn(nil)
+	fc := &fakeClient{udp: func() (client.HyUDPConn, error) { return blackhole, nil }}
+	r := newDoQResolver(fc, "dns.test:853", nil)
+	defer r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	_, _ = r.exchange(ctx, dnsQuery("example.com"))
+	cancel()
+	select {
+	case <-blackhole.closed:
+		t.Fatal("the dial ended with the caller that started it, want it kept going for the next query")
+	default:
+	}
+	r.close()
+	select {
+	case <-blackhole.closed:
+	case <-time.After(time.Second):
+		t.Fatal("closing the resolver left its dial running")
+	}
+}
+
 func TestDoQResolver_streamTimeoutKeepsTheConnection(t *testing.T) {
 	release := blockUntilCleanup(t)
 	d := newDoQServerWith(t, func(q []byte) []byte {
