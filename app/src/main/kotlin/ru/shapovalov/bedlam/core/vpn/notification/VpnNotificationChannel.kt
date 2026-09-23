@@ -38,7 +38,8 @@ enum class VpnNotificationChannel(
 
 enum class VpnAlert(val notificationId: Int) {
     ReconnectTimeout(2),
-    Revoked(4);
+    Revoked(4),
+    Stopped(5);
 
     val channel: VpnNotificationChannel
         get() = VpnNotificationChannel.Alerts

@@ -5,8 +5,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import ru.shapovalov.bedlam.MainActivity
 import ru.shapovalov.bedlam.R
+import ru.shapovalov.bedlam.core.vpn.tile.VpnPermissionActivity
 
 class ConnectionAlerts(private val context: Context) {
 
@@ -33,6 +35,23 @@ class ConnectionAlerts(private val context: Context) {
 
     fun cancelRevoked() {
         cancel(VpnAlert.Revoked)
+    }
+
+    fun postStopped(reason: String) {
+        val notification = Notification.Builder(context, VpnAlert.Stopped.channel.id)
+            .setContentTitle(context.getString(R.string.notification_stopped_title))
+            .setSmallIcon(R.drawable.ic_stat_bedlam)
+            .setContentText(reason)
+            .setStyle(Notification.BigTextStyle().bigText(reason))
+            .setContentIntent(openAppIntent())
+            .setAutoCancel(true)
+            .addAction(reconnectAction())
+            .build()
+        post(VpnAlert.Stopped, notification)
+    }
+
+    fun cancelStopped() {
+        cancel(VpnAlert.Stopped)
     }
 
     private fun post(alert: VpnAlert, notification: Notification) {
@@ -66,7 +85,24 @@ class ConnectionAlerts(private val context: Context) {
         PendingIntent.FLAG_IMMUTABLE,
     )
 
+    private fun reconnectAction(): Notification.Action {
+        val intent = PendingIntent.getActivity(
+            context,
+            REQ_RECONNECT,
+            Intent(context, VpnPermissionActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        return Notification.Action.Builder(
+            Icon.createWithResource(context, R.drawable.ic_refresh),
+            context.getString(R.string.action_reconnect),
+            intent,
+        ).build()
+    }
+
     private companion object {
         const val REQ_OPEN_APP = 0
+        const val REQ_RECONNECT = 3
     }
 }

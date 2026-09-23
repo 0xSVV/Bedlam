@@ -81,6 +81,14 @@ class VpnNotificationController(private val context: Context) {
         alerts.postRevoked(title())
     }
 
+    fun postStoppedAlert(reason: String) {
+        alerts.postStopped(reason)
+    }
+
+    fun cancelStoppedAlert() {
+        alerts.cancelStopped()
+    }
+
     private fun build(
         state: ConnectionState,
         stats: HysteriaClient.TrafficStats,

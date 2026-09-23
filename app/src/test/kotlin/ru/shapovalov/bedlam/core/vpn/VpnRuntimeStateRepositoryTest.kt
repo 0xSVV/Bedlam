@@ -1,16 +1,10 @@
 package ru.shapovalov.bedlam.core.vpn
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import ru.shapovalov.bedlam.testing.InMemoryPreferencesDataStore
 
 class VpnRuntimeStateRepositoryTest {
 
@@ -44,18 +38,5 @@ class VpnRuntimeStateRepositoryTest {
         repository.markStopped("USER")
 
         assertEquals("second", repository.snapshot().stopRequestId)
-    }
-
-    private class InMemoryPreferencesDataStore : DataStore<Preferences> {
-        private val mutex = Mutex()
-        private val current = MutableStateFlow(emptyPreferences())
-
-        override val data: Flow<Preferences> = current
-
-        override suspend fun updateData(
-            transform: suspend (t: Preferences) -> Preferences,
-        ): Preferences = mutex.withLock {
-            transform(current.value).also { current.value = it }
-        }
     }
 }

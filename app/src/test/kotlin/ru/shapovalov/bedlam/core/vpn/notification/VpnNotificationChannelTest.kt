@@ -33,4 +33,12 @@ class VpnNotificationChannelTest {
         assertEquals(ids.size, ids.toSet().size)
         assertFalse(VpnNotificationController.NOTIFICATION_ID in ids)
     }
+
+    @Test
+    fun `a tunnel stop has its own alert`() {
+        assertEquals(
+            setOf("ReconnectTimeout", "Revoked", "Stopped"),
+            VpnAlert.entries.map { it.name }.toSet(),
+        )
+    }
 }

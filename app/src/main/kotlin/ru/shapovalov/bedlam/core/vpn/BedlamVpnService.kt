@@ -87,6 +87,10 @@ class BedlamVpnService : VpnService() {
     }
 
     private lateinit var notifications: VpnNotificationController
+    private val selfStopReporter: SelfStopReporter by lazy {
+        SelfStopReporter(appLog, runtimeStateRepository) { notifications.postStoppedAlert(it) }
+    }
+    private val selfStopLock = Any()
     private var networkObserver: UnderlyingNetworkObserver? = null
     private var notificationJob: Job? = null
     private var runtimeHeartbeatJob: Job? = null
@@ -201,16 +205,10 @@ class BedlamVpnService : VpnService() {
         stopWasRequested = false
 
         if (!startAsForeground()) {
-            appLog.error(AppLog.SOURCE_VPN, "Android refused to start the VPN service")
-            scope.launch {
-                runtimeStateRepository.markInterrupted(
-                    serviceEpoch,
-                    "Android refused to start the VPN service",
-                )
-                releaseAndStopSelf(startId)
-            }
+            stopOnItsOwn(SelfStop.ForegroundRefused, startId)
             return START_NOT_STICKY
         }
+        notifications.cancelStoppedAlert()
 
         if (startJob?.isActive == true) {
             Log.i(TAG, "Ignoring VPN start while startup is already in progress")
@@ -230,13 +228,12 @@ class BedlamVpnService : VpnService() {
         scheduleAlwaysOnVpnStateUpdate()
         val job = scope.launch(start = CoroutineStart.LAZY) {
             startMutex.withLock {
-                val request = resolveStartRequest(intent)
-                if (request == null) {
-                    Log.e(TAG, "No VPN config provided and no active profile is saved")
-                    stopWasRequested = true
-                    runtimeStateRepository.markFailed("No active profile")
-                    releaseAndStopSelf(startId)
-                    return@withLock
+                val request = when (val resolution = resolveStartRequest(intent)) {
+                    is StartResolution.Ready -> resolution.request
+                    is StartResolution.Refused -> {
+                        stopOnItsOwn(resolution.stop, startId)
+                        return@withLock
+                    }
                 }
 
                 if (client.state.value.isActiveTunnel) {
@@ -271,23 +268,28 @@ class BedlamVpnService : VpnService() {
         return START_REDELIVER_INTENT
     }
 
-    private suspend fun resolveStartRequest(intent: Intent?): StartRequest? {
+    private suspend fun resolveStartRequest(intent: Intent?): StartResolution {
         val configJson = intent?.getStringExtra(EXTRA_CONFIG_JSON)
         if (!configJson.isNullOrEmpty()) {
-            val config = decodeConfig(configJson) ?: return null
-            return StartRequest(
-                config = config,
-                profileId = intent.getStringExtra(EXTRA_PROFILE_ID),
-                profileName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty(),
+            val config = decodeConfig(configJson)
+                ?: return StartResolution.Refused(SelfStop.InvalidConfig)
+            return StartResolution.Ready(
+                StartRequest(
+                    config = config,
+                    profileId = intent.getStringExtra(EXTRA_PROFILE_ID),
+                    profileName = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty(),
+                )
             )
         }
 
-        val activeId = profileRepository.getActiveId() ?: return null
-        val profile = profileRepository.get(activeId) ?: return null
-        return StartRequest(
-            config = profile.config,
-            profileId = profile.id,
-            profileName = profile.name,
+        val profile = profileRepository.getActiveId()?.let { profileRepository.get(it) }
+            ?: return StartResolution.Refused(SelfStop.NoActiveProfile)
+        return StartResolution.Ready(
+            StartRequest(
+                config = profile.config,
+                profileId = profile.id,
+                profileName = profile.name,
+            )
         )
     }
 
@@ -316,12 +318,7 @@ class BedlamVpnService : VpnService() {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "VPN startup failed", e)
-            if (client.state.value is ConnectionState.Error) {
-                runtimeStateRepository.markFailed(e.message ?: "VPN startup failed")
-                releaseAndStopSelf()
-            } else {
-                stopAfterStartFailure()
-            }
+            stopOnItsOwn(SelfStop.StartupFailure(e))
         }
     }
 
@@ -369,7 +366,7 @@ class BedlamVpnService : VpnService() {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Reapply failed", e)
-            stop()
+            stopOnItsOwn(SelfStop.ReapplyFailure(e))
         }
     }
 
@@ -407,34 +404,24 @@ class BedlamVpnService : VpnService() {
         }
     }
 
-    private fun stopAfterInterruption(reason: String) {
-        appLog.warn(AppLog.SOURCE_VPN, "Tunnel interrupted: $reason")
-        stopWasRequested = true
+    private fun stopOnItsOwn(stop: SelfStop, startId: Int? = null) {
+        if (!claimSelfStop()) return
         currentConfig = null
         startJob?.cancel()
         startJob = null
         scope.launch(Dispatchers.Main.immediate) {
             releaseForegroundResources()
-            runtimeStateRepository.markInterrupted(serviceEpoch, reason)
+            selfStopReporter.report(stop)
             runCatching { client.closeSession() }
                 .onFailure { Log.w(TAG, "client.closeSession failed", it) }
-            stopSelf()
+            if (startId != null) stopSelf(startId) else stopSelf()
         }
     }
 
-    private fun stopAfterTerminalFailure(reason: String) {
-        appLog.error(AppLog.SOURCE_VPN, "Tunnel failed: $reason")
+    private fun claimSelfStop(): Boolean = synchronized(selfStopLock) {
+        if (stopWasRequested) return false
         stopWasRequested = true
-        currentConfig = null
-        startJob?.cancel()
-        startJob = null
-        scope.launch(Dispatchers.Main.immediate) {
-            releaseForegroundResources()
-            runtimeStateRepository.markFailed(reason)
-            runCatching { client.closeSession() }
-                .onFailure { Log.w(TAG, "client.closeSession failed", it) }
-            stopSelf()
-        }
+        true
     }
 
     private suspend fun releaseForegroundResources() {
@@ -523,7 +510,7 @@ class BedlamVpnService : VpnService() {
                     delay(TUN_REAPPLY_RETRY_DELAY_MS)
                 } else {
                     Log.e(TAG, "DNS reapply after network change failed; no interface left", e)
-                    stopAfterInterruption("DNS reapply after network change failed")
+                    stopOnItsOwn(SelfStop.Interruption("DNS reapply after network change failed"))
                 }
             }
         }
@@ -556,7 +543,7 @@ class BedlamVpnService : VpnService() {
                     is ConnectionState.Error -> {
                         if (!stopWasRequested) {
                             Log.w(TAG, "Tunnel failed irrecoverably: ${state.message}")
-                            stopAfterTerminalFailure(state.message)
+                            stopOnItsOwn(SelfStop.Failure(state.message))
                         }
                     }
 
@@ -709,28 +696,6 @@ class BedlamVpnService : VpnService() {
         }
     }
 
-    private suspend fun releaseAndStopSelf(startId: Int? = null) {
-        withContext(Dispatchers.Main.immediate) {
-            stopWasRequested = true
-            releaseForegroundResources()
-            if (startId != null) stopSelf(startId) else stopSelf()
-        }
-    }
-
-    private suspend fun stopAfterStartFailure() {
-        stopWasRequested = true
-        currentConfig = null
-        withContext(Dispatchers.Main.immediate) {
-            releaseForegroundResources()
-        }
-        runCatching { client.stop() }
-            .onFailure { Log.w(TAG, "client.stop failed", it) }
-        runtimeStateRepository.markFailed("VPN startup failed")
-        withContext(Dispatchers.Main.immediate) {
-            stopSelf()
-        }
-    }
-
     private fun scheduleAlwaysOnVpnStateUpdate() {
         scope.launch { updateAlwaysOnVpnState() }
     }
@@ -764,6 +729,11 @@ class BedlamVpnService : VpnService() {
         val profileId: String?,
         val profileName: String,
     )
+
+    private sealed interface StartResolution {
+        data class Ready(val request: StartRequest) : StartResolution
+        data class Refused(val stop: SelfStop.Unstartable) : StartResolution
+    }
 
     private fun persistUnexpectedDestroyIfNeeded() {
         if (stopWasRequested || !client.state.value.isActiveTunnel) return
