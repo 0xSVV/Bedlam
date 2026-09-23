@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 )
 
 func sessionWithCachedAnswer(t *testing.T) (*Session, *stubResolver, []byte, net.PacketConn) {
@@ -31,6 +32,7 @@ func sessionWithCachedAnswer(t *testing.T) (*Session, *stubResolver, []byte, net
 
 func assertClosed(t *testing.T, conn net.PacketConn) {
 	t.Helper()
+	_ = conn.SetReadDeadline(time.Now())
 	if _, _, err := conn.ReadFrom(make([]byte, 1)); !errors.Is(err, net.ErrClosed) {
 		t.Errorf("active connection read err = %v, want net.ErrClosed", err)
 	}
