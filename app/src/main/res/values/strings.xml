@@ -381,9 +381,9 @@
     <string name="profile_config_link_clip_label">hysteria2:// link</string>
     <string name="profile_config_link_copy_success">Link copied</string>
     <string name="profile_config_link_unavailable">A realm profile can\'t be shared as a link</string>
-    <string name="profile_config_link_warning_title">Some settings stay behind</string>
+    <string name="profile_config_link_warning_title">Before you share the link</string>
     <string name="profile_config_link_warning_intro">The link doesn\'t carry:</string>
-    <string name="profile_config_link_warning_insecure_pin">Hiddify and NekoBox ignore the certificate pin, so there this profile won\'t check the server certificate at all.</string>
+    <string name="profile_config_link_warning_insecure_pin">Hiddify and NekoBox ignore the certificate pin, so in those apps this profile won\'t check the server certificate.</string>
     <string name="profile_config_link_gap_ca">Custom CA certificate</string>
     <string name="profile_config_link_gap_client_certificate">Client certificate and key</string>
     <string name="profile_config_link_gap_quic">QUIC settings</string>
