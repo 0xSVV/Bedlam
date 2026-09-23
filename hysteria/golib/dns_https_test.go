@@ -325,8 +325,8 @@ func TestDNSUpstream_failsOverPastAnHTTP413(t *testing.T) {
 	if strict.requests.Load() != 1 || lenient.requests.Load() != 1 {
 		t.Errorf("requests strict=%d lenient=%d, want 1 each", strict.requests.Load(), lenient.requests.Load())
 	}
-	if up.preferred.Load() != 1 {
-		t.Errorf("preferred = %d, want 1", up.preferred.Load())
+	if up.firstIndex() != 1 {
+		t.Errorf("preferred = %d, want 1", up.firstIndex())
 	}
 }
 

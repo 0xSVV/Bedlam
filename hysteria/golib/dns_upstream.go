@@ -10,15 +10,17 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
 
 const (
-	dnsAttemptTimeout    = 5 * time.Second
-	dnsMinAttemptTimeout = 1500 * time.Millisecond
+	dnsAttemptTimeout     = 5 * time.Second
+	dnsMinAttemptTimeout  = 1500 * time.Millisecond
+	dnsPreferenceCooldown = 5 * time.Minute
 )
 
 const (
@@ -52,8 +54,12 @@ type dnsUpstream struct {
 	servers   []string
 	resolvers []dnsResolver
 	listen    []netip.Addr
-	preferred atomic.Int32
 	ident     string
+	now       func() time.Time
+
+	mu             sync.Mutex
+	preferred      int
+	preferredUntil time.Time
 }
 
 func newDNSUpstream(c client.Client, cfg *dnsUpstreamConfig) (*dnsUpstream, error) {
@@ -122,7 +128,7 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 		return nil, err
 	}
 	began := time.Now()
-	first := int(u.preferred.Load()) % n
+	first := u.firstIndex()
 	results := make(chan attemptResult, n)
 	slice := time.NewTimer(u.attemptBudget(ctx, n))
 	defer slice.Stop()
@@ -146,18 +152,18 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 	launch()
 	done, sliceEnd := ctx.Done(), slice.C
 	var lastErr error
+	tunnelFailed := false
 	for {
 		select {
 		case res := <-results:
 			pending--
 			if res.err == nil {
-				if res.index != first {
-					u.preferred.Store(int32(res.index))
-				}
+				u.noteAnswer(first, res.index, tunnelFailed)
 				u.settleLate(ctx, results, pending)
 				return res.resp, nil
 			}
 			lastErr = res.err
+			tunnelFailed = tunnelFailed || isTunnelFailure(res.err)
 			if res.index == latest && started < n && ctx.Err() == nil {
 				if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
 					log(LogLevelWarn, srcDNS, "DNS %s failed, trying next: %s", id, res.err)
@@ -166,7 +172,6 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 				continue
 			}
 			if pending == 0 {
-				u.preferred.Store(int32((first + 1) % n))
 				return nil, lastErr
 			}
 		case <-sliceEnd:
@@ -178,12 +183,56 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 				continue
 			}
 			u.settleLate(ctx, results, pending)
-			u.preferred.Store(int32((first + 1) % n))
 			return nil, fmt.Errorf("no answer in %s: %w", diagDuration(time.Since(began)), context.DeadlineExceeded)
 		case <-done:
 			done, sliceEnd = nil, nil
 		}
 	}
+}
+
+func (u *dnsUpstream) clock() time.Time {
+	if u.now != nil {
+		return u.now()
+	}
+	return time.Now()
+}
+
+func (u *dnsUpstream) firstIndex() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.preferred != 0 && u.clock().Before(u.preferredUntil) {
+		return u.preferred
+	}
+	return 0
+}
+
+func (u *dnsUpstream) noteAnswer(first, answered int, tunnelFailed bool) {
+	movedAway := answered != 0 && answered != first && !tunnelFailed
+	u.mu.Lock()
+	previous := u.preferred
+	switch {
+	case answered == 0:
+		u.preferred = 0
+	case movedAway:
+		u.preferred = answered
+		u.preferredUntil = u.clock().Add(dnsPreferenceCooldown)
+	}
+	u.mu.Unlock()
+	switch {
+	case movedAway:
+		if dnsPreferenceLimiter.allow("away|" + u.ident) {
+			log(LogLevelInfo, srcDNS, "DNS now answered by %s; %s did not answer", u.resolvers[answered].id(), u.resolvers[first].id())
+		}
+	case answered == 0 && previous != 0:
+		if dnsPreferenceLimiter.allow("back|" + u.ident) {
+			log(LogLevelInfo, srcDNS, "DNS answered by %s again", u.resolvers[0].id())
+		}
+	}
+}
+
+func isTunnelFailure(err error) bool {
+	var closed coreErrs.ClosedError
+	return errors.Is(err, errDialBackoff) || errors.As(err, &closed) || errors.Is(err, net.ErrClosed)
 }
 
 func (u *dnsUpstream) settleLate(ctx context.Context, results <-chan attemptResult, pending int) {
@@ -374,4 +423,7 @@ func dohDialAddr(rawURL string) (host, dial string, err error) {
 	return host, net.JoinHostPort(host, port), nil
 }
 
-var dnsFailoverLimiter = newRateLimiter(2 * time.Second)
+var (
+	dnsFailoverLimiter   = newRateLimiter(2 * time.Second)
+	dnsPreferenceLimiter = newRateLimiter(time.Minute)
+)

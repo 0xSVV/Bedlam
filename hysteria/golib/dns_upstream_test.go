@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
 
 func TestParseDNSUpstream_json(t *testing.T) {
@@ -260,8 +262,8 @@ func TestDNSUpstream_failoverToNext(t *testing.T) {
 	if failing.calls.Load() != 1 || working.calls.Load() != 1 {
 		t.Errorf("calls a=%d b=%d", failing.calls.Load(), working.calls.Load())
 	}
-	if up.preferred.Load() != 1 {
-		t.Errorf("preferred = %d, want 1", up.preferred.Load())
+	if up.firstIndex() != 1 {
+		t.Errorf("preferred = %d, want 1", up.firstIndex())
 	}
 
 	if _, err := up.exchange(context.Background(), dnsQuery("example.org")); err != nil {
@@ -312,21 +314,177 @@ func TestDNSUpstream_reachesEveryServerWithinTheQueryBudget(t *testing.T) {
 			t.Errorf("resolver %s called %d times, want 1", r.name, r.calls.Load())
 		}
 	}
-	if up.preferred.Load() != 3 {
-		t.Errorf("preferred = %d, want 3", up.preferred.Load())
+	if up.firstIndex() != 3 {
+		t.Errorf("preferred = %d, want 3", up.firstIndex())
 	}
 }
 
-func TestDNSUpstream_rotatesAfterTotalFailure(t *testing.T) {
-	a := &stubResolver{name: "a", reply: func([]byte) ([]byte, error) { return nil, errors.New("a down") }}
-	b := &stubResolver{name: "b", reply: func([]byte) ([]byte, error) { return nil, errors.New("b down") }}
-	up := &dnsUpstream{resolvers: []dnsResolver{a, b}, ident: "tcp|a,b"}
+type callOrder struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (o *callOrder) note(name string) {
+	o.mu.Lock()
+	o.names = append(o.names, name)
+	o.mu.Unlock()
+}
+
+func (o *callOrder) take() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	names := o.names
+	o.names = nil
+	return names
+}
+
+type fakeClock struct{ nanos atomic.Int64 }
+
+func newFakeClock() *fakeClock {
+	c := &fakeClock{}
+	c.nanos.Store(time.Date(2026, 9, 24, 15, 41, 0, 0, time.UTC).UnixNano())
+	return c
+}
+
+func (c *fakeClock) now() time.Time { return time.Unix(0, c.nanos.Load()) }
+
+func (c *fakeClock) advance(d time.Duration) { c.nanos.Add(int64(d)) }
+
+type switchableServer struct {
+	*stubResolver
+	down    atomic.Bool
+	failure atomic.Pointer[error]
+}
+
+func newSwitchableServer(name string, ip byte, order *callOrder) *switchableServer {
+	s := &switchableServer{}
+	s.failWith(errors.New(name + " refused"))
+	s.stubResolver = &stubResolver{name: name, reply: func(q []byte) ([]byte, error) {
+		order.note(name)
+		if s.down.Load() {
+			return nil, *s.failure.Load()
+		}
+		return echoAnswer([4]byte{ip, ip, ip, ip})(q)
+	}}
+	return s
+}
+
+func (s *switchableServer) failWith(err error) { s.failure.Store(&err) }
+
+func TestDNSUpstream_keepsTheOrderAfterTotalFailure(t *testing.T) {
+	order := &callOrder{}
+	a, b := newSwitchableServer("a", 1, order), newSwitchableServer("b", 2, order)
+	a.down.Store(true)
+	b.down.Store(true)
+	up := &dnsUpstream{resolvers: []dnsResolver{a, b}, ident: uniqueUpstreamID(t, "tcp")}
 
 	if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err == nil {
-		t.Fatal("expected failure")
+		t.Fatal("every server fails, so the query must fail")
 	}
-	if up.preferred.Load() != 1 {
-		t.Errorf("preferred = %d, want 1 so the next query starts elsewhere", up.preferred.Load())
+	order.take()
+	if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err == nil {
+		t.Fatal("every server still fails, so the query must fail")
+	}
+	if got := order.take(); len(got) != 2 || got[0] != "a" {
+		t.Errorf("the query after a total failure tried %v, want the first configured server first", got)
+	}
+}
+
+func TestDNSUpstream_returnsToTheFirstServerAfterTheCooldown(t *testing.T) {
+	order := &callOrder{}
+	first, second := newSwitchableServer("tls|first", 1, order), newSwitchableServer("tls|second", 2, order)
+	clock := newFakeClock()
+	up := &dnsUpstream{resolvers: []dnsResolver{first, second}, ident: uniqueUpstreamID(t, "tls"), now: clock.now}
+	first.down.Store(true)
+
+	resp, err := up.exchange(context.Background(), dnsQuery("example.com"))
+	if err != nil || resp[len(resp)-1] != 2 {
+		t.Fatalf("resp = %v, err = %v, want the second server's answer", resp, err)
+	}
+	order.take()
+
+	clock.advance(dnsPreferenceCooldown - time.Second)
+	if _, err := up.exchange(context.Background(), dnsQuery("example.org")); err != nil {
+		t.Fatalf("a query within the cool-down: %v", err)
+	}
+	if got := order.take(); len(got) != 1 || got[0] != "tls|second" {
+		t.Errorf("a query within the cool-down tried %v, want only the server that answered", got)
+	}
+
+	first.down.Store(false)
+	clock.advance(2 * time.Second)
+	resp, err = up.exchange(context.Background(), dnsQuery("example.net"))
+	if err != nil || resp[len(resp)-1] != 1 {
+		t.Fatalf("resp = %v, err = %v, want the first server's answer once the cool-down ended", resp, err)
+	}
+	if got := order.take(); len(got) != 1 || got[0] != "tls|first" {
+		t.Errorf("the query after the cool-down tried %v, want the first configured server alone", got)
+	}
+}
+
+func TestDNSUpstream_tunnelFailuresLeaveThePreference(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"dial backoff", fmt.Errorf("dial DoT server one.one.one.one:853: %w", errDialBackoff)},
+		{"closed tunnel", fmt.Errorf("DoT one.one.one.one:853: %w", coreErrs.ClosedError{})},
+		{"closed stream", fmt.Errorf("read response length: %w", net.ErrClosed)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			order := &callOrder{}
+			first, second := newSwitchableServer("tls|first", 1, order), newSwitchableServer("tls|second", 2, order)
+			first.failWith(tc.err)
+			first.down.Store(true)
+			up := &dnsUpstream{resolvers: []dnsResolver{first, second}, ident: uniqueUpstreamID(t, "tls")}
+
+			if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err != nil {
+				t.Fatalf("the second server answers, so the query must succeed: %v", err)
+			}
+			order.take()
+			first.down.Store(false)
+			resp, err := up.exchange(context.Background(), dnsQuery("example.org"))
+			if err != nil || resp[len(resp)-1] != 1 {
+				t.Errorf("resp = %v, err = %v, want the first server's answer", resp, err)
+			}
+			if got := order.take(); len(got) != 1 || got[0] != "tls|first" {
+				t.Errorf("after a tunnel failure the next query tried %v, want the first server still first", got)
+			}
+		})
+	}
+}
+
+func TestDNSUpstream_logsWhenThePreferredServerChanges(t *testing.T) {
+	logs := captureLogs(t)
+	order := &callOrder{}
+	first, second := newSwitchableServer("tls|one.one.one.one:853", 1, order), newSwitchableServer("tls|1.1.1.1:853", 2, order)
+	clock := newFakeClock()
+	up := &dnsUpstream{resolvers: []dnsResolver{first, second}, ident: uniqueUpstreamID(t, "tls"), now: clock.now}
+	query := func() {
+		t.Helper()
+		if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+	}
+
+	first.down.Store(true)
+	query()
+	clock.advance(dnsPreferenceCooldown + time.Second)
+	first.down.Store(false)
+	query()
+	first.down.Store(true)
+	query()
+	first.down.Store(false)
+	clock.advance(dnsPreferenceCooldown + time.Second)
+	query()
+
+	away := logs.linesMentioning("DNS now answered by")
+	if len(away) != 1 || away[0] != "INFO dns DNS now answered by tls|1.1.1.1:853; tls|one.one.one.one:853 did not answer" {
+		t.Errorf("logged %q, want one line naming the new server and the one that did not answer", away)
+	}
+	back := logs.linesMentioning("again")
+	if len(back) != 1 || back[0] != "INFO dns DNS answered by tls|one.one.one.one:853 again" {
+		t.Errorf("logged %q, want one line when the first server answers again", back)
 	}
 }
 
@@ -510,8 +668,8 @@ func TestDNSUpstream_failsOverPastASilentServer(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
 		t.Errorf("failover took %v, want the silent server cut off at its share of the budget", elapsed)
 	}
-	if up.preferred.Load() != 1 {
-		t.Errorf("preferred = %d, want the healthy server", up.preferred.Load())
+	if up.firstIndex() != 1 {
+		t.Errorf("preferred = %d, want the healthy server", up.firstIndex())
 	}
 	if silent.queries.Load() != 1 {
 		t.Errorf("silent server saw %d queries, want 1", silent.queries.Load())
