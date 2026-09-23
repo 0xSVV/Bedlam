@@ -61,7 +61,7 @@ private fun serverHostName(address: String): String? {
         parseHost(trimmed)
     } ?: return null
     val name = host.removeSuffix(".").lowercase()
-    val isName = name.isNotEmpty() &&
+    val isName = '.' in name &&
             name.all { it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '-' } &&
             name.any { it in 'a'..'z' }
     return name.takeIf { isName }

@@ -171,6 +171,16 @@ class LogRedactionTest {
     }
 
     @Test
+    fun `single label server hosts are not masked`() {
+        val profiles = listOf(
+            testProfile("a", address = "vpn:443"),
+            testProfile("b", address = "nas"),
+        )
+
+        assertEquals(emptySet<String>(), redactionRules(profiles).hostNames)
+    }
+
+    @Test
     fun `the tunnel and preset resolver addresses are kept by default`() {
         val kept = redactionRules(emptyList()).keptAddresses
 
