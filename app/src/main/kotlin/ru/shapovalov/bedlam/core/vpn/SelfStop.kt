@@ -22,14 +22,20 @@ sealed interface SelfStop {
     }
 
     data class ReapplyFailure(val error: Throwable) : SelfStop {
-        override val reason: String
-            get() = "Could not apply the changed settings: ${error.describe()}"
+        override val reason: String = "Could not apply the changed settings"
+        override val logLine: String
+            get() = "Tunnel failed: $reason: ${error.describe()}"
     }
 
     data class StartupFailure(val error: Throwable) : SelfStop {
         override val reason: String
-            get() = error.message?.takeIf { it.isNotBlank() }
-                ?: "VPN startup failed: ${error.describe()}"
+            get() = error.message?.takeIf { it.isNotBlank() } ?: STARTUP_FAILED
+        override val logLine: String
+            get() = "Tunnel failed: $STARTUP_FAILED: ${error.describe()}"
+
+        private companion object {
+            const val STARTUP_FAILED = "Could not start the VPN"
+        }
     }
 
     sealed interface Unstartable : SelfStop {

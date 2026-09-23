@@ -86,33 +86,55 @@ class SelfStopReporterTest {
     }
 
     @Test
-    fun `a failed reapply is a failure that names the exception, not a disconnect`() = runTest {
-        runningTunnel()
+    fun `a failed reapply shows a plain reason and logs the exception, not a disconnect`() =
+        runTest {
+            runningTunnel()
 
-        reporter.report(
-            SelfStop.ReapplyFailure(IllegalStateException("VpnService.establish() returned null"))
-        )
+            reporter.report(
+                SelfStop.ReapplyFailure(
+                    IllegalStateException("VpnService.establish() returned null")
+                )
+            )
 
-        val reason =
-            "Could not apply the changed settings: " +
-                "IllegalStateException: VpnService.establish() returned null"
-        assertEquals(listOf(reason), alerts)
-        assertEquals(listOf(LogLevel.ERROR to "Tunnel failed: $reason"), logLines())
-        assertEquals(ConnectionState.Error(reason), shownAfterStop())
-    }
+            val reason = "Could not apply the changed settings"
+            assertEquals(listOf(reason), alerts)
+            assertEquals(
+                listOf(
+                    LogLevel.ERROR to "Tunnel failed: $reason: " +
+                        "IllegalStateException: VpnService.establish() returned null"
+                ),
+                logLines(),
+            )
+            assertEquals(ConnectionState.Error(reason), shownAfterStop())
+        }
 
     @Test
-    fun `a failed start names the exception when it has no message`() = runTest {
-        reporter.report(SelfStop.StartupFailure(IllegalStateException()))
+    fun `a failed start without a message shows a plain reason and logs the exception`() =
+        runTest {
+            reporter.report(SelfStop.StartupFailure(IllegalStateException()))
 
-        assertEquals(listOf("VPN startup failed: IllegalStateException"), alerts)
-    }
+            assertEquals(listOf("Could not start the VPN"), alerts)
+            assertEquals(
+                listOf(
+                    LogLevel.ERROR to "Tunnel failed: Could not start the VPN: IllegalStateException"
+                ),
+                logLines(),
+            )
+            assertEquals(ConnectionState.Error("Could not start the VPN"), shownAfterStop())
+        }
 
     @Test
     fun `a failed start keeps the handshake error`() = runTest {
         reporter.report(SelfStop.StartupFailure(Exception("tls: handshake failure")))
 
         assertEquals(listOf("tls: handshake failure"), alerts)
+        assertEquals(
+            listOf(
+                LogLevel.ERROR to
+                    "Tunnel failed: Could not start the VPN: Exception: tls: handshake failure"
+            ),
+            logLines(),
+        )
     }
 
     @Test
