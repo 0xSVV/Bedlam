@@ -139,7 +139,7 @@ class BedlamVpnService : VpnService() {
     }
 
     override fun onRevoke() {
-        appLog.warn(AppLog.SOURCE_VPN, "Android revoked the tunnel: another VPN app took over")
+        appLog.warn(AppLog.SOURCE_VPN, REVOKED_LOG_LINE)
         notifications.postRevokedWarning()
         stop(DisconnectReason.REVOKED)
     }
@@ -689,6 +689,9 @@ class BedlamVpnService : VpnService() {
         const val EXTRA_PROFILE_NAME = "profile_name"
         const val EXTRA_STOP_REQUEST_ID = "stop_request_id"
         const val EXTRA_USER_INITIATED = "user_initiated"
+        internal const val REVOKED_LOG_LINE =
+            "Android turned off Bedlam's VPN: another VPN app started, " +
+                "or the VPN was turned off in system settings"
     }
 
     private suspend fun updateConnectionName(name: String) {

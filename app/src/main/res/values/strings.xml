@@ -14,7 +14,7 @@
     <string name="notification_state_disconnected">Disconnected</string>
     <string name="notification_reconnect_timeout">Still trying to reconnect — will restore protection when the network returns</string>
     <string name="notification_stopped_title">Bedlam VPN stopped</string>
-    <string name="notification_revoked">Another VPN app took over the tunnel. Bedlam is disconnected.</string>
+    <string name="notification_revoked">Android turned off Bedlam\'s VPN. Another VPN app started, or the VPN was turned off in system settings.</string>
     <string name="notification_state_error">Error: %1$s</string>
     <string name="notification_traffic_rate">↑ %1$s · ↓ %2$s</string>
     <string name="notification_detail_session">Session: ↑ %1$s · ↓ %2$s</string>
