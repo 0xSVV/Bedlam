@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"regexp"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -836,5 +837,26 @@ func TestDNSUpstream_cancelWhileAServerIsPendingReturnsPromptly(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Errorf("a cancelled query returned after %v, want it to stop its pending server at once", elapsed)
+	}
+}
+
+func TestDNSUpstream_giveUpNamesWhereTheLoneServerStalled(t *testing.T) {
+	release := blockUntilCleanup(t)
+	hung := newTCPResolver(&fakeClient{tcp: func(string) (net.Conn, error) {
+		<-release
+		return nil, errors.New("released")
+	}}, "192.0.2.1:53")
+	up := &dnsUpstream{resolvers: []dnsResolver{hung}, ident: uniqueUpstreamID(t, "tcp")}
+	defer up.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	_, err := up.exchange(ctx, dnsQuery("example.com"))
+	pattern := `^no answer in 5s: DNS over TCP 192\.0\.2\.1:53: new stream not open after 5s: context deadline exceeded$`
+	if msg := fmt.Sprint(err); !regexp.MustCompile(pattern).MatchString(msg) {
+		t.Errorf("err = %q, want it to match %q", msg, pattern)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want it still a deadline error", err)
 	}
 }

@@ -179,7 +179,7 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 
 	launch()
 	done := ctx.Done()
-	var lastErr error
+	var latestErr error
 	tunnelFailed, latestFailed, stopping := false, false, false
 	for {
 		select {
@@ -190,12 +190,11 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 				u.settleLate(ctx, results, pending)
 				return res.resp, nil
 			}
-			lastErr = res.err
 			tunnelFailed = tunnelFailed || isTunnelFailure(res.err)
 			if res.index != latest {
 				break
 			}
-			latestFailed = true
+			latestErr, latestFailed = res.err, true
 			if started < n && !stopping {
 				if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
 					log(LogLevelWarn, srcDNS, "DNS %s failed, trying next: %s", id, res.err)
@@ -222,12 +221,16 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 		lastSliceEnded := lastCtx != nil && errors.Is(lastCtx.Err(), context.DeadlineExceeded)
 		if lastSliceEnded && latestFailed || pending == 0 && (started == n || stopping) {
 			u.settleLate(ctx, results, pending)
-			if lastSliceEnded {
-				return nil, fmt.Errorf("no answer in %s: %w", diagDuration(time.Since(began)), context.DeadlineExceeded)
-			}
-			return nil, lastErr
+			return nil, noAnswer(began, latestErr)
 		}
 	}
+}
+
+func noAnswer(began time.Time, err error) error {
+	if isTimeoutClass(err) {
+		return fmt.Errorf("no answer in %s: %w", diagDuration(time.Since(began)), err)
+	}
+	return err
 }
 
 func (u *dnsUpstream) clock() time.Time {
