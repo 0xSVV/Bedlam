@@ -550,7 +550,8 @@ func (p *streamPool) fail(c *pooledConn, cause error) {
 	c.err = cause
 	pending := c.pending
 	c.pending = nil
-	oneOfSeveral := !c.pipelined && c.answered <= 1 && c.answered+len(pending) >= 2
+	answered := c.answered
+	oneOfSeveral := !c.pipelined && answered <= 1 && answered+len(pending) >= 2
 	c.mu.Unlock()
 	_ = c.conn.Close()
 	var dialErr coreErrs.DialError
@@ -558,10 +559,16 @@ func (p *streamPool) fail(c *pooledConn, cause error) {
 	now := time.Now()
 	p.mu.Lock()
 	delete(p.busy, c)
+	stopped := false
 	if c.joined && oneOfSeveral && !unreached && !errors.Is(cause, errDNSMalformed) && !deadlineExpired(cause) && !isTunnelFailure(cause) {
+		stopped = !now.Before(p.serialUntil)
 		p.serialUntil = now.Add(dnsSerialHold)
 	}
 	p.mu.Unlock()
+	if stopped {
+		log(LogLevelInfo, srcDNS, "%s: the server ended a shared stream (answered %d, %d waiting): %v; sending one query per stream for %s",
+			p.label, answered, len(pending), cause, dnsSerialHold)
+	}
 	expired := false
 	for _, q := range pending {
 		expired = expired || !now.Before(q.deadline)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1627,14 +1628,15 @@ func TestStreamPool_stopsSharingOnlyWhenTheServerEndsASharedStream(t *testing.T)
 		{"the server answered another question", 2, fmt.Errorf("%w: response does not answer the question sent under its ID", errDNSMalformed), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			logs := captureLogs(t)
 			opened := make(chan scriptedReadConn, 4)
-			p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+			p := newStreamPool(t.Name(), func(context.Context) (net.Conn, error) {
 				conn := newScriptedReadConn()
 				opened <- conn
 				return conn, nil
 			})
 			defer p.close()
-			exchangeInBackground(p, 500*time.Millisecond, "opener.example")
+			opener := exchangeInBackground(p, 500*time.Millisecond, "opener.example")
 			var c *pooledConn
 			for start := time.Now(); c == nil && time.Since(start) < 2*time.Second; time.Sleep(time.Millisecond) {
 				c = p.share()
@@ -1670,11 +1672,39 @@ func TestStreamPool_stopsSharingOnlyWhenTheServerEndsASharedStream(t *testing.T)
 					if serial != tc.serial {
 						t.Errorf("sharing stopped = %v after a shared stream ended with %v, want %v", serial, tc.cause, tc.serial)
 					}
+					select {
+					case <-opener:
+					case <-opened:
+					case <-time.After(2 * time.Second):
+						t.Fatal("the opener's query was never failed on the stream")
+					}
+					var want []string
+					if tc.serial {
+						want = []string{"INFO dns " + p.label + ": the server ended a shared stream (answered 0, 2 waiting): read response length: EOF; sending one query per stream for 1m0s"}
+					}
+					if got := logs.linesMentioning(p.label); !slices.Equal(got, want) {
+						t.Errorf("logged %q, want %q", got, want)
+					}
 					return
 				}
 			}
 			t.Fatal("the stream never ended")
 		})
+	}
+}
+
+func TestStreamPool_logsOnceWhileItHasStoppedSharing(t *testing.T) {
+	logs := captureLogs(t)
+	p := newStreamPool(t.Name(), nil)
+	for i := 0; i < 2; i++ {
+		c := &pooledConn{conn: newScriptedReadConn(), answered: 1, joined: true, pending: map[uint16]*pendingQuery{
+			1: {flight: newFlight[streamResult](), deadline: time.Now().Add(time.Minute)},
+		}}
+		p.fail(c, io.EOF)
+	}
+	want := []string{"INFO dns " + p.label + ": the server ended a shared stream (answered 1, 1 waiting): EOF; sending one query per stream for 1m0s"}
+	if got := logs.linesMentioning(p.label); !slices.Equal(got, want) {
+		t.Errorf("logged %q, want %q", got, want)
 	}
 }
 
