@@ -98,10 +98,19 @@ class ProcessExitTest {
     @ParameterizedTest
     @EnumSource(ProcessExitReason::class)
     fun `an exit while the tunnel ran in the foreground is at least a warning`(reason: ProcessExitReason) {
+        if (reason == ProcessExitReason.PACKAGE_UPDATED) return
         listOf(foreground, foregroundService).forEach { importance ->
             val level = processExitLevel(reason.code, importance)
             assertTrue(level >= LogLevel.WARN, "$reason $importance gave $level")
         }
+    }
+
+    @Test
+    fun `an app update is info while the tunnel ran and debug when idle`() {
+        val code = ProcessExitReason.PACKAGE_UPDATED.code
+        assertEquals(LogLevel.INFO, processExitLevel(code, foreground))
+        assertEquals(LogLevel.INFO, processExitLevel(code, foregroundService))
+        assertEquals(LogLevel.DEBUG, processExitLevel(code, 400))
     }
 
     @Test

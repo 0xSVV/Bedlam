@@ -47,7 +47,8 @@ fun processExitLevel(code: Int, importance: Int): LogLevel {
 
         else -> LogLevel.WARN
     }
-    return if (importance <= IMPORTANCE_FOREGROUND_SERVICE) maxOf(level, LogLevel.WARN) else level
+    val plannedUpdate = code == ProcessExitReason.PACKAGE_UPDATED.code
+    return if (importance <= IMPORTANCE_FOREGROUND_SERVICE && !plannedUpdate) maxOf(level, LogLevel.WARN) else level
 }
 
 fun processExitMessage(
