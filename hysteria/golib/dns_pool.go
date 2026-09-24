@@ -23,6 +23,7 @@ const (
 	dnsStreamMaxQueries = 32
 	dnsStreamStall      = dnsAttemptTimeout / 2
 	dnsStreamRetries    = 2
+	dnsSerialHold       = time.Minute
 
 	dnsResponseFlag = 0x80
 	dnsOpcodeMask   = 0x78
@@ -36,13 +37,15 @@ type pooledConn struct {
 	last     time.Time
 	answered int
 	users    int
+	joined   bool
 
-	writeMu sync.Mutex
-	mu      sync.Mutex
-	pending map[uint16]*pendingQuery
-	reading bool
-	proven  bool
-	err     error
+	writeMu   sync.Mutex
+	mu        sync.Mutex
+	pending   map[uint16]*pendingQuery
+	reading   bool
+	proven    bool
+	pipelined bool
+	err       error
 }
 
 type pendingQuery struct {
@@ -51,6 +54,7 @@ type pendingQuery struct {
 	opcode   byte
 	question string
 	sent     time.Time
+	before   int
 	deadline time.Time
 	flight   *flight[streamResult]
 	late     func([]byte)
@@ -71,9 +75,10 @@ type streamPool struct {
 	cancel      context.CancelFunc
 	closed      atomic.Bool
 
-	mu        sync.Mutex
-	busy      map[*pooledConn]struct{}
-	shareable chan struct{}
+	mu          sync.Mutex
+	busy        map[*pooledConn]struct{}
+	shareable   chan struct{}
+	serialUntil time.Time
 }
 
 type streamResult struct {
@@ -459,7 +464,7 @@ func (p *streamPool) register(c *pooledConn, q *pendingQuery, query []byte) ([]b
 	for c.pending[id] != nil {
 		id++
 	}
-	q.wireID, q.sent = id, time.Now()
+	q.wireID, q.sent, q.before = id, time.Now(), c.answered
 	c.pending[id] = q
 	_ = c.conn.SetDeadline(c.earliestDeadlineLocked())
 	if !c.reading {
@@ -499,6 +504,7 @@ func (p *streamPool) dispatch(c *pooledConn, resp []byte) bool {
 	}
 	delete(c.pending, q.wireID)
 	c.last = time.Now()
+	c.pipelined = c.pipelined || c.answered > q.before
 	c.answered++
 	c.proven = true
 	more := len(c.pending) > 0
@@ -540,12 +546,16 @@ func (p *streamPool) fail(c *pooledConn, cause error) {
 	c.err = cause
 	pending := c.pending
 	c.pending = nil
+	oneAnswer := !c.pipelined && c.answered <= 1
 	c.mu.Unlock()
 	_ = c.conn.Close()
+	now := time.Now()
 	p.mu.Lock()
 	delete(p.busy, c)
+	if c.joined && oneAnswer && len(pending) > 0 && !deadlineExpired(cause) && !isTunnelFailure(cause) {
+		p.serialUntil = now.Add(dnsSerialHold)
+	}
 	p.mu.Unlock()
-	now := time.Now()
 	expired := false
 	for _, q := range pending {
 		expired = expired || !now.Before(q.deadline)
@@ -600,6 +610,9 @@ func (p *streamPool) share() *pooledConn {
 	now := time.Now()
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if now.Before(p.serialUntil) {
+		return nil
+	}
 	var best *pooledConn
 	least := dnsStreamMaxQueries
 	for c := range p.busy {
@@ -609,6 +622,7 @@ func (p *streamPool) share() *pooledConn {
 	}
 	if best != nil {
 		best.users++
+		best.joined = true
 	}
 	return best
 }

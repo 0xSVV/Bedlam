@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 	"github.com/apernet/quic-go"
 )
 
@@ -1496,4 +1497,126 @@ func TestStreamPool_retriesAgainWhenAnotherQueryEndsTheStreamARetryJoined(t *tes
 	awaitQuestion(t, received, "retried.example")
 	release()
 	awaitAnswer(t, retried, "retried.example", 3)
+}
+
+func TestStreamPool_burstOnAServerThatAnswersOneQueryPerStream(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		close func(s net.Conn)
+	}{
+		{"graceful close", func(s net.Conn) {
+			_ = s.(*net.TCPConn).CloseWrite()
+			_, _ = io.Copy(io.Discard, s)
+		}},
+		{"close with queries unread", func(net.Conn) {}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+				q, err := readDNSFrame(s)
+				if err != nil {
+					return
+				}
+				if writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})) != nil {
+					return
+				}
+				tc.close(s)
+			})
+			p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+			defer p.close()
+
+			const burst = 12
+			var wg sync.WaitGroup
+			var failed atomic.Int32
+			for i := 0; i < burst; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					defer cancel()
+					query := dnsQuery(fmt.Sprintf("burst%d.example", i))
+					resp, err := p.exchange(ctx, query)
+					if err != nil {
+						failed.Add(1)
+						t.Logf("query %d: %v", i, err)
+						return
+					}
+					if got, _ := dnsQuestion(resp); got != string(query[12:]) {
+						t.Errorf("query %d received the answer to another query", i)
+					}
+				}(i)
+			}
+			wg.Wait()
+			if n := failed.Load(); n > 0 {
+				t.Errorf("%d of %d queries sent at once failed on a server that answers one query per stream", n, burst)
+			}
+		})
+	}
+}
+
+type scriptedReadConn struct {
+	failingConn
+	fail   chan error
+	closed chan struct{}
+	once   *sync.Once
+}
+
+func newScriptedReadConn() scriptedReadConn {
+	return scriptedReadConn{fail: make(chan error, 1), closed: make(chan struct{}), once: &sync.Once{}}
+}
+
+func (c scriptedReadConn) Read([]byte) (int, error) {
+	select {
+	case err := <-c.fail:
+		return 0, err
+	case <-c.closed:
+		return 0, net.ErrClosed
+	}
+}
+
+func (c scriptedReadConn) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return nil
+}
+
+func TestStreamPool_stopsSharingOnlyWhenTheServerEndsASharedStream(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cause  error
+		serial bool
+	}{
+		{"the server closed it", io.EOF, true},
+		{"the tunnel closed it", coreErrs.ClosedError{Err: io.EOF}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opened := make(chan scriptedReadConn, 4)
+			p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+				conn := newScriptedReadConn()
+				opened <- conn
+				return conn, nil
+			})
+			defer p.close()
+			exchangeInBackground(p, 500*time.Millisecond, "opener.example")
+			var c *pooledConn
+			for start := time.Now(); c == nil && time.Since(start) < 2*time.Second; time.Sleep(time.Millisecond) {
+				c = p.share()
+			}
+			if c == nil {
+				t.Fatal("the opener's stream never became open to another query")
+			}
+			(<-opened).fail <- tc.cause
+			for start := time.Now(); time.Since(start) < 2*time.Second; time.Sleep(time.Millisecond) {
+				p.mu.Lock()
+				_, open := p.busy[c]
+				serial := time.Now().Before(p.serialUntil)
+				p.mu.Unlock()
+				if !open {
+					if serial != tc.serial {
+						t.Errorf("sharing stopped = %v after a shared stream ended with %v, want %v", serial, tc.cause, tc.serial)
+					}
+					return
+				}
+			}
+			t.Fatal("the stream never ended")
+		})
+	}
 }
