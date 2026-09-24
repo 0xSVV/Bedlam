@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -477,5 +478,24 @@ func TestDoQResolver_aQueryOutOfTimeKeepsTheConnection(t *testing.T) {
 				t.Errorf("opened %d UDP sessions, want the connection kept when a query ran out of time", n)
 			}
 		})
+	}
+}
+
+func TestDoQResolver_closedResolverDialsNothing(t *testing.T) {
+	var sessions atomic.Int32
+	fc := &fakeClient{udp: func() (client.HyUDPConn, error) {
+		sessions.Add(1)
+		return newFakeUDPConn(nil), nil
+	}}
+	r := newDoQResolver(fc, "dns.test:853", nil)
+	r.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := r.exchange(ctx, dnsQuery("example.com")); !errors.Is(err, net.ErrClosed) {
+		t.Errorf("err = %v, want the resolver reported closed", err)
+	}
+	if n := sessions.Load(); n != 0 {
+		t.Errorf("a closed resolver opened %d UDP sessions, want none", n)
 	}
 }

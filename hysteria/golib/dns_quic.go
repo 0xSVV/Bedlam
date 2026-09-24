@@ -185,6 +185,10 @@ func (r *doqResolver) dropUnlessOutOfTime(ctx context.Context, conn *quic.Conn, 
 
 func (r *doqResolver) connection(ctx context.Context) (*quic.Conn, error) {
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return nil, net.ErrClosed
+	}
 	if c := r.conn; c != nil {
 		r.mu.Unlock()
 		return c, nil
@@ -212,13 +216,14 @@ func (r *doqResolver) dial(d *doqDial) {
 	defer cancel()
 	conn, tr, pkt, err := r.open(ctx)
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.dialing = nil
 	if err != nil {
+		r.mu.Unlock()
 		d.err = err
 		return
 	}
 	if r.closed {
+		r.mu.Unlock()
 		_ = conn.CloseWithError(0, "")
 		_ = tr.Close()
 		_ = pkt.Close()
@@ -226,6 +231,7 @@ func (r *doqResolver) dial(d *doqDial) {
 		return
 	}
 	r.conn, r.tr, r.pkt = conn, tr, pkt
+	r.mu.Unlock()
 	d.conn = conn
 }
 
