@@ -3,35 +3,45 @@ package ru.shapovalov.bedlam.feature.logs.data
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
 import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsPresets
+import ru.shapovalov.bedlam.core.routing.domain.model.DnsServer
 import ru.shapovalov.bedlam.core.routing.domain.model.parseIpv4ToBytes
 import ru.shapovalov.bedlam.core.routing.domain.model.parseIpv6ToBytes
 import ru.shapovalov.bedlam.core.routing.engine.CidrMath
 import ru.shapovalov.bedlam.core.util.isRealmAddress
 import ru.shapovalov.bedlam.core.util.parseHost
+import ru.shapovalov.hysteria.api.DnsTransport
 import ru.shapovalov.hysteria.api.TunConfig
 import java.net.URI
 
 data class RedactionRules(
     val keptAddresses: List<String> = emptyList(),
     val hostNames: Set<String> = emptySet(),
+    val dnsServers: List<String> = emptyList(),
 )
 
-fun redactionRules(profiles: List<Profile>): RedactionRules = RedactionRules(
-    keptAddresses = listOf(
-        TunConfig.IPV4_ADDRESS,
-        TunConfig.IPV6_ADDRESS,
-        TunConfig.IPV4_DNS_ADDRESS,
-        TunConfig.IPV6_DNS_ADDRESS,
-    ) + DnsPresets.cloudflareAddresses() + DnsPresets.googleAddresses(),
-    hostNames = profiles.flatMap { profile ->
-        listOfNotNull(serverHostName(profile.config.server.address), dnsHostName(profile.config.tls.tlsSni))
-    }.toSet(),
-)
+fun redactionRules(profiles: List<Profile>, customDns: List<String> = emptyList()): RedactionRules {
+    val dnsServers = customDns
+        .flatMap { raw -> listOf(raw.trim()) + DnsTransport.entries.mapNotNull { DnsServer.normalizeOrNull(raw, it) } }
+        .filter { it.isNotEmpty() }
+        .distinct()
+    return RedactionRules(
+        keptAddresses = listOf(
+            TunConfig.IPV4_ADDRESS,
+            TunConfig.IPV6_ADDRESS,
+            TunConfig.IPV4_DNS_ADDRESS,
+            TunConfig.IPV6_DNS_ADDRESS,
+        ) + DnsPresets.cloudflareAddresses() + DnsPresets.googleAddresses(),
+        hostNames = profiles.flatMap { profile ->
+            listOfNotNull(serverHostName(profile.config.server.address), dnsHostName(profile.config.tls.tlsSni))
+        }.toSet() + dnsServers.mapNotNull(::dnsServerHostName),
+        dnsServers = dnsServers,
+    )
+}
 
 fun redactAddresses(text: String, rules: RedactionRules): String {
     val kept = rules.keptAddresses.mapNotNull { addressBytes(it)?.let(::addressKey) }.toSet()
     val addressTokens = HashMap<String, String>()
-    val withoutAddresses = ADDRESS_PATTERN.replace(text) { match ->
+    val withoutAddresses = ADDRESS_PATTERN.replace(redactDnsServers(text, rules.dnsServers)) { match ->
         val end = longestAddressEnd(match.value) ?: return@replace match.value
         val literal = match.value.substring(0, end)
         val bytes = addressBytes(literal) ?: return@replace match.value
@@ -53,6 +63,25 @@ fun redactAddresses(text: String, rules: RedactionRules): String {
     return hostPattern.replace(withoutAddresses) { match ->
         hostTokens.getOrPut(match.value.lowercase()) { "<host-${hostTokens.size + 1}>" }
     }
+}
+
+private fun redactDnsServers(text: String, servers: List<String>): String {
+    if (servers.isEmpty()) return text
+    val tokens = HashMap<String, String>()
+    val pattern = Regex(
+        "(?<![A-Za-z0-9.-])(?:" +
+                servers.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) } +
+                ")(?![A-Za-z0-9])",
+        RegexOption.IGNORE_CASE,
+    )
+    return pattern.replace(text) { match ->
+        tokens.getOrPut(match.value.lowercase()) { "<dns-${tokens.size + 1}>" }
+    }
+}
+
+private fun dnsServerHostName(server: String): String? {
+    val host = if ("://" in server) runCatching { URI(server).host }.getOrNull() else parseHost(server)
+    return host?.let(::dnsHostName)
 }
 
 private fun serverHostName(address: String): String? {

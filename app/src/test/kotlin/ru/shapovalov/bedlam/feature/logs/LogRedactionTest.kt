@@ -184,6 +184,25 @@ class LogRedactionTest {
     }
 
     @Test
+    fun `custom DNS servers are hidden with their paths and host names`() {
+        val rules = redactionRules(emptyList(), customDns = listOf("https://dns.nextdns.io/abc123", "abc123.dns.nextdns.io"))
+        val text = "INFO dns DNS https|https://dns.nextdns.io/abc123 has not answered in 1.5s, trying next\n" +
+            "INFO dns DoT abc123.dns.nextdns.io:853: the server ended a shared stream\n" +
+            "INFO dns DNS now answered by tls|abc123.dns.nextdns.io:853; https|https://dns.nextdns.io/abc123 did not answer\n" +
+            "WARN dns DNS error: Get \"https://dns.nextdns.io/dns-query\": EOF"
+
+        val hidden = redact(text, rules)
+
+        assertEquals(
+            "INFO dns DNS https|<dns-1> has not answered in 1.5s, trying next\n" +
+                "INFO dns DoT <dns-2>: the server ended a shared stream\n" +
+                "INFO dns DNS now answered by tls|<dns-2>; https|<dns-1> did not answer\n" +
+                "WARN dns DNS error: Get \"https://<host-1>/dns-query\": EOF",
+            hidden,
+        )
+    }
+
+    @Test
     fun `single label server hosts are not masked`() {
         val profiles = listOf(
             testProfile("a", address = "vpn:443"),

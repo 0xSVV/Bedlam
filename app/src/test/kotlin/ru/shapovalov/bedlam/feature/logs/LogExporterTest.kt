@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilter
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilterMode
+import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.bedlam.feature.logs.data.LogBuffer
 import ru.shapovalov.bedlam.feature.logs.data.LogExportDevice
@@ -98,5 +99,19 @@ class LogExporterTest {
         assertTrue(hidden.contains("Connection: Reconnecting, attempt 2: dial <ip-1>:443 failed"), hidden)
         assertTrue(hidden.contains("\nAddresses hidden\n"), hidden)
         assertTrue(hidden.contains("Bedlam 1.6.5 (10605) · Hysteria core v2.12.3"), hidden)
+    }
+
+    @Test
+    fun `hiding addresses masks the custom DNS servers from the routing settings`() = runTest {
+        routing.config.value = RoutingConfig(dnsMode = DnsMode.Custom, customDns = listOf("https://dns.nextdns.io/abc123"))
+        val exporter = exporter()
+        runCurrent()
+        client.logEntries.emit(logEntry(1).copy(message = "DNS https|https://dns.nextdns.io/abc123 has not answered in 1.5s, trying next"))
+        runCurrent()
+
+        val hidden = exporter.export(device, exportedAt, hideAddresses = true)
+
+        assertTrue(hidden.contains("DNS https|<dns-1> has not answered in 1.5s, trying next"), hidden)
+        assertTrue("abc123" !in hidden, hidden)
     }
 }

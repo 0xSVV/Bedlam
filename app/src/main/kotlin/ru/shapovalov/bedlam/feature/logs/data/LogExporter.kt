@@ -33,6 +33,6 @@ class LogExporter(
         )
         val text = formatLogExport(snapshot.entries, header)
         if (!hideAddresses) return text
-        return redactAddresses(text, redactionRules(profiles.observeAll().first()))
+        return redactAddresses(text, redactionRules(profiles.observeAll().first(), routing.get().customDns))
     }
 }
