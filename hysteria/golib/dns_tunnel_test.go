@@ -322,6 +322,29 @@ func TestTLSResolver_fastOpenReportsAHungServerDialAsAStreamStillOpening(t *test
 	}
 }
 
+func TestTCPResolver_fastOpenDialsARefusedServerOncePerQuery(t *testing.T) {
+	var dials atomic.Int32
+	tt := newTestTunnel(t, true, func(string) (net.Conn, error) {
+		dials.Add(1)
+		return nil, errors.New("connect: connection refused")
+	})
+	r := newTCPResolver(tt, "8.8.8.8:53")
+	defer r.close()
+
+	for i := int32(1); i <= 3; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, err := r.exchange(ctx, dnsQuery(fmt.Sprintf("q%d.example", i)))
+		cancel()
+		var dialErr coreErrs.DialError
+		if !errors.As(err, &dialErr) {
+			t.Fatalf("query %d: err = %v, want the DialError", i, err)
+		}
+		if n := dials.Load(); n != i {
+			t.Fatalf("the Hysteria server dialed the DNS server %d times for %d queries, want once per query", n, i)
+		}
+	}
+}
+
 func TestTCPResolver_fastOpenReportsARefusedServerDialAsADialError(t *testing.T) {
 	tt := newTestTunnel(t, true, func(string) (net.Conn, error) {
 		return nil, errors.New("connect: connection refused")

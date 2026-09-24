@@ -12,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
 
 const (
@@ -551,10 +553,12 @@ func (p *streamPool) fail(c *pooledConn, cause error) {
 	oneAnswer := !c.pipelined && c.answered <= 1
 	c.mu.Unlock()
 	_ = c.conn.Close()
+	var dialErr coreErrs.DialError
+	unreached := errors.As(cause, &dialErr)
 	now := time.Now()
 	p.mu.Lock()
 	delete(p.busy, c)
-	if c.joined && oneAnswer && len(pending) > 0 && !deadlineExpired(cause) && !isTunnelFailure(cause) {
+	if c.joined && oneAnswer && len(pending) > 0 && !unreached && !deadlineExpired(cause) && !isTunnelFailure(cause) {
 		p.serialUntil = now.Add(dnsSerialHold)
 	}
 	p.mu.Unlock()
@@ -567,7 +571,7 @@ func (p *streamPool) fail(c *pooledConn, cause error) {
 		if expired && deadlineExpired(cause) && now.Before(q.deadline) {
 			err = errStreamStalled
 		}
-		q.flight.deliver(streamResult{pooled: q.pooled, stream: q.stream, err: err, lost: !deadlineExpired(err)})
+		q.flight.deliver(streamResult{pooled: q.pooled, stream: q.stream, err: err, lost: !unreached && !deadlineExpired(err)})
 	}
 }
 
