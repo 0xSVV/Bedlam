@@ -600,12 +600,18 @@ func (p *streamPool) acquire(c *pooledConn, proven bool) {
 	c.proven = proven
 	c.mu.Unlock()
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	c.users = 1
-	if p.busy == nil {
-		p.busy = map[*pooledConn]struct{}{}
+	closed := p.closed.Load()
+	if !closed {
+		if p.busy == nil {
+			p.busy = map[*pooledConn]struct{}{}
+		}
+		p.busy[c] = struct{}{}
 	}
-	p.busy[c] = struct{}{}
+	p.mu.Unlock()
+	if closed {
+		p.fail(c, net.ErrClosed)
+	}
 }
 
 func (p *streamPool) share() *pooledConn {

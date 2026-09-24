@@ -1736,3 +1736,26 @@ func TestStreamPool_putsAtMostTheQueryCapOnOneStream(t *testing.T) {
 	close(answer)
 	wg.Wait()
 }
+
+func TestStreamPool_aStreamThatOpensAsThePoolClosesFailsItsCallerAtOnce(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultSilent })
+	dialing := make(chan struct{}, 1)
+	release := make(chan struct{})
+	p := newStreamPool("test", func(ctx context.Context) (net.Conn, error) {
+		dialing <- struct{}{}
+		<-release
+		return srv.dial(ctx)
+	})
+	done := exchangeInBackground(p, 5*time.Second, "example.com")
+	<-dialing
+	p.close()
+	close(release)
+	select {
+	case out := <-done:
+		if !errors.Is(out.err, net.ErrClosed) {
+			t.Errorf("err = %v, want net.ErrClosed", out.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a stream that finished opening after the pool closed carried its query as if the pool were open")
+	}
+}
