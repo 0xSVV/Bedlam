@@ -488,7 +488,7 @@ class BedlamVpnService : VpnService() {
                 reapplyDnsForNetworkChange(newPlan)
             }
             runCatching { client.resetAfterNetworkChange() }
-                .onFailure { Log.w(TAG, "resetConnections failed", it) }
+                .onFailure { Log.w(TAG, "Network change reset failed", it) }
         }
     }
 
