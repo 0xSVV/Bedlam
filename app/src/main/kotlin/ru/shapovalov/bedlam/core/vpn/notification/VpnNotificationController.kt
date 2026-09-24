@@ -1,7 +1,6 @@
 package ru.shapovalov.bedlam.core.vpn.notification
 
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -22,6 +21,7 @@ class VpnNotificationController(private val context: Context) {
     @Volatile
     var connectionName: String = ""
 
+    private val alerts = ConnectionAlerts(context)
     private val rateHistory = RateHistory()
     private val sparklineRenderer = SparklineRenderer(context)
     private val postLock = Any()
@@ -37,21 +37,14 @@ class VpnNotificationController(private val context: Context) {
             "NotificationManager unavailable"
         }
 
-    fun createChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            context.getString(R.string.notification_channel_name),
-            NotificationManager.IMPORTANCE_LOW,
-        ).apply {
-            description = context.getString(R.string.notification_channel_description)
-            setShowBadge(false)
-        }
-        notificationManager.createNotificationChannel(channel)
+    fun createChannels() {
+        VpnNotificationChannel.Status.create(context, notificationManager)
+        alerts.createChannel()
     }
 
     fun foregroundNotification(): Notification {
         synchronized(postLock) { closed = false }
-        notificationManager.cancel(REVOKED_NOTIFICATION_ID)
+        alerts.cancelRevoked()
         return build(ConnectionState.Connecting, HysteriaClient.TrafficStats(0, 0), 0, 0)
     }
 
@@ -77,27 +70,23 @@ class VpnNotificationController(private val context: Context) {
     }
 
     fun cancelReconnectWarning() {
-        notificationManager.cancel(WARNING_NOTIFICATION_ID)
+        alerts.cancelReconnectTimeout()
     }
 
     fun postReconnectTimeoutWarning() {
-        notificationManager.notify(WARNING_NOTIFICATION_ID, warning(R.string.notification_reconnect_timeout))
+        alerts.postReconnectTimeout(title())
     }
 
     fun postRevokedWarning() {
-        notificationManager.notify(REVOKED_NOTIFICATION_ID, warning(R.string.notification_revoked))
+        alerts.postRevoked(title())
     }
 
-    private fun warning(textRes: Int): Notification {
-        val text = context.getString(textRes)
-        return Notification.Builder(context, CHANNEL_ID)
-            .setContentTitle(title())
-            .setSmallIcon(R.drawable.ic_stat_bedlam)
-            .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(text))
-            .setContentIntent(openAppIntent)
-            .setAutoCancel(true)
-            .build()
+    fun postStoppedAlert(reason: String) {
+        alerts.postStopped(reason)
+    }
+
+    fun cancelStoppedAlert() {
+        alerts.cancelStopped()
     }
 
     private fun build(
@@ -106,7 +95,7 @@ class VpnNotificationController(private val context: Context) {
         txRate: Long,
         rxRate: Long,
     ): Notification {
-        val builder = Notification.Builder(context, CHANNEL_ID)
+        val builder = Notification.Builder(context, VpnNotificationChannel.Status.id)
             .setContentTitle(title())
             .setSmallIcon(R.drawable.ic_stat_bedlam)
             .setOngoing(true)
@@ -259,9 +248,6 @@ class VpnNotificationController(private val context: Context) {
 
     companion object {
         const val NOTIFICATION_ID = 1
-        private const val WARNING_NOTIFICATION_ID = 2
-        private const val REVOKED_NOTIFICATION_ID = 4
-        private const val CHANNEL_ID = "bedlam_vpn"
         private const val REQ_STOP = 1
         private const val REQ_RECONNECT = 2
     }

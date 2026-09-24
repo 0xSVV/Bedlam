@@ -49,7 +49,7 @@ class VpnPermissionActivity : ComponentActivity() {
 
     private fun startActiveProfileAndFinish() {
         lifecycleScope.launch {
-            when (vpnServiceLauncher.startActiveProfile()) {
+            when (vpnServiceLauncher.startActiveProfile(userInitiated = true)) {
                 StartActiveProfileResult.NoActiveProfile -> openMainActivity()
                 StartActiveProfileResult.Started -> Unit
             }

@@ -41,4 +41,4 @@ internal class LogsExecutor(
     }
 }
 
-private fun LogBuffer.Snapshot.toLiveUpdated() = Msg.LiveUpdated(entries, droppedCount, firstIndex)
+private fun LogBuffer.Snapshot.toLiveUpdated() = Msg.LiveUpdated(entries, dropped, removedCount)

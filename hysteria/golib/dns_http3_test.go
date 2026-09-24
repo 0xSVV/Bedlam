@@ -428,3 +428,27 @@ func TestH3Resolver_blackholeSwitchesToHTTPS(t *testing.T) {
 		t.Error("resolver should stay on the HTTPS fallback")
 	}
 }
+
+func TestDNSUpstream_movesPastADoH3ServerWhoseHandshakeTimesOut(t *testing.T) {
+	d := newDoHServer(t, [4]byte{4, 4, 4, 4}, http.StatusOK)
+	fc := d.client()
+	fc.udp = func() (client.HyUDPConn, error) { return newFakeUDPConn(nil), nil }
+	unreachable, err := newH3Resolver(fc, d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unreachable.rt.QUICConfig.HandshakeIdleTimeout = 100 * time.Millisecond
+	working := &stubResolver{name: "http3|https://working.test/dns-query", reply: echoAnswer([4]byte{2, 2, 2, 2})}
+	up := &dnsUpstream{resolvers: []dnsResolver{unreachable, working}, ident: uniqueUpstreamID(t, "http3")}
+	defer up.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil || resp[len(resp)-1] != 2 {
+		t.Fatalf("resp = %v, err = %v, want the working server's answer", resp, err)
+	}
+	if got := up.firstIndex(); got != 1 {
+		t.Errorf("preferred = %d, want the working server once the other's handshake timed out", got)
+	}
+}

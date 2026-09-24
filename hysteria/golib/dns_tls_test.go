@@ -89,11 +89,7 @@ func loopbackDoTServer(t *testing.T, cert tls.Certificate, respond func(conn int
 }
 
 func echoDoT(ip [4]byte) func(query []byte) []byte {
-	return func(q []byte) []byte {
-		resp := dnsResponse("example.com", 60, ip)
-		copy(resp[:2], q[:2])
-		return resp
-	}
+	return func(q []byte) []byte { return dnsResponseFor(q, 60, ip) }
 }
 
 func TestTLSResolver_roundTrip(t *testing.T) {
@@ -338,7 +334,7 @@ func TestTLSResolver_ipServerName(t *testing.T) {
 	}
 }
 
-func TestTLSResolver_cancelDuringHandshakeReturnsPromptly(t *testing.T) {
+func TestTLSResolver_handshakeOutlivesACancelledQueryUntilThePoolCloses(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -356,7 +352,12 @@ func TestTLSResolver_cancelDuringHandshakeReturnsPromptly(t *testing.T) {
 	defer r.close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(50*time.Millisecond, cancel)
+	server := make(chan net.Conn, 1)
+	go func() {
+		s := <-accepted
+		server <- s
+		cancel()
+	}()
 	start := time.Now()
 	_, err = r.exchange(ctx, dnsQuery("example.com"))
 	if !errors.Is(err, context.Canceled) {
@@ -366,14 +367,24 @@ func TestTLSResolver_cancelDuringHandshakeReturnsPromptly(t *testing.T) {
 		t.Errorf("cancel during the handshake took %v", elapsed)
 	}
 
-	s := <-accepted
+	s := <-server
 	defer s.Close()
-	_ = s.SetReadDeadline(time.Now().Add(time.Second))
 	buf := make([]byte, 4096)
+	_ = s.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	for {
+		if _, err := s.Read(buf); err != nil {
+			if !isTimeoutClass(err) {
+				t.Fatalf("the handshake ended with the query that started it: %v", err)
+			}
+			break
+		}
+	}
+	r.close()
+	_ = s.SetReadDeadline(time.Now().Add(time.Second))
 	for {
 		if _, err := s.Read(buf); err != nil {
 			if isTimeoutClass(err) {
-				t.Error("the abandoned handshake left its connection open")
+				t.Error("closing the resolver left the handshake's connection open")
 			}
 			return
 		}

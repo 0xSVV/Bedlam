@@ -255,8 +255,17 @@ func (s *Session) CheckConnection() {
 
 func (s *Session) ResetConnections() {
 	log(LogLevelInfo, srcTunnel, "Resetting upstream connections")
-	s.closeAllActiveConns()
 	s.dnsCache.clear()
+	s.resetUpstream()
+}
+
+func (s *Session) ResetConnectionsKeepingDNSCache() {
+	log(LogLevelInfo, srcTunnel, "Resetting upstream connections, keeping the DNS cache")
+	s.resetUpstream()
+}
+
+func (s *Session) resetUpstream() {
+	s.closeAllActiveConns()
 	if c := s.currentClient(); c != nil {
 		c.reset()
 	}

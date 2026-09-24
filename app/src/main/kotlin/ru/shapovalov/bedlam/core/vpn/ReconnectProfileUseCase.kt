@@ -36,7 +36,7 @@ class ReconnectProfileUseCase internal constructor(
         runtimeState = runtimeStateRepository.state,
         consentRequired = { launcher.prepareIntent() != null },
         stopTunnel = launcher::stop,
-        startTunnel = launcher::start,
+        startTunnel = { launcher.start(it, userInitiated = true) },
         loadProfile = profileRepository::get,
     )
 

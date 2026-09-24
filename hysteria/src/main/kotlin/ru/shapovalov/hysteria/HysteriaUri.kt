@@ -10,7 +10,7 @@ import ru.shapovalov.hysteria.config.ObfuscationOptions
 import ru.shapovalov.hysteria.config.ServerCredentials
 import ru.shapovalov.hysteria.config.TlsOptions
 import ru.shapovalov.hysteria.config.defaultTlsOptions
-import java.net.URLDecoder
+import java.io.ByteArrayOutputStream
 
 /**
  * Result of parsing a Hysteria 2 URI or a Bedlam profile JSON: a fully-formed
@@ -25,7 +25,7 @@ data class ParsedHysteriaUri(
 private val importJson = Json { ignoreUnknownKeys = true }
 
 /**
- * Parses a Bedlam profile JSON — the shape produced by the app's "Copy config"
+ * Parses a Bedlam profile JSON — the shape produced by the app's "Copy Bedlam config"
  * action: a [HysteriaConfig] object with an optional top-level `name`.
  *
  * The official Hysteria client config (`server` as a plain string) is a
@@ -61,7 +61,7 @@ fun parseHysteriaJson(input: String): ParsedHysteriaUri {
  * Also accepts the `hy2://` scheme.
  *
  * Supported query parameters: sni, insecure, pinSHA256, obfs, obfs-password,
- * ech.
+ * ech, mport (port hopping ports, replacing the port after the host).
  * The optional fragment is surfaced as [ParsedHysteriaUri.name].
  *
  * @see <a href="https://v2.hysteria.network/docs/developers/URI-Scheme/">Hysteria 2 URI Scheme</a>
@@ -91,25 +91,25 @@ fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
     val atIdx = authority.lastIndexOf('@')
     val rawUserInfo = if (atIdx >= 0) authority.substring(0, atIdx) else ""
     val hostPort = if (atIdx >= 0) authority.substring(atIdx + 1) else authority
-    val auth = URLDecoder.decode(rawUserInfo, "UTF-8")
+    val auth = percentDecode(rawUserInfo, plusAsSpace = false)
 
     val parsedHost = parseHostPort(hostPort)
     require(parsedHost.host.isNotEmpty()) { "URI must contain a hostname" }
-    val server = when {
-        parsedHost.isHopping -> hostPort
-        ':' in parsedHost.host -> "[${parsedHost.host}]:${parsedHost.port}"
-        else -> "${parsedHost.host}:${parsedHost.port}"
-    }
+    parsedHost.portSpec?.let { validatePortSpec(it, "The link has an empty port after the host") }
 
     val params = parseQuery(rawQuery)
+    val hopPorts = params["mport"]?.also { validatePortSpec(it, "The link has an empty port in mport") }
+    val ports = hopPorts ?: parsedHost.portSpec ?: DEFAULT_PORT.toString()
+    val server = if (':' in parsedHost.host) "[${parsedHost.host}]:$ports" else "${parsedHost.host}:$ports"
+
     val sniParam = params["sni"].orEmpty()
     val sni = sniParam.ifEmpty { if (isIpLiteral(parsedHost.host)) "" else parsedHost.host }
-    val insecure = params["insecure"] == "1"
+    val insecure = params["insecure"] in GO_TRUE_SPELLINGS
     val pinSHA256 = params["pinSHA256"].orEmpty()
     val ech = params["ech"].orEmpty()
     val obfs = params["obfs"].orEmpty()
     val obfsPassword = params["obfs-password"].orEmpty()
-    val name = URLDecoder.decode(rawFragment, "UTF-8")
+    val name = percentDecode(rawFragment, plusAsSpace = false)
 
     val config = HysteriaConfig(
         server = ServerCredentials(address = server, auth = auth),
@@ -130,7 +130,7 @@ fun parseHysteriaUri(uriString: String): ParsedHysteriaUri {
     return ParsedHysteriaUri(config = config, name = name)
 }
 
-private data class HostPort(val host: String, val port: Int, val isHopping: Boolean)
+private data class HostPort(val host: String, val portSpec: String?)
 
 private fun parseHostPort(hostPort: String): HostPort {
     if (hostPort.startsWith("[")) {
@@ -141,21 +141,33 @@ private fun parseHostPort(hostPort: String): HostPort {
         return parsePortAfterHost(host, rest)
     }
     val colon = hostPort.indexOf(':')
-    if (colon < 0) return HostPort(hostPort, DEFAULT_PORT, isHopping = false)
+    if (colon < 0) return HostPort(hostPort, portSpec = null)
     val host = hostPort.substring(0, colon)
     return parsePortAfterHost(host, hostPort.substring(colon))
 }
 
 private fun parsePortAfterHost(host: String, rest: String): HostPort {
-    if (rest.isEmpty()) return HostPort(host, DEFAULT_PORT, isHopping = false)
+    if (rest.isEmpty()) return HostPort(host, portSpec = null)
     require(rest.startsWith(":")) { "expected ':' between host and port" }
-    val portStr = rest.substring(1)
-    if (',' in portStr || '-' in portStr) {
-        return HostPort(host, 0, isHopping = true)
+    return HostPort(host, rest.substring(1))
+}
+
+private fun validatePortSpec(spec: String, emptyMessage: String) {
+    require(spec.isNotEmpty()) { emptyMessage }
+    for (part in spec.split(',')) {
+        val bounds = part.split('-')
+        require(bounds.none { it.isEmpty() }) { "The link has an empty port in $spec" }
+        require(bounds.size <= 2) { "Port range $part in the link is not low-high" }
+        val numbers = bounds.map(::linkPortNumber)
+        require(numbers.first() <= numbers.last()) { "Port range $part in the link starts after it ends" }
     }
-    val port = portStr.toIntOrNull()
-    require(port != null && port in 1..65535) { "invalid port in URI: $portStr" }
-    return HostPort(host, port, isHopping = false)
+}
+
+private fun linkPortNumber(text: String): Int {
+    require(text.all { it in '0'..'9' }) { "Port $text in the link is not a number" }
+    val port = text.toIntOrNull()
+    require(port != null && port in 1..65535) { "Port $text in the link is not between 1 and 65535" }
+    return port
 }
 
 private fun parseQuery(query: String): Map<String, String> {
@@ -166,9 +178,38 @@ private fun parseQuery(query: String): Map<String, String> {
         val idx = pair.indexOf('=')
         val key = if (idx < 0) pair else pair.substring(0, idx)
         val value = if (idx < 0) "" else pair.substring(idx + 1)
-        result[URLDecoder.decode(key, "UTF-8")] = URLDecoder.decode(value, "UTF-8")
+        result.putIfAbsent(percentDecode(key, plusAsSpace = true), percentDecode(value, plusAsSpace = true))
     }
     return result
+}
+
+private fun percentDecode(text: String, plusAsSpace: Boolean): String {
+    if ('%' !in text && !(plusAsSpace && '+' in text)) return text
+    val bytes = ByteArrayOutputStream(text.length)
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        when {
+            c == '%' -> {
+                val high = text.getOrNull(i + 1)?.hexValue()
+                val low = text.getOrNull(i + 2)?.hexValue()
+                require(high != null && low != null) { "The link has an invalid %-escape" }
+                bytes.write(high * 16 + low)
+                i += 3
+                continue
+            }
+
+            c == '+' && plusAsSpace -> bytes.write(' '.code)
+            else -> {
+                val end = if (c.isHighSurrogate() && i + 1 < text.length) i + 2 else i + 1
+                bytes.write(text.substring(i, end).toByteArray(Charsets.UTF_8))
+                i = end
+                continue
+            }
+        }
+        i++
+    }
+    return bytes.toString(Charsets.UTF_8)
 }
 
 private fun isIpLiteral(host: String): Boolean {
@@ -180,3 +221,12 @@ private fun isIpLiteral(host: String): Boolean {
 }
 
 private const val DEFAULT_PORT = 443
+
+private val GO_TRUE_SPELLINGS = setOf("1", "t", "T", "TRUE", "true", "True")
+
+private fun Char.hexValue(): Int? = when (this) {
+    in '0'..'9' -> this - '0'
+    in 'a'..'f' -> this - 'a' + 10
+    in 'A'..'F' -> this - 'A' + 10
+    else -> null
+}

@@ -284,8 +284,8 @@ func TestTCPResolver_fastOpenReportsAHungServerDialAsAResponseTimeout(t *testing
 		fastOpen bool
 		want     string
 	}{
-		{true, "read response length"},
-		{false, "dial DNS server 8.8.8.8:53"},
+		{true, ": no response after "},
+		{false, "DNS over TCP 8.8.8.8:53: new stream not open after "},
 	} {
 		tt := newTestTunnel(t, tc.fastOpen, hangingOutbound(t))
 		r := newTCPResolver(tt, "8.8.8.8:53")
@@ -304,7 +304,7 @@ func TestTCPResolver_fastOpenReportsAHungServerDialAsAResponseTimeout(t *testing
 	}
 }
 
-func TestTLSResolver_fastOpenReportsAHungServerDialAsAHandshakeTimeout(t *testing.T) {
+func TestTLSResolver_fastOpenReportsAHungServerDialAsAStreamStillOpening(t *testing.T) {
 	_, pool := testCert(t)
 	tt := newTestTunnel(t, true, hangingOutbound(t))
 	r := newTLSResolver(tt, "dns.test:853", &tls.Config{RootCAs: pool})
@@ -314,11 +314,34 @@ func TestTLSResolver_fastOpenReportsAHungServerDialAsAHandshakeTimeout(t *testin
 	defer cancel()
 	start := time.Now()
 	_, err := r.exchange(ctx, dnsQuery("example.com"))
-	if !isTimeoutClass(err) || !strings.Contains(fmt.Sprint(err), "DoT handshake with dns.test:853") {
-		t.Errorf("err = %v, want a handshake timeout", err)
+	if !isTimeoutClass(err) || !strings.HasPrefix(fmt.Sprint(err), "DoT dns.test:853: new stream not open after ") {
+		t.Errorf("err = %v, want a timeout naming the stream still opening", err)
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Errorf("a hung server dial held the DoT handshake for %v", elapsed)
+	}
+}
+
+func TestTCPResolver_fastOpenDialsARefusedServerOncePerQuery(t *testing.T) {
+	var dials atomic.Int32
+	tt := newTestTunnel(t, true, func(string) (net.Conn, error) {
+		dials.Add(1)
+		return nil, errors.New("connect: connection refused")
+	})
+	r := newTCPResolver(tt, "8.8.8.8:53")
+	defer r.close()
+
+	for i := int32(1); i <= 3; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, err := r.exchange(ctx, dnsQuery(fmt.Sprintf("q%d.example", i)))
+		cancel()
+		var dialErr coreErrs.DialError
+		if !errors.As(err, &dialErr) {
+			t.Fatalf("query %d: err = %v, want the DialError", i, err)
+		}
+		if n := dials.Load(); n != i {
+			t.Fatalf("the Hysteria server dialed the DNS server %d times for %d queries, want once per query", n, i)
+		}
 	}
 }
 

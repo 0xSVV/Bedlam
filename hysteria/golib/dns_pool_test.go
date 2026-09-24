@@ -5,16 +5,19 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 	"github.com/apernet/quic-go"
 )
 
@@ -332,40 +335,187 @@ func (c *closeSignalConn) Close() error {
 	return c.Conn.Close()
 }
 
-func TestTCPResolver_cancelDuringDialReturnsPromptly(t *testing.T) {
+func TestTCPResolver_poolsAStreamThatOpensAfterItsCallerLeft(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
+	dialing := make(chan struct{}, 1)
 	release := make(chan struct{})
-	late := make(chan *closeSignalConn, 1)
-	fc := &fakeClient{tcp: func(string) (net.Conn, error) {
+	var dialed atomic.Int32
+	fc := &fakeClient{tcp: func(addr string) (net.Conn, error) {
+		dialed.Add(1)
+		dialing <- struct{}{}
 		<-release
-		client, server := net.Pipe()
-		t.Cleanup(func() { server.Close() })
-		conn := &closeSignalConn{Conn: client, closed: make(chan struct{})}
-		late <- conn
-		return conn, nil
+		return srv.connect(addr)
 	}}
 	r := newTCPResolver(fc, "1.1.1.1:53")
 	defer r.close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(50*time.Millisecond, cancel)
+	go func() {
+		<-dialing
+		cancel()
+	}()
 	start := time.Now()
-	_, err := r.exchange(ctx, dnsQuery("example.com"))
+	_, err := r.exchange(ctx, dnsQuery("slow.example"))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Errorf("cancel during dial took %v", elapsed)
+		t.Errorf("a cancel while the stream was opening took %v", elapsed)
 	}
 
 	close(release)
-	conn := <-late
 	select {
-	case <-conn.closed:
-	case <-time.After(time.Second):
-		t.Fatal("a stream that finished dialling after the cancel was never closed")
+	case c := <-r.pool.idle:
+		r.pool.idle <- c
+	case <-time.After(2 * time.Second):
+		t.Fatal("the stream that finished opening after its caller left never reached the pool")
 	}
-	if len(r.pool.idle) != 0 {
-		t.Error("a late stream went into the pool")
+	resp, err := r.exchange(context.Background(), dnsQuery("next.example"))
+	if err != nil {
+		t.Fatalf("the next query: %v", err)
+	}
+	if n := dialed.Load(); n != 1 {
+		t.Errorf("opened %d streams, want the one the first query started to serve the next", n)
+	}
+	if conn := answerConn(resp); conn != 1 {
+		t.Errorf("answer came from connection %d, want the late stream 1", conn)
+	}
+	if q := srv.queries.Load(); q != 1 {
+		t.Errorf("server saw %d queries, want only the next query's", q)
+	}
+}
+
+func TestStreamPool_closeCancelsTheOpensInFlight(t *testing.T) {
+	dialing := make(chan struct{}, 1)
+	returned := make(chan struct{})
+	p := newStreamPool("test", func(ctx context.Context) (net.Conn, error) {
+		defer close(returned)
+		dialing <- struct{}{}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	defer p.close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-dialing
+		cancel()
+	}()
+	if _, err := p.exchange(ctx, dnsQuery("example.com")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	select {
+	case <-returned:
+		t.Fatal("the open ended with the query that started it, want it kept going for the pool")
+	default:
+	}
+	p.close()
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("closing the pool left its open running")
+	}
+}
+
+func TestStreamPool_closesAStreamThatFinishesOpeningAfterClose(t *testing.T) {
+	dialing := make(chan struct{}, 1)
+	release := make(chan struct{})
+	opened := make(chan *closeSignalConn, 1)
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+		dialing <- struct{}{}
+		<-release
+		client, server := net.Pipe()
+		t.Cleanup(func() { server.Close() })
+		conn := &closeSignalConn{Conn: client, closed: make(chan struct{})}
+		opened <- conn
+		return conn, nil
+	})
+	defer p.close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := p.exchange(ctx, dnsQuery("example.com"))
+		result <- err
+	}()
+	<-dialing
+	cancel()
+	select {
+	case <-result:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("the caller waited for its stream to open after it was cancelled")
+	}
+	p.close()
+	close(release)
+	select {
+	case <-(<-opened).closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a stream that finished opening after the pool closed was left open")
+	}
+	if len(p.idle) != 0 {
+		t.Error("a stream that finished opening after the pool closed went into the pool")
+	}
+}
+
+func TestStreamPool_givesUpAnOpenAtTheOpenTimeout(t *testing.T) {
+	p := newStreamPool("DNS over TCP 1.1.1.1:53", func(ctx context.Context) (net.Conn, error) {
+		<-ctx.Done()
+		return nil, fmt.Errorf("dial DNS server 1.1.1.1:53: %w", ctx.Err())
+	})
+	defer p.close()
+	p.openTimeout = 100 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := p.exchange(ctx, dnsQuery("example.com"))
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(fmt.Sprint(err), "dial DNS server 1.1.1.1:53") {
+		t.Errorf("err = %v, want the open's own timeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("a hung open held the query for %v, want it given up at the %v open timeout", elapsed, p.openTimeout)
+	}
+}
+
+func TestStreamPool_aHedgeThatLosesStillPoolsItsStream(t *testing.T) {
+	hedgeDialing := make(chan struct{})
+	var armed atomic.Bool
+	dial := loopbackTCPDNSServer(t, func(conn int, q []byte) []byte {
+		if conn == 1 && armed.Load() {
+			<-hedgeDialing
+		}
+		return dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})
+	})
+	release := make(chan struct{})
+	var dials atomic.Int32
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+		if dials.Add(1) == 2 {
+			close(hedgeDialing)
+			<-release
+		}
+		return dial()
+	})
+	defer p.close()
+	fillPool(t, p, 1)
+	armed.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	resp, err := p.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("the pooled stream answers, so the query must succeed: %v", err)
+	}
+	if conn := answerConn(resp); conn != 1 {
+		t.Fatalf("answer came from connection %d, want the pooled stream 1", conn)
+	}
+	close(release)
+	for held := 0; held < 2; held++ {
+		select {
+		case <-p.idle:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("pool holds %d streams, want the pooled stream and the one the losing hedge opened", held)
+		}
 	}
 }
 
@@ -408,6 +558,55 @@ func TestStreamPool_concurrentQueriesKeepTheirAnswers(t *testing.T) {
 	}
 }
 
+func TestStreamPool_burstOnAnEmptyPoolOpensAtMostTwoStreamsAtOnce(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
+	started := make(chan struct{}, 64)
+	gate := make(chan struct{})
+	var opening, peak atomic.Int32
+	p := newStreamPool("test", func(ctx context.Context) (net.Conn, error) {
+		n := opening.Add(1)
+		for m := peak.Load(); n > m && !peak.CompareAndSwap(m, n); m = peak.Load() {
+		}
+		started <- struct{}{}
+		<-gate
+		opening.Add(-1)
+		return srv.dial(ctx)
+	})
+	defer p.close()
+
+	const burst = 8
+	var wg sync.WaitGroup
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			query := dnsQuery(fmt.Sprintf("burst%d.example", i))
+			resp, err := p.exchange(ctx, query)
+			if err != nil {
+				t.Errorf("query %d: %v", i, err)
+				return
+			}
+			if got, _ := dnsQuestion(resp); got != string(query[12:]) {
+				t.Errorf("query %d received the answer to another query", i)
+			}
+		}(i)
+	}
+	for i := 0; i < dnsPoolMaxOpening; i++ {
+		<-started
+	}
+	select {
+	case <-started:
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(gate)
+	wg.Wait()
+	if n := peak.Load(); n > dnsPoolMaxOpening {
+		t.Errorf("%d streams were opening at once, want at most %d", n, dnsPoolMaxOpening)
+	}
+}
+
 func TestStreamPool_reportsWhetherTheFailedStreamWasPooled(t *testing.T) {
 	var stale atomic.Bool
 	srv := newFaultDNSServer(t, func(int, int) streamFault {
@@ -428,7 +627,7 @@ func TestStreamPool_reportsWhetherTheFailedStreamWasPooled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 	_, err := p.exchange(ctx, dnsQuery("example.com"))
-	pattern := `^DNS over TCP 1\.1\.1\.1:53: pooled stream idle 12s \(open 45s, answered 1\) failed: read response length: .*; new stream dialed in \S+: read response length: `
+	pattern := `^DNS over TCP 1\.1\.1\.1:53: pooled stream idle 12s \(open 45s, answered 1\) failed: no response after \S+: context deadline exceeded; new stream dialed in \S+: no response after \S+: context deadline exceeded$`
 	if msg := fmt.Sprint(err); !regexp.MustCompile(pattern).MatchString(msg) {
 		t.Errorf("err = %q, want it to match %q", msg, pattern)
 	}
@@ -448,7 +647,7 @@ func TestStreamPool_reportsHowLongANewStreamTookToDial(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
 	defer cancel()
 	_, err := p.exchange(ctx, dnsQuery("example.com"))
-	match := regexp.MustCompile(`^DoT dns\.test:853: new stream dialed in (\S+): read response length: `).FindStringSubmatch(fmt.Sprint(err))
+	match := regexp.MustCompile(`^DoT dns\.test:853: new stream dialed in (\S+): no response after `).FindStringSubmatch(fmt.Sprint(err))
 	if match == nil {
 		t.Fatalf("err = %v, want the new stream and its dial time named", err)
 	}
@@ -535,7 +734,7 @@ func TestStreamPool_keepsTheRedialErrorAfterAStalePooledStream(t *testing.T) {
 	if !errors.Is(err, errRedial) {
 		t.Fatalf("err = %v, want the redial error kept", err)
 	}
-	if msg := fmt.Sprint(err); !strings.HasPrefix(msg, "DoT dns.test:853: pooled stream idle ") || !strings.Contains(msg, " failed: read response length: ") {
+	if msg := fmt.Sprint(err); !strings.HasPrefix(msg, "DoT dns.test:853: pooled stream idle ") || !strings.Contains(msg, " failed: no response after ") {
 		t.Errorf("err = %q, want the stale pooled stream reported before the redial error", msg)
 	}
 }
@@ -591,17 +790,17 @@ func TestStreamPool_keepsIdleStreamsWhenTheRetryAlsoTimesOut(t *testing.T) {
 }
 
 type signallingDialer struct {
-	srv    *faultDNSServer
-	dialed atomic.Int32
-	opened chan *closeSignalConn
+	connect func() (net.Conn, error)
+	dialed  atomic.Int32
+	opened  chan *closeSignalConn
 }
 
-func newSignallingDialer(srv *faultDNSServer) *signallingDialer {
-	return &signallingDialer{srv: srv, opened: make(chan *closeSignalConn, 8)}
+func newSignallingDialer(connect func() (net.Conn, error)) *signallingDialer {
+	return &signallingDialer{connect: connect, opened: make(chan *closeSignalConn, 8)}
 }
 
-func (d *signallingDialer) dial(ctx context.Context) (net.Conn, error) {
-	conn, err := d.srv.dial(ctx)
+func (d *signallingDialer) dial(context.Context) (net.Conn, error) {
+	conn, err := d.connect()
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +810,31 @@ func (d *signallingDialer) dial(ctx context.Context) (net.Conn, error) {
 	return signal, nil
 }
 
-func TestStreamPool_cancelDuringReadReturnsPromptly(t *testing.T) {
+type heldAnswers struct {
+	holding  atomic.Bool
+	conn     int
+	received chan int
+	release  chan struct{}
+}
+
+func newHeldAnswers(conn int) *heldAnswers {
+	return &heldAnswers{conn: conn, received: make(chan int, 8), release: make(chan struct{})}
+}
+
+func (h *heldAnswers) respond(conn int, q []byte) []byte {
+	if h.holding.Load() && (h.conn == 0 || h.conn == conn) {
+		h.received <- conn
+		<-h.release
+	}
+	return dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})
+}
+
+func collectLateAnswers(ctx context.Context) (context.Context, chan []byte) {
+	late := make(chan []byte, 4)
+	return withLateAnswer(ctx, func(resp []byte) { late <- resp }), late
+}
+
+func TestStreamPool_readOutlivesACancelledQueryAndPoolsItsStream(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		pooled bool
@@ -620,69 +843,244 @@ func TestStreamPool_cancelDuringReadReturnsPromptly(t *testing.T) {
 		{"pooled stream", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var silent atomic.Bool
-			srv := newFaultDNSServer(t, func(int, int) streamFault {
-				if silent.Load() {
-					return faultSilent
+			held := newHeldAnswers(0)
+			t.Cleanup(func() {
+				held.holding.Store(false)
+				select {
+				case <-held.release:
+				default:
+					close(held.release)
 				}
-				return faultAnswer
 			})
-			dialer := newSignallingDialer(srv)
+			dialer := newSignallingDialer(loopbackTCPDNSServer(t, held.respond))
 			p := newStreamPool("test", dialer.dial)
 			defer p.close()
 			if tc.pooled {
 				fillPool(t, p, 1)
 			}
-			silent.Store(true)
+			held.holding.Store(true)
 
-			ctx, cancel := context.WithCancel(context.Background())
-			time.AfterFunc(50*time.Millisecond, cancel)
+			base, late := collectLateAnswers(context.Background())
+			ctx, cancel := context.WithCancel(base)
+			go func() {
+				<-held.received
+				cancel()
+			}()
 			start := time.Now()
-			_, err := p.exchange(ctx, dnsQuery("example.com"))
+			_, err := p.exchange(ctx, dnsQuery("late.example"))
 			if !errors.Is(err, context.Canceled) {
-				t.Errorf("err = %v, want context.Canceled", err)
+				t.Fatalf("err = %v, want context.Canceled", err)
 			}
 			if elapsed := time.Since(start); elapsed > time.Second {
 				t.Errorf("a cancel during the read took %v to return", elapsed)
 			}
-			if dialed := dialer.dialed.Load(); dialed != 1 {
-				t.Errorf("%d streams dialled, want only the interrupted one", dialed)
+			stream := <-dialer.opened
+			select {
+			case <-stream.closed:
+				t.Fatal("the stream was closed with the query that sent on it, want its read kept going")
+			default:
+			}
+
+			held.holding.Store(false)
+			close(held.release)
+			select {
+			case resp := <-late:
+				if got, _ := dnsQuestion(resp); got != string(dnsQuery("late.example")[12:]) {
+					t.Errorf("late answer is for %q, want the cancelled query's", got)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("the answer that arrived after its query left never reached the late-answer hook")
 			}
 			select {
-			case <-(<-dialer.opened).closed:
-			default:
-				t.Error("the interrupted stream was left open")
+			case c := <-p.idle:
+				if c.conn != net.Conn(stream) {
+					t.Error("the pool holds another stream, want the one that answered late")
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("the stream that answered after its query left never went back to the pool")
 			}
-			if len(p.idle) != 0 {
-				t.Error("an interrupted stream went back to the pool")
+			if dialed := dialer.dialed.Load(); dialed != 1 {
+				t.Errorf("%d streams dialled, want only the one the query used", dialed)
 			}
 		})
 	}
 }
 
-func TestStreamPool_stopsTheLosingStreamOnceAnotherAnswers(t *testing.T) {
-	var stale atomic.Bool
-	srv := newFaultDNSServer(t, func(conn, _ int) streamFault {
-		if stale.Load() && conn == 1 {
-			return faultSilent
+func TestStreamPool_keepsReadingTheLosingStreamAfterAnotherAnswers(t *testing.T) {
+	held := newHeldAnswers(1)
+	t.Cleanup(func() {
+		held.holding.Store(false)
+		select {
+		case <-held.release:
+		default:
+			close(held.release)
 		}
-		return faultAnswer
 	})
-	dialer := newSignallingDialer(srv)
+	dialer := newSignallingDialer(loopbackTCPDNSServer(t, held.respond))
 	p := newStreamPool("test", dialer.dial)
 	defer p.close()
 	fillPool(t, p, 1)
-	stale.Store(true)
+	pooled := <-dialer.opened
+	held.holding.Store(true)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := p.exchange(ctx, dnsQuery("example.com")); err != nil {
+	resp, err := p.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
 		t.Fatalf("a new stream answers, so the query must succeed: %v", err)
 	}
+	if conn := answerConn(resp); conn != 2 {
+		t.Fatalf("answer came from connection %d, want the new stream 2", conn)
+	}
 	select {
-	case <-(<-dialer.opened).closed:
-	case <-time.After(200 * time.Millisecond):
-		t.Error("the stale pooled stream kept reading after the new stream answered")
+	case <-pooled.closed:
+		t.Fatal("the pooled stream was closed once the new stream answered, want its read kept going")
+	default:
+	}
+
+	close(held.release)
+	back := false
+	for i := 0; i < 2 && !back; i++ {
+		select {
+		case c := <-p.idle:
+			back = c.conn == net.Conn(pooled)
+		case <-time.After(2 * time.Second):
+			t.Fatal("the pool is missing a stream that answered")
+		}
+	}
+	if !back {
+		t.Error("the slow pooled stream answered but never went back to the pool")
+	}
+}
+
+type deadlineRecordingConn struct {
+	net.Conn
+	mu        sync.Mutex
+	deadlines []time.Time
+}
+
+func (c *deadlineRecordingConn) SetDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.deadlines = append(c.deadlines, t)
+	c.mu.Unlock()
+	return c.Conn.SetDeadline(t)
+}
+
+func (c *deadlineRecordingConn) readDeadline() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, d := range c.deadlines {
+		if !d.IsZero() {
+			return d
+		}
+	}
+	return time.Time{}
+}
+
+func TestStreamPool_readDeadlineOutlastsAShortCaller(t *testing.T) {
+	dial := loopbackTCPDNSServer(t, func(_ int, q []byte) []byte { return dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}) })
+	for _, tc := range []struct {
+		name   string
+		budget time.Duration
+		late   bool
+	}{
+		{"short caller", 100 * time.Millisecond, true},
+		{"long caller", 20 * time.Second, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorded := make(chan *deadlineRecordingConn, 1)
+			p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+				conn, err := dial()
+				if err != nil {
+					return nil, err
+				}
+				c := &deadlineRecordingConn{Conn: conn}
+				recorded <- c
+				return c, nil
+			})
+			defer p.close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), tc.budget)
+			defer cancel()
+			callerDeadline, _ := ctx.Deadline()
+			sent := time.Now()
+			if _, err := p.exchange(ctx, dnsQuery("example.com")); err != nil {
+				t.Fatalf("exchange: %v", err)
+			}
+			answered := time.Now()
+			got := (<-recorded).readDeadline()
+			if !tc.late {
+				if !got.Equal(callerDeadline) {
+					t.Errorf("read deadline %v, want the caller's own deadline %v", got, callerDeadline)
+				}
+				return
+			}
+			if got.Before(sent.Add(dnsLateReadTimeout)) || got.After(answered.Add(dnsLateReadTimeout)) {
+				t.Errorf("read deadline %v after the send, want %v", got.Sub(sent), dnsLateReadTimeout)
+			}
+		})
+	}
+}
+
+type shortBudgetResolver struct {
+	dnsResolver
+	budget time.Duration
+	stored chan struct{}
+}
+
+func (r *shortBudgetResolver) exchange(ctx context.Context, query []byte) ([]byte, error) {
+	store := lateAnswer(ctx)
+	ctx = withLateAnswer(ctx, func(resp []byte) {
+		store(resp)
+		r.stored <- struct{}{}
+	})
+	ctx, cancel := context.WithTimeout(ctx, r.budget)
+	defer cancel()
+	return r.dnsResolver.exchange(ctx, query)
+}
+
+func TestDNSCacheResolve_servesTheRetryFromAStreamThatAnsweredLate(t *testing.T) {
+	held := newHeldAnswers(0)
+	t.Cleanup(func() {
+		select {
+		case <-held.release:
+		default:
+			close(held.release)
+		}
+	})
+	held.holding.Store(true)
+	var queries atomic.Int32
+	dial := loopbackTCPDNSServer(t, func(conn int, q []byte) []byte {
+		queries.Add(1)
+		return held.respond(conn, q)
+	})
+	tcp := newTCPResolver(&fakeClient{tcp: func(string) (net.Conn, error) { return dial() }}, "1.1.1.1:53")
+	defer tcp.close()
+	r := &shortBudgetResolver{dnsResolver: tcp, budget: 200 * time.Millisecond, stored: make(chan struct{}, 1)}
+	c := newDNSCache()
+
+	if _, err := c.resolve(context.Background(), r, dnsQuery("example.com"), nil); !isTimeoutClass(err) {
+		t.Fatalf("err = %v, want the query to run out of its budget", err)
+	}
+	held.holding.Store(false)
+	close(held.release)
+	select {
+	case <-r.stored:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the answer that arrived after the query gave up never reached the cache")
+	}
+
+	retry := dnsQuery("example.com")
+	binary.BigEndian.PutUint16(retry[:2], 0x5151)
+	resp, err := c.resolve(context.Background(), r, retry, nil)
+	if err != nil {
+		t.Fatalf("the retry: %v", err)
+	}
+	if binary.BigEndian.Uint16(resp[:2]) != 0x5151 || answerConn(resp) != 1 {
+		t.Errorf("retry answer = %v, want the late answer under the retry's ID", resp)
+	}
+	if n := queries.Load(); n != 1 {
+		t.Errorf("server saw %d queries, want the retry served from the cache", n)
 	}
 }
 
@@ -770,5 +1168,681 @@ func TestStreamPool_skipsTheRedialWhenAPooledStreamReachesItsDeadline(t *testing
 	}
 	if n := dialed.Load(); n != 0 {
 		t.Errorf("dialled %d streams after the pooled one reached its deadline, want none", n)
+	}
+}
+
+func TestStreamPool_skipsTheRedialWhenThePoolClosesUnderAPooledQuery(t *testing.T) {
+	var dialed atomic.Int32
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+		dialed.Add(1)
+		return nil, errors.New("dial refused")
+	})
+	c := &pooledConn{conn: newScriptedReadConn(), opened: time.Now(), last: time.Now()}
+	p.idle <- c
+	done := exchangeInBackground(p, 2*time.Second, "example.com")
+	for start := time.Now(); ; time.Sleep(time.Millisecond) {
+		c.mu.Lock()
+		sent := len(c.pending) > 0
+		c.mu.Unlock()
+		if sent {
+			break
+		}
+		if time.Since(start) > 2*time.Second {
+			t.Fatal("the query never reached the pooled stream")
+		}
+	}
+	p.close()
+
+	select {
+	case out := <-done:
+		if !errors.Is(out.err, net.ErrClosed) {
+			t.Errorf("err = %v, want the closed pool's error", out.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the query never returned after the pool closed")
+	}
+	if n := dialed.Load(); n != 0 {
+		t.Errorf("dialled %d streams after the pool closed, want none", n)
+	}
+}
+
+func latencyDNSServer(t *testing.T, rtt time.Duration) func() (net.Conn, error) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			s, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(s net.Conn) {
+				defer s.Close()
+				var writeMu sync.Mutex
+				for {
+					q, err := readDNSFrame(s)
+					if err != nil {
+						return
+					}
+					time.AfterFunc(rtt, func() {
+						writeMu.Lock()
+						defer writeMu.Unlock()
+						_ = writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}))
+					})
+				}
+			}(s)
+		}
+	}()
+	return func() (net.Conn, error) { return net.Dial("tcp", ln.Addr().String()) }
+}
+
+func TestStreamPool_slowLinkBurstIsAnsweredWithinItsBudget(t *testing.T) {
+	const rtt = 100 * time.Millisecond
+	connect := latencyDNSServer(t, rtt)
+	var opening, peak atomic.Int32
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+		n := opening.Add(1)
+		for m := peak.Load(); n > m && !peak.CompareAndSwap(m, n); m = peak.Load() {
+		}
+		defer opening.Add(-1)
+		time.Sleep(rtt)
+		return connect()
+	})
+	defer p.close()
+
+	const burst = 42
+	var wg sync.WaitGroup
+	var failed atomic.Int32
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 6*rtt)
+			defer cancel()
+			query := dnsQuery(fmt.Sprintf("burst%d.example", i))
+			resp, err := p.exchange(ctx, query)
+			if err != nil {
+				failed.Add(1)
+				return
+			}
+			if got, _ := dnsQuestion(resp); got != string(query[12:]) {
+				t.Errorf("query %d received the answer to another query", i)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if n := failed.Load(); n > 0 {
+		t.Errorf("%d of %d queries sent at once were not answered within %v, with streams taking %v to open and %v to answer", n, burst, 6*rtt, rtt, rtt)
+	}
+	if n := peak.Load(); n > dnsPoolMaxOpening {
+		t.Errorf("%d streams were opening at once, want at most %d", n, dnsPoolMaxOpening)
+	}
+}
+
+func TestStreamPool_closeEndsAReadThatOutlivedItsQuery(t *testing.T) {
+	held := newHeldAnswers(0)
+	t.Cleanup(func() {
+		held.holding.Store(false)
+		select {
+		case <-held.release:
+		default:
+			close(held.release)
+		}
+	})
+	dialer := newSignallingDialer(loopbackTCPDNSServer(t, held.respond))
+	p := newStreamPool("test", dialer.dial)
+	held.holding.Store(true)
+
+	base, late := collectLateAnswers(context.Background())
+	ctx, cancel := context.WithCancel(base)
+	go func() {
+		<-held.received
+		cancel()
+	}()
+	if _, err := p.exchange(ctx, dnsQuery("late.example")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	stream := <-dialer.opened
+	p.close()
+	select {
+	case <-stream.closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("closing the pool left open a stream whose read outlived its query")
+	}
+	held.holding.Store(false)
+	close(held.release)
+	select {
+	case <-late:
+		t.Error("an answer read after the pool closed reached the late-answer hook")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func loopbackStreamServer(t *testing.T, serve func(conn int, s net.Conn)) func() (net.Conn, error) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for n := 1; ; n++ {
+			s, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(s net.Conn, id int) {
+				defer s.Close()
+				serve(id, s)
+			}(s, n)
+		}
+	}()
+	return func() (net.Conn, error) { return net.Dial("tcp", ln.Addr().String()) }
+}
+
+func TestDNSCacheResolve_neverTakesTheAnswerToAnotherQuestionFromAStream(t *testing.T) {
+	dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+		var previous []byte
+		for {
+			q, err := readDNSFrame(s)
+			if err != nil {
+				return
+			}
+			if conn == 1 && previous != nil && writeDNSFrame(s, previous) != nil {
+				return
+			}
+			resp := dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})
+			if writeDNSFrame(s, resp) != nil {
+				return
+			}
+			previous = resp
+		}
+	})
+	r := newTCPResolver(&fakeClient{tcp: func(string) (net.Conn, error) { return dial() }}, "1.1.1.1:53")
+	defer r.close()
+	c := newDNSCache()
+
+	if _, err := c.resolve(context.Background(), r, dnsQuery("a.example"), nil); err != nil {
+		t.Fatalf("a.example: %v", err)
+	}
+	want, _ := dnsQuestion(dnsQuery("b.example"))
+	resp, err := c.resolve(context.Background(), r, dnsQuery("b.example"), nil)
+	if err != nil {
+		t.Fatalf("b.example: %v", err)
+	}
+	if got, _ := dnsQuestion(resp); got != want {
+		t.Errorf("b.example was answered with the answer to %q, a repeat sent under the same ID", got)
+	}
+	if cached := c.tryCached(r, dnsQuery("b.example")); cached != nil {
+		if got, _ := dnsQuestion(cached); got != want {
+			t.Errorf("the cache serves b.example the answer to %q", got)
+		}
+	}
+}
+
+func awaitQuestion(t *testing.T, received <-chan string, name string) {
+	t.Helper()
+	want, _ := dnsQuestion(dnsQuery(name))
+	select {
+	case got := <-received:
+		if got != want {
+			t.Fatalf("the server received %q, want %q", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s never reached the server", name)
+	}
+}
+
+func holdOpenSlots(p *streamPool) func() {
+	for i := 0; i < cap(p.opening); i++ {
+		p.opening <- struct{}{}
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			for i := 0; i < cap(p.opening); i++ {
+				<-p.opening
+			}
+		})
+	}
+}
+
+type exchangeOutcome struct {
+	resp []byte
+	err  error
+	took time.Duration
+}
+
+func exchangeInBackground(p *streamPool, budget time.Duration, name string) <-chan exchangeOutcome {
+	done := make(chan exchangeOutcome, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), budget)
+		defer cancel()
+		start := time.Now()
+		resp, err := p.exchange(ctx, dnsQuery(name))
+		done <- exchangeOutcome{resp: resp, err: err, took: time.Since(start)}
+	}()
+	return done
+}
+
+func awaitAnswer(t *testing.T, done <-chan exchangeOutcome, name string, conn int) exchangeOutcome {
+	t.Helper()
+	select {
+	case out := <-done:
+		if out.err != nil {
+			t.Fatalf("%s: %v", name, out.err)
+		}
+		want, _ := dnsQuestion(dnsQuery(name))
+		if got, _ := dnsQuestion(out.resp); got != want {
+			t.Fatalf("%s received the answer to %q", name, got)
+		}
+		if got := answerConn(out.resp); got != conn {
+			t.Errorf("%s was answered on stream %d, want stream %d", name, got, conn)
+		}
+		return out
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s never returned", name)
+	}
+	return exchangeOutcome{}
+}
+
+func TestStreamPool_retriesTheOpenersQueryWhenAnotherQueryEndsItsStream(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		close bool
+	}{
+		{"another query on it timed out", false},
+		{"it closed after answering another query", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			received := make(chan string, 8)
+			dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+				for n := 1; ; n++ {
+					q, err := readDNSFrame(s)
+					if err != nil {
+						return
+					}
+					resp := dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})
+					if conn > 1 {
+						if writeDNSFrame(s, resp) != nil {
+							return
+						}
+						continue
+					}
+					name, _ := dnsQuestion(q)
+					received <- name
+					if tc.close && n == 2 {
+						_ = writeDNSFrame(s, resp)
+						_ = s.(*net.TCPConn).CloseWrite()
+						_, _ = io.Copy(io.Discard, s)
+						return
+					}
+				}
+			})
+			p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+			defer p.close()
+			p.lateRead = 200 * time.Millisecond
+
+			opener := exchangeInBackground(p, 3*time.Second, "opener.example")
+			awaitQuestion(t, received, "opener.example")
+			c := p.share()
+			if c == nil {
+				t.Fatal("the stream the opener dialled is not open to another query")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+			if result := p.exchangeOn(ctx, c, dnsQuery("joiner.example"), c.describeShared(), true); result.err == nil {
+				p.release(result.conn)
+			}
+			awaitAnswer(t, opener, "opener.example", 2)
+		})
+	}
+}
+
+func TestStreamPool_retriesAgainWhenAnotherQueryEndsTheStreamARetryJoined(t *testing.T) {
+	received := make(chan string, 8)
+	dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+		for {
+			q, err := readDNSFrame(s)
+			if err != nil {
+				return
+			}
+			if conn == 1 {
+				name, _ := dnsQuestion(q)
+				received <- name
+				continue
+			}
+			if writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})) != nil || conn == 2 {
+				return
+			}
+		}
+	})
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+	defer p.close()
+	p.lateRead = 500 * time.Millisecond
+
+	exchangeInBackground(p, 100*time.Millisecond, "dropped.example")
+	awaitQuestion(t, received, "dropped.example")
+	fillPool(t, p, 1)
+	release := holdOpenSlots(p)
+	defer release()
+	retried := exchangeInBackground(p, 3*time.Second, "retried.example")
+	awaitQuestion(t, received, "retried.example")
+	release()
+	awaitAnswer(t, retried, "retried.example", 3)
+}
+
+func TestStreamPool_burstOnAServerThatAnswersOneQueryPerStream(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		close func(s net.Conn)
+	}{
+		{"graceful close", func(s net.Conn) {
+			_ = s.(*net.TCPConn).CloseWrite()
+			_, _ = io.Copy(io.Discard, s)
+		}},
+		{"close with queries unread", func(net.Conn) {}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+				q, err := readDNSFrame(s)
+				if err != nil {
+					return
+				}
+				if writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})) != nil {
+					return
+				}
+				tc.close(s)
+			})
+			p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+			defer p.close()
+
+			const burst = 12
+			var wg sync.WaitGroup
+			var failed atomic.Int32
+			for i := 0; i < burst; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					defer cancel()
+					query := dnsQuery(fmt.Sprintf("burst%d.example", i))
+					resp, err := p.exchange(ctx, query)
+					if err != nil {
+						failed.Add(1)
+						t.Logf("query %d: %v", i, err)
+						return
+					}
+					if got, _ := dnsQuestion(resp); got != string(query[12:]) {
+						t.Errorf("query %d received the answer to another query", i)
+					}
+				}(i)
+			}
+			wg.Wait()
+			if n := failed.Load(); n > 0 {
+				t.Errorf("%d of %d queries sent at once failed on a server that answers one query per stream", n, burst)
+			}
+		})
+	}
+}
+
+type scriptedReadConn struct {
+	failingConn
+	fail   chan error
+	closed chan struct{}
+	once   *sync.Once
+}
+
+func newScriptedReadConn() scriptedReadConn {
+	return scriptedReadConn{fail: make(chan error, 1), closed: make(chan struct{}), once: &sync.Once{}}
+}
+
+func (c scriptedReadConn) Read([]byte) (int, error) {
+	select {
+	case err := <-c.fail:
+		return 0, err
+	case <-c.closed:
+		return 0, net.ErrClosed
+	}
+}
+
+func (c scriptedReadConn) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return nil
+}
+
+func TestStreamPool_stopsSharingOnlyWhenTheServerEndsASharedStream(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		queries int
+		cause   error
+		serial  bool
+	}{
+		{"the server closed it", 2, io.EOF, true},
+		{"the stream closed before a second query was sent on it", 1, io.EOF, false},
+		{"the tunnel closed it", 2, coreErrs.ClosedError{Err: io.EOF}, false},
+		{"the Hysteria server could not reach the DNS server", 2, fmt.Errorf("read response length: %w", coreErrs.DialError{Message: "connection refused"}), false},
+		{"the server answered another question", 2, fmt.Errorf("%w: response does not answer the question sent under its ID", errDNSMalformed), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureLogs(t)
+			opened := make(chan scriptedReadConn, 4)
+			p := newStreamPool(t.Name(), func(context.Context) (net.Conn, error) {
+				conn := newScriptedReadConn()
+				opened <- conn
+				return conn, nil
+			})
+			defer p.close()
+			opener := exchangeInBackground(p, 500*time.Millisecond, "opener.example")
+			var c *pooledConn
+			for start := time.Now(); c == nil && time.Since(start) < 2*time.Second; time.Sleep(time.Millisecond) {
+				c = p.share()
+			}
+			if c == nil {
+				t.Fatal("the opener's stream never became open to another query")
+			}
+			if tc.queries > 1 {
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+					defer cancel()
+					p.exchangeOn(ctx, c, dnsQuery("joiner.example"), c.describeShared(), true)
+				}()
+			}
+			for start := time.Now(); ; time.Sleep(time.Millisecond) {
+				c.mu.Lock()
+				sent := c.answered + len(c.pending)
+				c.mu.Unlock()
+				if sent >= tc.queries {
+					break
+				}
+				if time.Since(start) > 2*time.Second {
+					t.Fatalf("%d queries were sent on the stream, want %d", sent, tc.queries)
+				}
+			}
+			(<-opened).fail <- tc.cause
+			for start := time.Now(); time.Since(start) < 2*time.Second; time.Sleep(time.Millisecond) {
+				p.mu.Lock()
+				_, open := p.busy[c]
+				serial := time.Now().Before(p.serialUntil)
+				p.mu.Unlock()
+				if !open {
+					if serial != tc.serial {
+						t.Errorf("sharing stopped = %v after a shared stream ended with %v, want %v", serial, tc.cause, tc.serial)
+					}
+					select {
+					case <-opener:
+					case <-opened:
+					case <-time.After(2 * time.Second):
+						t.Fatal("the opener's query was never failed on the stream")
+					}
+					var want []string
+					if tc.serial {
+						want = []string{"INFO dns " + p.label + ": the server ended a shared stream (answered 0, 2 waiting): read response length: EOF; sending one query per stream for 1m0s"}
+					}
+					if got := logs.linesMentioning(p.label); !slices.Equal(got, want) {
+						t.Errorf("logged %q, want %q", got, want)
+					}
+					return
+				}
+			}
+			t.Fatal("the stream never ended")
+		})
+	}
+}
+
+func TestStreamPool_logsOnceWhileItHasStoppedSharing(t *testing.T) {
+	logs := captureLogs(t)
+	p := newStreamPool(t.Name(), nil)
+	for i := 0; i < 2; i++ {
+		c := &pooledConn{conn: newScriptedReadConn(), answered: 1, joined: true, pending: map[uint16]*pendingQuery{
+			1: {flight: newFlight[streamResult](), deadline: time.Now().Add(time.Minute)},
+		}}
+		p.fail(c, io.EOF)
+	}
+	want := []string{"INFO dns " + p.label + ": the server ended a shared stream (answered 1, 1 waiting): EOF; sending one query per stream for 1m0s"}
+	if got := logs.linesMentioning(p.label); !slices.Equal(got, want) {
+		t.Errorf("logged %q, want %q", got, want)
+	}
+}
+
+func firstStreamSilentServer(t *testing.T) (func() (net.Conn, error), <-chan string) {
+	t.Helper()
+	received := make(chan string, 64)
+	dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+		for {
+			q, err := readDNSFrame(s)
+			if err != nil {
+				return
+			}
+			if conn == 1 {
+				name, _ := dnsQuestion(q)
+				received <- name
+				continue
+			}
+			if writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})) != nil {
+				return
+			}
+		}
+	})
+	return dial, received
+}
+
+func TestStreamPool_aQueryOnAStreamAnotherQueryTimedOutRetriesOnANewStream(t *testing.T) {
+	dial, received := firstStreamSilentServer(t)
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+	defer p.close()
+	p.lateRead = 500 * time.Millisecond
+
+	exchangeInBackground(p, 100*time.Millisecond, "dropped.example")
+	awaitQuestion(t, received, "dropped.example")
+	release := holdOpenSlots(p)
+	defer release()
+	waiting := exchangeInBackground(p, 2*time.Second, "waiting.example")
+	awaitQuestion(t, received, "waiting.example")
+	release()
+
+	if out := awaitAnswer(t, waiting, "waiting.example", 2); out.took > time.Second {
+		t.Errorf("the query took %v, want it retried when the other query's deadline closed the stream", out.took)
+	}
+}
+
+func TestStreamPool_doesNotJoinAStreamThatStoppedAnswering(t *testing.T) {
+	dial, received := firstStreamSilentServer(t)
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+	defer p.close()
+	p.stall = 100 * time.Millisecond
+
+	exchangeInBackground(p, 5*time.Second, "unanswered.example")
+	awaitQuestion(t, received, "unanswered.example")
+	release := holdOpenSlots(p)
+	defer release()
+	time.Sleep(2 * p.stall)
+	next := exchangeInBackground(p, 2*time.Second, "next.example")
+	select {
+	case name := <-received:
+		t.Fatalf("%q joined a stream that left a query unanswered for %v", name, 2*p.stall)
+	case <-time.After(200 * time.Millisecond):
+	}
+	release()
+	awaitAnswer(t, next, "next.example", 2)
+}
+
+func TestStreamPool_putsAtMostTheQueryCapOnOneStream(t *testing.T) {
+	var onFirst atomic.Int32
+	answer := make(chan struct{})
+	dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+		var writeMu sync.Mutex
+		for {
+			q, err := readDNSFrame(s)
+			if err != nil {
+				return
+			}
+			if conn == 1 {
+				onFirst.Add(1)
+			}
+			go func() {
+				<-answer
+				writeMu.Lock()
+				defer writeMu.Unlock()
+				_ = writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0}))
+			}()
+		}
+	})
+	gate := make(chan struct{})
+	var dials atomic.Int32
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+		if dials.Add(1) > 1 {
+			<-gate
+		}
+		return dial()
+	})
+	defer p.close()
+
+	const callers = 4 * dnsStreamMaxQueries
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, _ = p.exchange(ctx, dnsQuery(fmt.Sprintf("cap%d.example", i)))
+		}(i)
+	}
+	for start := time.Now(); onFirst.Load() < dnsStreamMaxQueries && time.Since(start) < 2*time.Second; {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if n := onFirst.Load(); n != dnsStreamMaxQueries {
+		t.Errorf("%d queries waited on one stream at once, want the cap of %d", n, dnsStreamMaxQueries)
+	}
+	close(gate)
+	close(answer)
+	wg.Wait()
+}
+
+func TestStreamPool_aStreamThatOpensAsThePoolClosesFailsItsCallerAtOnce(t *testing.T) {
+	srv := newFaultDNSServer(t, func(int, int) streamFault { return faultSilent })
+	dialing := make(chan struct{}, 1)
+	release := make(chan struct{})
+	p := newStreamPool("test", func(ctx context.Context) (net.Conn, error) {
+		dialing <- struct{}{}
+		<-release
+		return srv.dial(ctx)
+	})
+	done := exchangeInBackground(p, 5*time.Second, "example.com")
+	<-dialing
+	p.close()
+	close(release)
+	select {
+	case out := <-done:
+		if !errors.Is(out.err, net.ErrClosed) {
+			t.Errorf("err = %v, want net.ErrClosed", out.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a stream that finished opening after the pool closed carried its query as if the pool were open")
 	}
 }

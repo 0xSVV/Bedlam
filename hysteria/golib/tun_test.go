@@ -526,9 +526,12 @@ func TestServeDNSPackets_nonDNSPayloadLogsItsSizeOnly(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("no SERVFAIL")
 	}
-	want := "WARN dns DNS error: " + h.dns.ident + ": not a DNS query with one question (1400 bytes)"
-	if got := logs.linesMentioning(h.dns.ident); len(got) != 1 || got[0] != want {
+	want := "INFO dns Refused a packet on port 53 that is not a single DNS query (1400 bytes)"
+	if got := logs.linesMentioning("port 53"); len(got) != 1 || got[0] != want {
 		t.Errorf("logged %q, want exactly %q", got, want)
+	}
+	if got := logs.linesMentioning(h.dns.ident); len(got) != 0 {
+		t.Errorf("logged %q, want no upstream error for a refused packet", got)
 	}
 	if stub.calls.Load() != 0 {
 		t.Errorf("resolver calls = %d", stub.calls.Load())
@@ -538,20 +541,24 @@ func TestServeDNSPackets_nonDNSPayloadLogsItsSizeOnly(t *testing.T) {
 func TestLogDNSError_invalidPayloadsDoNotMuteUpstreamErrors(t *testing.T) {
 	logs := captureLogs(t)
 	id := uniqueUpstreamID(t, "tls")
+	payload := nonDNSPayload(1400)
 	invalid := fmt.Errorf("%w (1400 bytes)", errDNSQueryInvalid)
 	upstream := errors.New("read response length: i/o timeout")
 
-	logDNSError(id, invalid)
-	logDNSError(id, upstream)
-	logDNSError(id, invalid)
-	logDNSError(id, upstream)
+	logDNSError(id, payload, invalid)
+	logDNSError(id, payload, upstream)
+	logDNSError(id, payload, invalid)
+	logDNSError(id, payload, upstream)
 
-	got := logs.linesMentioning(id)
-	if len(got) != 2 {
-		t.Fatalf("logged %q, want one line per kind within the rate limit", got)
+	refused := logs.linesMentioning("port 53")
+	wantRefused := "INFO dns Refused a packet on port 53 that is not a single DNS query (1400 bytes)"
+	if len(refused) != 1 || refused[0] != wantRefused {
+		t.Errorf("logged %q, want exactly %q within the rate limit", refused, wantRefused)
 	}
-	if !strings.Contains(got[0], errDNSQueryInvalid.Error()) || !strings.Contains(got[1], upstream.Error()) {
-		t.Errorf("logged %q, want the refusal and then the upstream error", got)
+	errs := logs.linesMentioning(id)
+	wantErr := "WARN dns DNS error: " + id + ": " + upstream.Error()
+	if len(errs) != 1 || errs[0] != wantErr {
+		t.Errorf("logged %q, want exactly %q within the rate limit", errs, wantErr)
 	}
 }
 

@@ -167,6 +167,7 @@ func (r *h3Resolver) exchange(ctx context.Context, query []byte) ([]byte, error)
 		r.gate.reset()
 		return resp, nil
 	}
+	err = &serverConnError{err}
 	var dialErr coreErrs.DialError
 	if errors.As(err, &dialErr) {
 		r.markUDPDown()

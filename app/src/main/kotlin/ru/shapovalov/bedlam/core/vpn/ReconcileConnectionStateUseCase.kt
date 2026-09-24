@@ -6,16 +6,30 @@ import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.isActiveTunnel
 
-@Inject
-class ReconcileConnectionStateUseCase(
+class ReconcileConnectionStateUseCase internal constructor(
     private val client: HysteriaClient,
-    private val launcher: VpnServiceLauncher,
+    private val isServiceRunning: () -> Boolean,
+    private val consentRequired: () -> Boolean,
+    private val startActiveProfile: suspend () -> StartActiveProfileResult,
     private val runtimeStateRepository: VpnRuntimeStateRepository,
 ) {
-    suspend operator fun invoke() {
+    @Inject
+    constructor(
+        client: HysteriaClient,
+        launcher: VpnServiceLauncher,
+        runtimeStateRepository: VpnRuntimeStateRepository,
+    ) : this(
+        client = client,
+        isServiceRunning = launcher::isServiceRunning,
+        consentRequired = { launcher.prepareIntent() != null },
+        startActiveProfile = { launcher.startActiveProfile(userInitiated = false) },
+        runtimeStateRepository = runtimeStateRepository,
+    )
+
+    suspend operator fun invoke(): ReconcileResult {
         val clientActive = client.state.value.isActiveTunnel
-        val running = withContext(Dispatchers.Default) { launcher.isServiceRunning() }
-        if (clientActive && running) return
+        val running = withContext(Dispatchers.Default) { isServiceRunning() }
+        if (clientActive && running) return ReconcileResult.Unchanged
         if (clientActive) {
             runtimeStateRepository.markInterrupted(
                 serviceEpoch = runtimeStateRepository.snapshot().serviceEpoch,
@@ -26,19 +40,27 @@ class ReconcileConnectionStateUseCase(
 
         val runtimeState = runtimeStateRepository.snapshot()
         if (!runtimeState.expectsActiveTunnel) {
-            return
+            return ReconcileResult.Unchanged
         }
 
-        if (launcher.prepareIntent() != null) {
-            runtimeStateRepository.markFailed("VPN permission is required")
-            return
+        if (consentRequired()) {
+            return fail("VPN permission is required")
         }
 
-        when (launcher.startActiveProfile()) {
-            StartActiveProfileResult.Started -> Unit
-            StartActiveProfileResult.NoActiveProfile -> {
-                runtimeStateRepository.markFailed("No active profile")
-            }
+        return when (startActiveProfile()) {
+            StartActiveProfileResult.Started -> ReconcileResult.Restarted
+            StartActiveProfileResult.NoActiveProfile -> fail("No active profile")
         }
     }
+
+    private suspend fun fail(reason: String): ReconcileResult {
+        runtimeStateRepository.markFailed(reason)
+        return ReconcileResult.Failed(reason)
+    }
+}
+
+sealed interface ReconcileResult {
+    data object Unchanged : ReconcileResult
+    data object Restarted : ReconcileResult
+    data class Failed(val reason: String) : ReconcileResult
 }

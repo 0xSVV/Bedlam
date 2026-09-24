@@ -10,15 +10,18 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/client"
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
 
 const (
-	dnsAttemptTimeout    = 5 * time.Second
-	dnsMinAttemptTimeout = 1500 * time.Millisecond
+	dnsAttemptTimeout     = 5 * time.Second
+	dnsMinAttemptTimeout  = 1500 * time.Millisecond
+	dnsPreferenceCooldown = 5 * time.Minute
+	dnsPreferenceHold     = time.Minute
 )
 
 const (
@@ -52,8 +55,14 @@ type dnsUpstream struct {
 	servers   []string
 	resolvers []dnsResolver
 	listen    []netip.Addr
-	preferred atomic.Int32
 	ident     string
+	now       func() time.Time
+
+	mu             sync.Mutex
+	preferred      int
+	preferredUntil time.Time
+	changedAt      time.Time
+	answers        map[int]uint64
 }
 
 func newDNSUpstream(c client.Client, cfg *dnsUpstreamConfig) (*dnsUpstream, error) {
@@ -107,40 +116,213 @@ func newDNSResolver(c client.Client, transport, server string) (dnsResolver, err
 	}
 }
 
+type attemptResult struct {
+	index int
+	resp  []byte
+	err   error
+}
+
 func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error) {
 	n := len(u.resolvers)
 	if n == 0 {
 		return nil, errors.New("dns upstream has no resolvers")
 	}
-	start := int(u.preferred.Load()) % n
-	var lastErr error
-	for i := 0; i < n; i++ {
-		if ctx.Err() != nil {
-			break
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	began := time.Now()
+	queryDeadline, ok := ctx.Deadline()
+	if !ok {
+		queryDeadline = began.Add(dnsQueryTimeout)
+	}
+	first := u.firstIndex()
+	firstAnswers := u.answersBy(first)
+	results := make(chan attemptResult, n)
+	var slice *time.Timer
+	defer func() {
+		if slice != nil {
+			slice.Stop()
 		}
-		idx := (start + i) % n
-		r := u.resolvers[idx]
-		actx, cancel := context.WithTimeout(ctx, u.attemptBudget(ctx, n-i))
-		resp, err := r.exchange(actx, query)
-		cancel()
-		if err == nil {
-			if idx != start {
-				u.preferred.Store(int32(idx))
+	}()
+	var sliceEnd <-chan time.Time
+	var cancels []context.CancelFunc
+	started, pending, latest := 0, 0, first
+	latestStart := began
+	launch := func() {
+		latest = (first + started) % n
+		latestStart = time.Now()
+		budget := u.attemptBudget(ctx, n-started)
+		started++
+		pending++
+		deadline := queryDeadline
+		if started == n && latestStart.Add(budget).Before(deadline) {
+			deadline = latestStart.Add(budget)
+		}
+		actx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
+		cancels = append(cancels, cancel)
+		if slice == nil {
+			slice = time.NewTimer(budget)
+		} else {
+			slice.Reset(budget)
+		}
+		sliceEnd = slice.C
+		index := latest
+		go func() {
+			defer cancel()
+			resp, err := u.resolvers[index].exchange(actx, query)
+			results <- attemptResult{index: index, resp: resp, err: err}
+		}()
+	}
+
+	launch()
+	done := ctx.Done()
+	var latestErr error
+	tunnelFailed, latestFailed, lastSliceEnded, stopping := false, false, false, false
+	for {
+		select {
+		case res := <-results:
+			pending--
+			if res.err == nil {
+				u.noteAnswer(first, res.index, firstAnswers, tunnelFailed)
+				u.settleLate(ctx, results, pending)
+				return res.resp, nil
 			}
-			return resp, nil
+			tunnelFailed = tunnelFailed || isTunnelFailure(res.err)
+			if res.index != latest {
+				break
+			}
+			latestErr, latestFailed = res.err, true
+			if started < n && !stopping {
+				if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
+					log(LogLevelWarn, srcDNS, "DNS %s failed, trying next: %s", id, res.err)
+				}
+				latestFailed = false
+				launch()
+			}
+		case <-sliceEnd:
+			if started == n {
+				sliceEnd, lastSliceEnded = nil, true
+				break
+			}
+			if id := u.resolvers[latest].id(); dnsSlowServerLimiter.allow(id) {
+				log(LogLevelInfo, srcDNS, "DNS %s has not answered in %s, trying next", id, diagDuration(time.Since(latestStart)))
+			}
+			latestFailed = false
+			launch()
+		case <-done:
+			done, sliceEnd, stopping = nil, nil, true
+			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				for _, cancel := range cancels {
+					cancel()
+				}
+			}
 		}
-		lastErr = err
-		if i+1 < n && dnsFailoverLimiter.allow(r.id()) {
-			log(LogLevelWarn, srcDNS, "DNS %s failed, trying next: %s", r.id(), err)
+		if lastSliceEnded && latestFailed || pending == 0 && (started == n || stopping) {
+			u.settleLate(ctx, results, pending)
+			return nil, noAnswer(began, latestErr)
 		}
 	}
-	// Every server failed: start somewhere else next time so a dead first
-	// entry cannot pin every future query to the same losing order.
-	u.preferred.Store(int32((start + 1) % n))
-	if lastErr == nil {
-		lastErr = ctx.Err()
+}
+
+func noAnswer(began time.Time, err error) error {
+	if isTimeoutClass(err) {
+		return fmt.Errorf("no answer in %s: %w", diagDuration(time.Since(began)), err)
 	}
-	return nil, lastErr
+	return err
+}
+
+func (u *dnsUpstream) clock() time.Time {
+	if u.now != nil {
+		return u.now()
+	}
+	return time.Now()
+}
+
+func (u *dnsUpstream) firstIndex() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.preferred != 0 && u.clock().Before(u.preferredUntil) {
+		return u.preferred
+	}
+	return 0
+}
+
+func (u *dnsUpstream) answersBy(index int) uint64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.answers[index]
+}
+
+func (u *dnsUpstream) countAnswer(index int) {
+	u.mu.Lock()
+	if u.answers == nil {
+		u.answers = map[int]uint64{}
+	}
+	u.answers[index]++
+	u.mu.Unlock()
+}
+
+func (u *dnsUpstream) noteAnswer(first, answered int, firstAnswers uint64, tunnelFailed bool) {
+	u.countAnswer(answered)
+	switch {
+	case answered == 0:
+		u.prefer(0, first)
+	case answered != first && !tunnelFailed && u.answersBy(first) == firstAnswers:
+		u.prefer(answered, first)
+	}
+}
+
+func (u *dnsUpstream) prefer(index, instead int) {
+	u.mu.Lock()
+	now := u.clock()
+	changed := u.preferred != 0
+	if index != 0 {
+		changed = u.preferred != index || !now.Before(u.preferredUntil)
+	}
+	if !changed || !u.changedAt.IsZero() && now.Sub(u.changedAt) < dnsPreferenceHold {
+		u.mu.Unlock()
+		return
+	}
+	u.preferred, u.changedAt = index, now
+	if index != 0 {
+		u.preferredUntil = now.Add(dnsPreferenceCooldown)
+	}
+	u.mu.Unlock()
+	if index == 0 {
+		log(LogLevelInfo, srcDNS, "DNS answered by %s again", u.resolvers[0].id())
+		return
+	}
+	log(LogLevelInfo, srcDNS, "DNS now answered by %s; %s did not answer", u.resolvers[index].id(), u.resolvers[instead].id())
+}
+
+type serverConnError struct{ err error }
+
+func (e *serverConnError) Error() string { return e.err.Error() }
+
+func (e *serverConnError) Unwrap() error { return e.err }
+
+func isTunnelFailure(err error) bool {
+	var closed coreErrs.ClosedError
+	if errors.Is(err, errDialBackoff) || errors.As(err, &closed) {
+		return true
+	}
+	var own *serverConnError
+	return errors.Is(err, net.ErrClosed) && !errors.As(err, &own)
+}
+
+func (u *dnsUpstream) settleLate(ctx context.Context, results <-chan attemptResult, pending int) {
+	if pending == 0 {
+		return
+	}
+	late := lateAnswer(ctx)
+	go func() {
+		for ; pending > 0; pending-- {
+			if res := <-results; res.err == nil {
+				u.countAnswer(res.index)
+				late(res.resp)
+			}
+		}
+	}()
 }
 
 // attemptBudget shares whatever time is left across the servers still to try,
@@ -318,3 +500,5 @@ func dohDialAddr(rawURL string) (host, dial string, err error) {
 }
 
 var dnsFailoverLimiter = newRateLimiter(2 * time.Second)
+
+var dnsSlowServerLimiter = newRateLimiter(time.Minute)

@@ -26,6 +26,9 @@ class FakeHysteriaClient(
     var validation: (HysteriaConfig) -> Result<Unit> = { Result.success(Unit) }
     var validateCalls = 0
         private set
+    val resets = mutableListOf<Reset>()
+
+    enum class Reset { CLEARING_DNS_CACHE, KEEPING_DNS_CACHE }
 
     override val state: StateFlow<ConnectionState> = connectionState
 
@@ -45,7 +48,14 @@ class FakeHysteriaClient(
     override suspend fun stop(reason: DisconnectReason) = Unit
     override fun shutdown(reason: DisconnectReason) = Unit
     override suspend fun closeSession() = Unit
-    override suspend fun resetConnections() = Unit
+    override suspend fun resetConnections() {
+        resets += Reset.CLEARING_DNS_CACHE
+    }
+
+    override suspend fun resetConnectionsKeepingDnsCache() {
+        resets += Reset.KEEPING_DNS_CACHE
+    }
+
     override suspend fun checkConnection() = Unit
     override fun stats(): HysteriaClient.TrafficStats? = null
 

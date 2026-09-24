@@ -276,6 +276,11 @@ class HysteriaClientImpl : HysteriaClient {
         withContext(Dispatchers.IO) { runCatching { s.resetConnections() } }
     }
 
+    override suspend fun resetConnectionsKeepingDnsCache() {
+        val s = session ?: return
+        withContext(Dispatchers.IO) { runCatching { s.resetConnectionsKeepingDNSCache() } }
+    }
+
     override suspend fun checkConnection() {
         val s = session ?: return
         withContext(Dispatchers.IO) { runCatching { s.checkConnection() } }

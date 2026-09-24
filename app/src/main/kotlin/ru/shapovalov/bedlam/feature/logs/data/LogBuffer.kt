@@ -38,12 +38,12 @@ class LogBuffer internal constructor(
 
     data class Snapshot(
         val entries: List<LogEntry> = emptyList(),
-        val droppedCount: Long = 0L,
-        val firstIndex: Long = 0L,
+        val dropped: DroppedLines = DroppedLines(),
+        val removedCount: Long = 0L,
     )
 
     private val lock = Any()
-    private val ring = LogRing(CAPACITY)
+    private val ring = TieredLogRing(IMPORTANT_CAPACITY, DEBUG_CAPACITY)
     private var unpublished = false
     private val lineAdded = Channel<Unit>(Channel.CONFLATED)
     private val _snapshot = MutableStateFlow(Snapshot())
@@ -74,6 +74,10 @@ class LogBuffer internal constructor(
         }
     }
 
+    fun current(): Snapshot = synchronized(lock) { currentLocked() }
+
+    private fun currentLocked(): Snapshot = Snapshot(ring.snapshot(), ring.dropped, ring.removedCount)
+
     private suspend fun publishAddedLines() {
         while (true) {
             if (publishUnpublished()) delay(PUBLISH_INTERVAL_MS)
@@ -89,11 +93,12 @@ class LogBuffer internal constructor(
 
     private fun publishLocked() {
         unpublished = false
-        _snapshot.value = Snapshot(ring.snapshot(), ring.droppedCount, ring.firstIndex)
+        _snapshot.value = currentLocked()
     }
 
     companion object {
-        const val CAPACITY = 5000
+        const val IMPORTANT_CAPACITY = 2000
+        const val DEBUG_CAPACITY = 5000
         private const val PUBLISH_INTERVAL_MS = 100L
     }
 }

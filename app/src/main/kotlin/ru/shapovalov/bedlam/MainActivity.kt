@@ -104,7 +104,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startVpnService(profile: Profile) {
-        vpnServiceLauncher.start(profile)
+        vpnServiceLauncher.start(profile, userInitiated = true)
         ensureNotificationPermission()
     }
 

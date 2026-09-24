@@ -7,11 +7,15 @@ import com.arkivanov.mvikotlin.core.instancekeeper.getStore
 import com.arkivanov.mvikotlin.extensions.coroutines.stateFlow
 import kotlinx.coroutines.flow.StateFlow
 import ru.shapovalov.bedlam.core.util.componentScope
+import ru.shapovalov.bedlam.feature.logs.data.LogExportDevice
+import ru.shapovalov.bedlam.feature.logs.data.LogExporter
 import ru.shapovalov.hysteria.api.HysteriaClient
+import java.time.ZonedDateTime
 
 class LogsComponent(
     componentContext: ComponentContext,
     storeFactory: LogsStoreFactory,
+    private val exporter: LogExporter,
 ) : ComponentContext by componentContext {
 
     private val store = instanceKeeper.getStore { storeFactory.create() }
@@ -29,4 +33,11 @@ class LogsComponent(
 
     fun onTogglePause() = store.accept(LogsStore.Intent.TogglePaused)
     fun onClear() = store.accept(LogsStore.Intent.Clear)
+
+    suspend fun exportLog(
+        device: LogExportDevice,
+        exportedAt: ZonedDateTime,
+        hideAddresses: Boolean,
+    ): String =
+        exporter.export(device, exportedAt, hideAddresses)
 }

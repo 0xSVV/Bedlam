@@ -597,3 +597,38 @@ func TestUDPResolver_dialErrorSwitchSurvivesNewSession(t *testing.T) {
 		t.Errorf("udp dials = %d, want 1 (server policy switch persists)", udpCalls)
 	}
 }
+
+func TestDNSCacheResolve_loneBlackholedUDPServerFallsBackToTCP(t *testing.T) {
+	fake := newFakeUDPConn(nil)
+	fc := &fakeClient{
+		udp: func() (client.HyUDPConn, error) { return fake, nil },
+		tcp: func(string) (net.Conn, error) {
+			return pipeDNSServer(t, func(q []byte) []byte {
+				return dnsResponseFor(q, 60, [4]byte{7, 7, 7, 7})
+			}), nil
+		},
+	}
+	up := &dnsUpstream{resolvers: []dnsResolver{newUDPResolver(fc, "1.1.1.1:53")}, ident: uniqueUpstreamID(t, "udp")}
+	defer up.close()
+	c := newDNSCache()
+
+	var wg sync.WaitGroup
+	for i := 0; i < fallbackGateThreshold; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if _, err := c.resolve(context.Background(), up, dnsQuery(fmt.Sprintf("lost%d.example", i)), nil); err == nil {
+				t.Errorf("lookup %d: the UDP relay drops every packet, so it must fail", i)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	resp, err := c.resolve(context.Background(), up, dnsQuery("next.example"), nil)
+	if err != nil {
+		t.Fatalf("%d lookups timed out over UDP, so the next must be answered over TCP: %v", fallbackGateThreshold, err)
+	}
+	if resp[len(resp)-1] != 7 {
+		t.Errorf("answer = %v, want the TCP answer", resp)
+	}
+}

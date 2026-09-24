@@ -120,8 +120,8 @@ func TestDNSUpstream_failsOverPastARuntResponse(t *testing.T) {
 	if healthy.calls.Load() != 1 {
 		t.Error("the healthy server was never tried")
 	}
-	if up.preferred.Load() != 1 {
-		t.Errorf("preferred = %d, want the healthy server", up.preferred.Load())
+	if up.firstIndex() != 1 {
+		t.Errorf("preferred = %d, want the healthy server", up.firstIndex())
 	}
 }
 

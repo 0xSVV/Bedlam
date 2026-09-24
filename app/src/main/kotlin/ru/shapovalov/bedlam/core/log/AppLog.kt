@@ -27,6 +27,8 @@ class AppLog @Inject constructor() {
 
     fun error(source: String, message: String) = add(LogLevel.ERROR, source, message)
 
+    fun log(level: LogLevel, source: String, message: String) = add(level, source, message)
+
     private fun add(level: LogLevel, source: String, message: String) {
         entries.tryEmit(
             LogEntry(

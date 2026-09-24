@@ -6,9 +6,14 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"regexp"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	coreErrs "github.com/apernet/hysteria/core/v2/errors"
 )
 
 func TestParseDNSUpstream_json(t *testing.T) {
@@ -259,8 +264,8 @@ func TestDNSUpstream_failoverToNext(t *testing.T) {
 	if failing.calls.Load() != 1 || working.calls.Load() != 1 {
 		t.Errorf("calls a=%d b=%d", failing.calls.Load(), working.calls.Load())
 	}
-	if up.preferred.Load() != 1 {
-		t.Errorf("preferred = %d, want 1", up.preferred.Load())
+	if up.firstIndex() != 1 {
+		t.Errorf("preferred = %d, want 1", up.firstIndex())
 	}
 
 	if _, err := up.exchange(context.Background(), dnsQuery("example.org")); err != nil {
@@ -311,21 +316,177 @@ func TestDNSUpstream_reachesEveryServerWithinTheQueryBudget(t *testing.T) {
 			t.Errorf("resolver %s called %d times, want 1", r.name, r.calls.Load())
 		}
 	}
-	if up.preferred.Load() != 3 {
-		t.Errorf("preferred = %d, want 3", up.preferred.Load())
+	if up.firstIndex() != 3 {
+		t.Errorf("preferred = %d, want 3", up.firstIndex())
 	}
 }
 
-func TestDNSUpstream_rotatesAfterTotalFailure(t *testing.T) {
-	a := &stubResolver{name: "a", reply: func([]byte) ([]byte, error) { return nil, errors.New("a down") }}
-	b := &stubResolver{name: "b", reply: func([]byte) ([]byte, error) { return nil, errors.New("b down") }}
-	up := &dnsUpstream{resolvers: []dnsResolver{a, b}, ident: "tcp|a,b"}
+type callOrder struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (o *callOrder) note(name string) {
+	o.mu.Lock()
+	o.names = append(o.names, name)
+	o.mu.Unlock()
+}
+
+func (o *callOrder) take() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	names := o.names
+	o.names = nil
+	return names
+}
+
+type fakeClock struct{ nanos atomic.Int64 }
+
+func newFakeClock() *fakeClock {
+	c := &fakeClock{}
+	c.nanos.Store(time.Date(2026, 9, 24, 15, 41, 0, 0, time.UTC).UnixNano())
+	return c
+}
+
+func (c *fakeClock) now() time.Time { return time.Unix(0, c.nanos.Load()) }
+
+func (c *fakeClock) advance(d time.Duration) { c.nanos.Add(int64(d)) }
+
+type switchableServer struct {
+	*stubResolver
+	down    atomic.Bool
+	failure atomic.Pointer[error]
+}
+
+func newSwitchableServer(name string, ip byte, order *callOrder) *switchableServer {
+	s := &switchableServer{}
+	s.failWith(errors.New(name + " refused"))
+	s.stubResolver = &stubResolver{name: name, reply: func(q []byte) ([]byte, error) {
+		order.note(name)
+		if s.down.Load() {
+			return nil, *s.failure.Load()
+		}
+		return echoAnswer([4]byte{ip, ip, ip, ip})(q)
+	}}
+	return s
+}
+
+func (s *switchableServer) failWith(err error) { s.failure.Store(&err) }
+
+func TestDNSUpstream_keepsTheOrderAfterTotalFailure(t *testing.T) {
+	order := &callOrder{}
+	a, b := newSwitchableServer("a", 1, order), newSwitchableServer("b", 2, order)
+	a.down.Store(true)
+	b.down.Store(true)
+	up := &dnsUpstream{resolvers: []dnsResolver{a, b}, ident: uniqueUpstreamID(t, "tcp")}
 
 	if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err == nil {
-		t.Fatal("expected failure")
+		t.Fatal("every server fails, so the query must fail")
 	}
-	if up.preferred.Load() != 1 {
-		t.Errorf("preferred = %d, want 1 so the next query starts elsewhere", up.preferred.Load())
+	order.take()
+	if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err == nil {
+		t.Fatal("every server still fails, so the query must fail")
+	}
+	if got := order.take(); len(got) != 2 || got[0] != "a" {
+		t.Errorf("the query after a total failure tried %v, want the first configured server first", got)
+	}
+}
+
+func TestDNSUpstream_returnsToTheFirstServerAfterTheCooldown(t *testing.T) {
+	order := &callOrder{}
+	first, second := newSwitchableServer("tls|first", 1, order), newSwitchableServer("tls|second", 2, order)
+	clock := newFakeClock()
+	up := &dnsUpstream{resolvers: []dnsResolver{first, second}, ident: uniqueUpstreamID(t, "tls"), now: clock.now}
+	first.down.Store(true)
+
+	resp, err := up.exchange(context.Background(), dnsQuery("example.com"))
+	if err != nil || resp[len(resp)-1] != 2 {
+		t.Fatalf("resp = %v, err = %v, want the second server's answer", resp, err)
+	}
+	order.take()
+
+	clock.advance(dnsPreferenceCooldown - time.Second)
+	if _, err := up.exchange(context.Background(), dnsQuery("example.org")); err != nil {
+		t.Fatalf("a query within the cool-down: %v", err)
+	}
+	if got := order.take(); len(got) != 1 || got[0] != "tls|second" {
+		t.Errorf("a query within the cool-down tried %v, want only the server that answered", got)
+	}
+
+	first.down.Store(false)
+	clock.advance(2 * time.Second)
+	resp, err = up.exchange(context.Background(), dnsQuery("example.net"))
+	if err != nil || resp[len(resp)-1] != 1 {
+		t.Fatalf("resp = %v, err = %v, want the first server's answer once the cool-down ended", resp, err)
+	}
+	if got := order.take(); len(got) != 1 || got[0] != "tls|first" {
+		t.Errorf("the query after the cool-down tried %v, want the first configured server alone", got)
+	}
+}
+
+func TestDNSUpstream_tunnelFailuresLeaveThePreference(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"dial backoff", fmt.Errorf("dial DoT server one.one.one.one:853: %w", errDialBackoff)},
+		{"closed tunnel", fmt.Errorf("DoT one.one.one.one:853: %w", coreErrs.ClosedError{})},
+		{"closed stream", fmt.Errorf("read response length: %w", net.ErrClosed)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			order := &callOrder{}
+			first, second := newSwitchableServer("tls|first", 1, order), newSwitchableServer("tls|second", 2, order)
+			first.failWith(tc.err)
+			first.down.Store(true)
+			up := &dnsUpstream{resolvers: []dnsResolver{first, second}, ident: uniqueUpstreamID(t, "tls")}
+
+			if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err != nil {
+				t.Fatalf("the second server answers, so the query must succeed: %v", err)
+			}
+			order.take()
+			first.down.Store(false)
+			resp, err := up.exchange(context.Background(), dnsQuery("example.org"))
+			if err != nil || resp[len(resp)-1] != 1 {
+				t.Errorf("resp = %v, err = %v, want the first server's answer", resp, err)
+			}
+			if got := order.take(); len(got) != 1 || got[0] != "tls|first" {
+				t.Errorf("after a tunnel failure the next query tried %v, want the first server still first", got)
+			}
+		})
+	}
+}
+
+func TestDNSUpstream_logsWhenThePreferredServerChanges(t *testing.T) {
+	logs := captureLogs(t)
+	order := &callOrder{}
+	first, second := newSwitchableServer("tls|one.one.one.one:853", 1, order), newSwitchableServer("tls|1.1.1.1:853", 2, order)
+	clock := newFakeClock()
+	up := &dnsUpstream{resolvers: []dnsResolver{first, second}, ident: uniqueUpstreamID(t, "tls"), now: clock.now}
+	query := func() {
+		t.Helper()
+		if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+	}
+
+	first.down.Store(true)
+	query()
+	clock.advance(dnsPreferenceCooldown + time.Second)
+	first.down.Store(false)
+	query()
+	first.down.Store(true)
+	query()
+	first.down.Store(false)
+	clock.advance(dnsPreferenceCooldown + time.Second)
+	query()
+
+	away := logs.linesMentioning("DNS now answered by")
+	if len(away) != 1 || away[0] != "INFO dns DNS now answered by tls|1.1.1.1:853; tls|one.one.one.one:853 did not answer" {
+		t.Errorf("logged %q, want one line naming the new server and the one that did not answer", away)
+	}
+	back := logs.linesMentioning("again")
+	if len(back) != 1 || back[0] != "INFO dns DNS answered by tls|one.one.one.one:853 again" {
+		t.Errorf("logged %q, want one line when the first server answers again", back)
 	}
 }
 
@@ -364,6 +525,195 @@ func TestDNSUpstream_stopsWhenContextDone(t *testing.T) {
 	}
 }
 
+func blockUntilCleanup(t *testing.T) <-chan struct{} {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	return release
+}
+
+func TestDNSUpstream_slowServerAnswersAfterItsSliceWhileTheNextIsPending(t *testing.T) {
+	release := blockUntilCleanup(t)
+	nextStarted := make(chan struct{})
+	slow := &stubResolver{name: "slow", reply: func(q []byte) ([]byte, error) {
+		<-nextStarted
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	pending := &stubResolver{name: "pending", reply: func([]byte) ([]byte, error) {
+		close(nextStarted)
+		<-release
+		return nil, errors.New("released")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{slow, pending}, ident: "tls|slow,pending"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("the first server answers after its slice while the next is pending, so the query must succeed: %v", err)
+	}
+	if resp[len(resp)-1] != 1 {
+		t.Errorf("answer = %v, want the first server's", resp)
+	}
+	if pending.calls.Load() != 1 {
+		t.Errorf("the next server was called %d times, want it started once the first had its slice", pending.calls.Load())
+	}
+}
+
+func TestDNSUpstream_slowServerThatKeepsTryingIsLoggedAsInfo(t *testing.T) {
+	logs := captureLogs(t)
+	release := blockUntilCleanup(t)
+	nextStarted := make(chan struct{})
+	slowID := uniqueUpstreamID(t, "tls")
+	slow := &stubResolver{name: slowID, reply: func(q []byte) ([]byte, error) {
+		<-nextStarted
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	pending := &stubResolver{name: uniqueUpstreamID(t, "tls"), reply: func([]byte) ([]byte, error) {
+		close(nextStarted)
+		<-release
+		return nil, errors.New("released")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{slow, pending}, ident: uniqueUpstreamID(t, "tls")}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if _, err := up.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+
+	lines := logs.linesMentioning(slowID + " has not answered in")
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "INFO dns DNS "+slowID+" has not answered in ") || !strings.HasSuffix(lines[0], ", trying next") {
+		t.Errorf("logged %q, want one INFO line: the slow server keeps trying, nothing failed yet", lines)
+	}
+}
+
+func TestDNSUpstream_slowServerNoteIsLoggedOncePerMinute(t *testing.T) {
+	logs := captureLogs(t)
+	release := blockUntilCleanup(t)
+	nextStarted := make(chan struct{}, 2)
+	slowID := uniqueUpstreamID(t, "tls")
+	slow := &stubResolver{name: slowID, reply: func(q []byte) ([]byte, error) {
+		<-nextStarted
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	pending := &stubResolver{name: uniqueUpstreamID(t, "tls"), reply: func([]byte) ([]byte, error) {
+		nextStarted <- struct{}{}
+		<-release
+		return nil, errors.New("released")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{slow, pending}, ident: uniqueUpstreamID(t, "tls")}
+	exchange := func() {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if _, err := up.exchange(ctx, dnsQuery("example.com")); err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+	}
+
+	exchange()
+	time.Sleep(2100 * time.Millisecond)
+	exchange()
+
+	if lines := logs.linesMentioning(slowID + " has not answered in"); len(lines) != 1 {
+		t.Errorf("logged %q, want one line a minute for a server that stays slow", lines)
+	}
+}
+
+func TestDNSUpstream_keepsServerOrderWhileStaggering(t *testing.T) {
+	release := blockUntilCleanup(t)
+	var mu sync.Mutex
+	starts := map[string]time.Time{}
+	began := func(name string) {
+		mu.Lock()
+		starts[name] = time.Now()
+		mu.Unlock()
+	}
+	secondStarted := make(chan struct{})
+	first := &stubResolver{name: "first", reply: func([]byte) ([]byte, error) {
+		<-secondStarted
+		return nil, errors.New("first refused")
+	}}
+	second := &stubResolver{name: "second", reply: func([]byte) ([]byte, error) {
+		began("second")
+		close(secondStarted)
+		<-release
+		return nil, errors.New("released")
+	}}
+	third := &stubResolver{name: "third", reply: func(q []byte) ([]byte, error) {
+		began("third")
+		return echoAnswer([4]byte{3, 3, 3, 3})(q)
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{first, second, third}, ident: "tls|first,second,third"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*dnsMinAttemptTimeout)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("the third server answers, so the query must succeed: %v", err)
+	}
+	if resp[len(resp)-1] != 3 {
+		t.Errorf("answer = %v, want the third server's", resp)
+	}
+	mu.Lock()
+	gap := starts["third"].Sub(starts["second"])
+	mu.Unlock()
+	if gap < dnsMinAttemptTimeout-100*time.Millisecond {
+		t.Errorf("the third server started %v after the second, want the second given its whole slice although the first failed meanwhile", gap)
+	}
+}
+
+func TestDNSUpstream_failedServerStartsTheNextAtOnce(t *testing.T) {
+	failing := &stubResolver{name: "failing", reply: func([]byte) ([]byte, error) { return nil, errors.New("refused") }}
+	working := &stubResolver{name: "working", reply: echoAnswer([4]byte{2, 2, 2, 2})}
+	up := &dnsUpstream{resolvers: []dnsResolver{failing, working}, ident: "tls|failing,working"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	start := time.Now()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	if resp[len(resp)-1] != 2 {
+		t.Errorf("answer = %v, want the second server's", resp)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("the second server answered after %v, want it started as soon as the first failed", elapsed)
+	}
+}
+
+func TestDNSUpstream_lateAnswerFromAServerThatLostReachesTheHook(t *testing.T) {
+	release := make(chan struct{})
+	slow := &stubResolver{name: "slow", reply: func(q []byte) ([]byte, error) {
+		<-release
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	fast := &stubResolver{name: "fast", reply: echoAnswer([4]byte{2, 2, 2, 2})}
+	up := &dnsUpstream{resolvers: []dnsResolver{slow, fast}, ident: "tls|slow,fast"}
+
+	base, late := collectLateAnswers(context.Background())
+	ctx, cancel := context.WithTimeout(base, 3*time.Second)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	cancel()
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	if resp[len(resp)-1] != 2 {
+		t.Fatalf("answer = %v, want the second server's", resp)
+	}
+	close(release)
+	select {
+	case answer := <-late:
+		if answer[len(answer)-1] != 1 {
+			t.Errorf("late answer = %v, want the first server's", answer)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the first server answered after the query returned, but its answer never reached the late-answer hook")
+	}
+}
+
 func TestDNSUpstream_failsOverPastASilentServer(t *testing.T) {
 	silent := newFaultDNSServer(t, func(int, int) streamFault { return faultSilent })
 	healthy := newFaultDNSServer(t, func(int, int) streamFault { return faultAnswer })
@@ -382,8 +732,8 @@ func TestDNSUpstream_failsOverPastASilentServer(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
 		t.Errorf("failover took %v, want the silent server cut off at its share of the budget", elapsed)
 	}
-	if up.preferred.Load() != 1 {
-		t.Errorf("preferred = %d, want the healthy server", up.preferred.Load())
+	if up.firstIndex() != 1 {
+		t.Errorf("preferred = %d, want the healthy server", up.firstIndex())
 	}
 	if silent.queries.Load() != 1 {
 		t.Errorf("silent server saw %d queries, want 1", silent.queries.Load())
@@ -529,5 +879,115 @@ func TestDNSUpstream_staleStreamsCostOneSlowQueryNotFour(t *testing.T) {
 		if i > 0 && elapsed > 300*time.Millisecond {
 			t.Errorf("query %d took %v, want only the first query to wait on a stale stream", i, elapsed)
 		}
+	}
+}
+
+func TestDNSUpstream_cancelWhileAServerIsPendingReturnsPromptly(t *testing.T) {
+	release := blockUntilCleanup(t)
+	pending := &stubResolver{name: "pending", reply: func([]byte) ([]byte, error) {
+		<-release
+		return nil, errors.New("released")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{pending}, ident: "tls|pending"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := up.exchange(ctx, dnsQuery("example.com"))
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want the cancel", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("a cancelled query returned after %v, want it to stop its pending server at once", elapsed)
+	}
+}
+
+func TestDNSUpstream_giveUpNamesWhereTheLoneServerStalled(t *testing.T) {
+	release := blockUntilCleanup(t)
+	hung := newTCPResolver(&fakeClient{tcp: func(string) (net.Conn, error) {
+		<-release
+		return nil, errors.New("released")
+	}}, "192.0.2.1:53")
+	up := &dnsUpstream{resolvers: []dnsResolver{hung}, ident: uniqueUpstreamID(t, "tcp")}
+	defer up.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	_, err := up.exchange(ctx, dnsQuery("example.com"))
+	pattern := `^no answer in 5s: DNS over TCP 192\.0\.2\.1:53: new stream not open after 5s: context deadline exceeded$`
+	if msg := fmt.Sprint(err); !regexp.MustCompile(pattern).MatchString(msg) {
+		t.Errorf("err = %q, want it to match %q", msg, pattern)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want it still a deadline error", err)
+	}
+}
+
+func TestDNSUpstream_keepsAFirstServerThatAnswersOtherQueriesMeanwhile(t *testing.T) {
+	release := blockUntilCleanup(t)
+	queued := make(chan struct{})
+	busy := &stubResolver{name: "tls|busy", reply: func(q []byte) ([]byte, error) {
+		if name, _ := dnsQuestion(q); strings.Contains(name, "queued") {
+			close(queued)
+			<-release
+		}
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	second := &stubResolver{name: "tls|second", reply: echoAnswer([4]byte{2, 2, 2, 2})}
+	up := &dnsUpstream{resolvers: []dnsResolver{busy, second}, ident: uniqueUpstreamID(t, "tls")}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*dnsMinAttemptTimeout)
+	defer cancel()
+	answered := make(chan error, 1)
+	go func() {
+		_, err := up.exchange(ctx, dnsQuery("queued.example"))
+		answered <- err
+	}()
+	<-queued
+	if _, err := up.exchange(ctx, dnsQuery("other.example")); err != nil {
+		t.Fatalf("the first server answers other queries: %v", err)
+	}
+	if err := <-answered; err != nil {
+		t.Fatalf("the second server answers the queued query: %v", err)
+	}
+	if got := up.firstIndex(); got != 0 {
+		t.Errorf("preferred = %d, want the first server kept because it answered another query meanwhile", got)
+	}
+}
+
+func TestDNSUpstream_lastPreferenceLineMatchesThePreferredServer(t *testing.T) {
+	logs := captureLogs(t)
+	order := &callOrder{}
+	first, second := newSwitchableServer("tls|one.one.one.one:853", 1, order), newSwitchableServer("tls|1.1.1.1:853", 2, order)
+	clock := newFakeClock()
+	up := &dnsUpstream{resolvers: []dnsResolver{first, second}, ident: uniqueUpstreamID(t, "tls"), now: clock.now}
+	query := func() {
+		t.Helper()
+		if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+	}
+
+	first.down.Store(true)
+	query()
+	clock.advance(dnsPreferenceCooldown + time.Second)
+	first.down.Store(false)
+	query()
+	first.down.Store(true)
+	query()
+
+	var last string
+	logs.mu.Lock()
+	for _, line := range logs.lines {
+		if strings.Contains(line, "DNS now answered by") || strings.HasSuffix(line, " again") {
+			last = line
+		}
+	}
+	logs.mu.Unlock()
+	switch got := up.firstIndex(); {
+	case got == 0 && !strings.HasSuffix(last, "again"):
+		t.Errorf("the first server is preferred, but the last line logged is %q", last)
+	case got == 1 && !strings.Contains(last, "now answered by tls|1.1.1.1:853"):
+		t.Errorf("the second server is preferred, but the last line logged is %q", last)
 	}
 }

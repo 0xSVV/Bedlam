@@ -3,6 +3,7 @@ package ru.shapovalov.bedlam.feature.logs.ui
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import ru.shapovalov.bedlam.feature.logs.data.DroppedLines
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsReducer
 import ru.shapovalov.bedlam.feature.logs.presentation.LogsStore
 import ru.shapovalov.bedlam.feature.logs.presentation.Msg
@@ -16,7 +17,7 @@ class LogsEmptyReasonTest {
     fun `a filter that hides every line names the filter`() {
         val state = LogsReducer.reduceAll(
             LogsStore.State(),
-            Msg.LiveUpdated(listOf(logEntry(1, LogLevel.DEBUG), logEntry(2, LogLevel.INFO)), 0L, 0L),
+            Msg.LiveUpdated(listOf(logEntry(1, LogLevel.DEBUG), logEntry(2, LogLevel.INFO)), DroppedLines(), 0L),
             Msg.MinLevelChanged(LogLevel.ERROR),
         )
 
@@ -30,7 +31,7 @@ class LogsEmptyReasonTest {
 
         val shown = LogsReducer.reduceAll(
             waiting,
-            Msg.LiveUpdated(listOf(logEntry(1, LogLevel.ERROR)), 0L, 0L),
+            Msg.LiveUpdated(listOf(logEntry(1, LogLevel.ERROR)), DroppedLines(), 0L),
         )
         assertNull(shown.emptyReason())
     }
@@ -40,13 +41,13 @@ class LogsEmptyReasonTest {
         val lines = listOf(logEntry(1, LogLevel.INFO))
         val paused = LogsReducer.reduceAll(
             LogsStore.State(),
-            Msg.LiveUpdated(lines, 0L, 0L),
+            Msg.LiveUpdated(lines, DroppedLines(), 0L),
             Msg.Paused(lines),
             Msg.MinLevelChanged(LogLevel.WARN),
         )
         assertEquals(LogsEmptyReason.Filtered, paused.emptyReason())
 
-        val cleared = LogsReducer.reduceAll(paused, Msg.Resumed, Msg.LiveUpdated(emptyList(), 0L, 1L))
+        val cleared = LogsReducer.reduceAll(paused, Msg.Resumed, Msg.LiveUpdated(emptyList(), DroppedLines(), 1L))
         assertEquals(LogsEmptyReason.Idle, cleared.emptyReason())
     }
 

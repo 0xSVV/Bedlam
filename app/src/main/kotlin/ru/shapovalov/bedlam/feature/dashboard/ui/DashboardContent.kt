@@ -25,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -39,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
@@ -62,6 +64,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
 
     val errorText = state.error?.resolve()
     val connectionFailure = state.error is DashboardStore.ErrorReason.ConnectionFailed
+    val listsFailures = (state.error as? DashboardStore.ErrorReason.ProfilesImported)?.failures?.isNotEmpty() == true
     val sheetOpen = state.importSheet != null
     val connectionSnackbar = remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(errorText, sheetOpen, resumed) {
@@ -69,7 +72,13 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
         if (sheetOpen || !resumed) return@LaunchedEffect
         component.onDismissError()
         if (snackbarHostState.currentSnackbarData?.visuals?.message == msg) return@LaunchedEffect
-        val snackbar = scope.launch { snackbarHostState.showSnackbar(msg) }
+        val snackbar = scope.launch {
+            snackbarHostState.showSnackbar(
+                message = msg,
+                withDismissAction = listsFailures,
+                duration = if (listsFailures) SnackbarDuration.Long else SnackbarDuration.Short,
+            )
+        }
         if (connectionFailure) connectionSnackbar.value = snackbar
     }
     val inErrorState = state.connectionState is ConnectionState.Error
@@ -141,6 +150,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
             seed = seed,
             isImporting = state.isImporting,
             error = state.importError,
+            failures = state.importFailures,
             closing = state.importSheetClosing,
             onDismiss = component::onCloseImport,
             onImport = component::onImportProfile,
@@ -196,6 +206,12 @@ private fun DashboardStore.ErrorReason.resolve(): String = when (this) {
         } else {
             stringResource(R.string.dashboard_error_import_failed, message)
         }
+
+    is DashboardStore.ErrorReason.ProfilesImported -> when {
+        failures.isEmpty() -> pluralStringResource(R.plurals.import_links_done, imported, imported)
+        imported == 0 -> stringResource(R.string.import_links_none) + "\n" + importFailuresText(failures)
+        else -> stringResource(R.string.import_links_partial, imported, total) + "\n" + importFailuresText(failures)
+    }
 }
 
 private val SmallIconSize = 20.dp

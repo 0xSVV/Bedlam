@@ -3,6 +3,8 @@
 
     <string name="notification_channel_name">VPN status</string>
     <string name="notification_channel_description">Bedlam VPN tunnel status</string>
+    <string name="notification_alerts_channel_name">Connection alerts</string>
+    <string name="notification_alerts_channel_description">When the VPN stops or cannot reconnect</string>
 
     <string name="notification_title">Bedlam</string>
     <string name="notification_title_named">Bedlam · %1$s</string>
@@ -11,7 +13,8 @@
     <string name="notification_state_reconnecting">Reconnecting (attempt %1$d)…</string>
     <string name="notification_state_disconnected">Disconnected</string>
     <string name="notification_reconnect_timeout">Still trying to reconnect — will restore protection when the network returns</string>
-    <string name="notification_revoked">Another VPN app took over the tunnel. Bedlam is disconnected.</string>
+    <string name="notification_stopped_title">Bedlam VPN stopped</string>
+    <string name="notification_revoked">Android turned off Bedlam\'s VPN. Another VPN app started, or the VPN was turned off in system settings.</string>
     <string name="notification_state_error">Error: %1$s</string>
     <string name="notification_traffic_rate">↑ %1$s · ↓ %2$s</string>
     <string name="notification_detail_session">Session: ↑ %1$s · ↓ %2$s</string>
@@ -74,6 +77,15 @@
     <string name="import_action_paste">Paste</string>
     <string name="import_action_import">Import</string>
     <string name="import_error_failed">Failed to import profile</string>
+    <string name="import_link_failed">Link %1$d: %2$s</string>
+    <string name="import_link_failed_unknown">Could not import link %1$d</string>
+    <string name="import_link_duplicate">Link %1$d is already saved as \"%2$s\"</string>
+    <string name="import_links_none">No links were imported</string>
+    <string name="import_links_partial">Links imported: %1$d of %2$d</string>
+    <plurals name="import_links_done">
+        <item quantity="one">Imported %1$d profile</item>
+        <item quantity="other">Imported %1$d profiles</item>
+    </plurals>
 
     <string name="settings_about_title">About</string>
     <string name="settings_about_subtitle">Version %1$s · GitHub · License · README</string>
@@ -348,6 +360,9 @@
     <string name="logs_dropped_notice" tools:ignore="PluralsCandidate">%1$d earlier lines dropped</string>
     <string name="logs_dropped_notice_one">1 earlier line dropped</string>
     <string name="logs_action_share_cd">Share log</string>
+    <string name="logs_share_message">Hiding addresses swaps public IP addresses, your server hosts and custom DNS servers for numbered placeholders. Ports, local addresses and site names stay.</string>
+    <string name="logs_share_hide_addresses">Hide addresses</string>
+    <string name="logs_share_as_is">Share as is</string>
     <string name="logs_action_clear_cd">Delete logs</string>
     <string name="logs_empty_idle">Waiting for log output…</string>
     <string name="logs_empty_paused">Paused. New entries are suppressed.</string>
@@ -359,10 +374,26 @@
     <string name="profile_config_title">Configuration</string>
     <string name="profile_config_open_cd">Open profile configuration</string>
     <string name="profile_config_action_edit">Edit</string>
-    <string name="profile_config_action_copy">Copy config</string>
+    <string name="profile_config_action_copy">Copy Bedlam config</string>
+    <string name="profile_config_action_copy_menu">Copy</string>
+    <string name="profile_config_action_copy_link">Copy link</string>
+    <string name="profile_config_action_share_link">Share link</string>
+    <string name="profile_config_link_clip_label">hysteria2:// link</string>
+    <string name="profile_config_link_copy_success">Link copied</string>
+    <string name="profile_config_link_unavailable">A realm profile can\'t be shared as a link</string>
+    <string name="profile_config_link_warning_title">Before you share the link</string>
+    <string name="profile_config_link_warning_intro">The link doesn\'t carry:</string>
+    <string name="profile_config_link_warning_insecure_pin">Hiddify and NekoBox ignore the certificate pin, so in those apps this profile won\'t check the server certificate.</string>
+    <string name="profile_config_link_gap_ca">Custom CA certificate</string>
+    <string name="profile_config_link_gap_client_certificate">Client certificate and key</string>
+    <string name="profile_config_link_gap_quic">QUIC settings</string>
+    <string name="profile_config_link_gap_congestion">Congestion control</string>
+    <string name="profile_config_link_gap_bandwidth">Bandwidth limits</string>
+    <string name="profile_config_link_gap_hop_interval">Port hopping intervals</string>
+    <string name="profile_config_link_gap_packet_size">Gecko packet sizes</string>
     <string name="profile_config_action_delete">Delete profile</string>
     <string name="profile_config_clip_label">Bedlam profile configuration</string>
-    <string name="profile_config_copy_success">Configuration JSON copied</string>
+    <string name="profile_config_copy_success">Bedlam config copied</string>
     <string name="profile_config_not_found">Profile not found</string>
     <string name="profile_config_save_error">Save failed: %1$s</string>
     <string name="profile_config_field_empty">Not specified</string>

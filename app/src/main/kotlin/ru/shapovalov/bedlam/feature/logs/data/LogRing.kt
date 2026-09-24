@@ -1,31 +1,23 @@
 package ru.shapovalov.bedlam.feature.logs.data
 
-import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
+class LogRing<T>(private val capacity: Int) {
 
-class LogRing(private val capacity: Int) {
-
-    private val entries = ArrayDeque<LogEntry>()
-
-    var droppedCount: Long = 0L
-        private set
+    private val entries = ArrayDeque<T>()
 
     var firstIndex: Long = 0L
         private set
 
-    fun add(entry: LogEntry) {
+    fun add(entry: T): T? {
         entries.addLast(entry)
-        while (entries.size > capacity) {
-            entries.removeFirst()
-            droppedCount++
-            firstIndex++
-        }
+        if (entries.size <= capacity) return null
+        firstIndex++
+        return entries.removeFirst()
     }
 
     fun clear() {
         firstIndex += entries.size
         entries.clear()
-        droppedCount = 0L
     }
 
-    fun snapshot(): List<LogEntry> = entries.toList()
+    fun snapshot(): List<T> = entries.toList()
 }

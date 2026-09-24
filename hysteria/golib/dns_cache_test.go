@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -199,20 +200,141 @@ func TestCacheableTTL_clampedToMax(t *testing.T) {
 	}
 }
 
-func TestCacheableTTL_rejectsNonZeroRcode(t *testing.T) {
-	resp := dnsResponse("example.com", 60, [4]byte{1, 2, 3, 4})
-	resp[3] = 0x83 // rcode=3, NXDOMAIN
-	if got := cacheableTTL(resp); got != 0 {
-		t.Errorf("ttl = %v, want 0 (NXDOMAIN)", got)
+func TestCacheableTTL_rejectsFailureRcodes(t *testing.T) {
+	for _, rcode := range []byte{1, 2, 4, 5, 9} {
+		resp := negativeResponse("example.com", rcode, 600, 600)
+		if got := cacheableTTL(resp); got != 0 {
+			t.Errorf("rcode %d: ttl = %v, want 0", rcode, got)
+		}
+		positive := dnsResponse("example.com", 60, [4]byte{1, 2, 3, 4})
+		positive[3] = 0x80 | rcode
+		if got := cacheableTTL(positive); got != 0 {
+			t.Errorf("rcode %d with an answer: ttl = %v, want 0", rcode, got)
+		}
 	}
 }
 
-func TestCacheableTTL_rejectsZeroAnswers(t *testing.T) {
+func TestCacheableTTL_rejectsZeroAnswersWithoutSOA(t *testing.T) {
 	resp := dnsResponse("example.com", 60, [4]byte{1, 2, 3, 4})
 	resp[6] = 0
 	resp[7] = 0
 	if got := cacheableTTL(resp); got != 0 {
 		t.Errorf("ttl = %v, want 0 (no answers)", got)
+	}
+}
+
+func negativeResponse(name string, rcode byte, soaTTL, minimum uint32) []byte {
+	return negativeResponseWithAuthority(name, rcode, 6, soaTTL, minimum)
+}
+
+func negativeResponseWithAuthority(name string, rcode byte, authorityType uint16, ttl, minimum uint32) []byte {
+	resp := dnsQuery(name)
+	resp[2] = 0x81
+	resp[3] = 0x80 | rcode
+	binary.BigEndian.PutUint16(resp[8:10], 1)
+	resp = append(resp, 0xc0, 0x0c)
+	resp = binary.BigEndian.AppendUint16(resp, authorityType)
+	resp = append(resp, 0x00, 0x01)
+	resp = binary.BigEndian.AppendUint32(resp, ttl)
+	rdata := []byte{0x02, 'n', 's', 0xc0, 0x0c}
+	if authorityType == 6 {
+		rdata = append(rdata, 0x0a)
+		rdata = append(rdata, "hostmaster"...)
+		rdata = append(rdata, 0xc0, 0x0c)
+		for _, v := range []uint32{2026092401, 7200, 3600, 1209600, minimum} {
+			rdata = binary.BigEndian.AppendUint32(rdata, v)
+		}
+	}
+	resp = binary.BigEndian.AppendUint16(resp, uint16(len(rdata)))
+	return append(resp, rdata...)
+}
+
+func nxdomainAfterCNAME(name string, cnameTTL, soaTTL, minimum uint32) []byte {
+	resp := dnsQuery(name)
+	resp[2] = 0x81
+	resp[3] = 0x83
+	binary.BigEndian.PutUint16(resp[6:8], 1)
+	binary.BigEndian.PutUint16(resp[8:10], 1)
+	resp = append(resp, 0xc0, 0x0c, 0x00, 0x05, 0x00, 0x01)
+	resp = binary.BigEndian.AppendUint32(resp, cnameTTL)
+	resp = append(resp, 0x00, 0x05, 0x02, 'g', 'o', 0xc0, 0x0c)
+	soa := negativeResponse(name, 3, soaTTL, minimum)
+	return append(resp, soa[len(dnsQuery(name)):]...)
+}
+
+func TestCacheableTTL_negativeAnswers(t *testing.T) {
+	cases := []struct {
+		name string
+		resp []byte
+		want time.Duration
+	}{
+		{"NXDOMAIN takes the SOA MINIMUM", negativeResponse("nope.example.com", 3, 900, 60), 60 * time.Second},
+		{"NXDOMAIN takes the SOA TTL", negativeResponse("nope.example.com", 3, 30, 600), 30 * time.Second},
+		{"NODATA takes the SOA MINIMUM", negativeResponse("example.com", 0, 900, 120), 120 * time.Second},
+		{"NODATA takes the SOA TTL", negativeResponse("example.com", 0, 45, 900), 45 * time.Second},
+		{"NXDOMAIN is capped", negativeResponse("nope.example.com", 3, 86400, 3600), dnsCacheNegativeMaxTTL},
+		{"NODATA is capped", negativeResponse("example.com", 0, 3600, 86400), dnsCacheNegativeMaxTTL},
+		{"a short negative TTL is kept", negativeResponse("nope.example.com", 3, 2, 600), 2 * time.Second},
+		{"NXDOMAIN after a CNAME ends with the CNAME", nxdomainAfterCNAME("www.example.com", 20, 600, 600), 20 * time.Second},
+		{"a zero SOA TTL is not cached", negativeResponse("nope.example.com", 3, 0, 600), 0},
+		{"a zero SOA MINIMUM is not cached", negativeResponse("example.com", 0, 600, 0), 0},
+		{"NXDOMAIN without an SOA is not cached", negativeResponseWithAuthority("nope.example.com", 3, 2, 600, 0), 0},
+		{"NODATA without an SOA is not cached", negativeResponseWithAuthority("example.com", 0, 2, 600, 0), 0},
+	}
+	for _, tc := range cases {
+		if got := cacheableTTL(tc.resp); got != tc.want {
+			t.Errorf("%s: ttl = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestCacheableTTL_rejectsTruncatedNegativeAnswers(t *testing.T) {
+	for _, rcode := range []byte{0, 3} {
+		resp := negativeResponse("nope.example.com", rcode, 600, 600)
+		resp[2] |= 0x02
+		if got := cacheableTTL(resp); got != 0 {
+			t.Errorf("rcode %d: ttl = %v, want 0 for a truncated answer", rcode, got)
+		}
+	}
+}
+
+func TestDNSCacheResolve_servesNXDOMAINFromTheCache(t *testing.T) {
+	c := newDNSCache()
+	r := &stubResolver{name: "stub"}
+	r.reply = func(query []byte) ([]byte, error) {
+		resp := negativeResponse("nope.example.com", 3, 600, 600)
+		copy(resp[:2], query[:2])
+		return resp, nil
+	}
+	for i := 0; i < 2; i++ {
+		resp, err := c.resolve(context.Background(), r, dnsQuery("nope.example.com"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp[3]&0x0f != 3 {
+			t.Fatalf("rcode = %d, want NXDOMAIN", resp[3]&0x0f)
+		}
+	}
+	if n := r.calls.Load(); n != 1 {
+		t.Errorf("resolver calls = %d, want 1", n)
+	}
+}
+
+func TestDNSCacheResolve_neverCachesServfail(t *testing.T) {
+	c := newDNSCache()
+	r := &stubResolver{name: "stub"}
+	r.reply = func(query []byte) ([]byte, error) {
+		resp := negativeResponse("example.com", 2, 600, 600)
+		copy(resp[:2], query[:2])
+		return resp, nil
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := c.resolve(context.Background(), r, dnsQuery("example.com"), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := r.calls.Load(); n != 2 {
+		t.Errorf("resolver calls = %d, want 2", n)
 	}
 }
 
@@ -629,6 +751,64 @@ func TestDNSCacheResolve_rewritesTxid(t *testing.T) {
 	}
 }
 
+type lateAnswerResolver struct {
+	name  string
+	calls atomic.Int32
+	hooks chan func([]byte)
+}
+
+func (r *lateAnswerResolver) exchange(ctx context.Context, _ []byte) ([]byte, error) {
+	r.calls.Add(1)
+	r.hooks <- lateAnswer(ctx)
+	return nil, context.DeadlineExceeded
+}
+
+func (r *lateAnswerResolver) id() string { return r.name }
+
+func (r *lateAnswerResolver) close() {}
+
+func TestDNSCacheResolve_servesTheRetryFromALateAnswer(t *testing.T) {
+	c := newDNSCache()
+	r := &lateAnswerResolver{name: "tls|late", hooks: make(chan func([]byte), 1)}
+	q := dnsQuery("example.com")
+	if _, err := c.resolve(context.Background(), r, q, nil); err == nil {
+		t.Fatal("the resolver gave no answer in time, so the query must fail")
+	}
+	(<-r.hooks)(dnsResponseFor(q, 60, [4]byte{9, 9, 9, 9}))
+
+	retry := dnsQuery("example.com")
+	binary.BigEndian.PutUint16(retry[:2], 0x7777)
+	resp, err := c.resolve(context.Background(), r, retry, nil)
+	if err != nil {
+		t.Fatalf("the retry: %v", err)
+	}
+	if r.calls.Load() != 1 {
+		t.Errorf("resolver called %d times, want the retry answered from the late answer in the cache", r.calls.Load())
+	}
+	if resp[len(resp)-1] != 9 || binary.BigEndian.Uint16(resp[:2]) != 0x7777 {
+		t.Errorf("retry answer = %v, want the late answer under the retry's ID", resp)
+	}
+}
+
+func TestDNSCacheResolve_dropsALateAnswerTheCacheCannotKeep(t *testing.T) {
+	c := newDNSCache()
+	r := &lateAnswerResolver{name: "tls|late", hooks: make(chan func([]byte), 1)}
+	q := dnsQuery("example.com")
+	if _, err := c.resolve(context.Background(), r, q, nil); err == nil {
+		t.Fatal("the resolver gave no answer in time, so the query must fail")
+	}
+	truncated := dnsResponseFor(q, 60, [4]byte{9, 9, 9, 9})
+	truncated[2] |= 0x02
+	(<-r.hooks)(truncated)
+
+	if _, err := c.resolve(context.Background(), r, dnsQuery("example.com"), nil); err == nil {
+		t.Fatal("the retry must go to the resolver and fail again")
+	}
+	if r.calls.Load() != 2 {
+		t.Errorf("resolver called %d times, want a truncated late answer kept out of the cache", r.calls.Load())
+	}
+}
+
 func TestDNSCacheResolve_singleflight(t *testing.T) {
 	c := newDNSCache()
 	release := make(chan struct{})
@@ -696,6 +876,57 @@ func TestDNSCache_lookupCountsDownTTL(t *testing.T) {
 	}
 }
 
+func authoritySOA(t *testing.T, resp []byte) (ttl, minimum uint32) {
+	t.Helper()
+	pos := skipName(resp, 12) + 4
+	for i := uint16(0); i < binary.BigEndian.Uint16(resp[6:8]); i++ {
+		np := skipName(resp, pos)
+		if np < 0 || np+10 > len(resp) {
+			t.Fatal("unparsable answer section")
+		}
+		pos = np + 10 + int(binary.BigEndian.Uint16(resp[np+8:np+10]))
+	}
+	np := skipName(resp, pos)
+	if np < 0 || np+10 > len(resp) || binary.BigEndian.Uint16(resp[np:np+2]) != 6 {
+		t.Fatal("no SOA in the authority section")
+	}
+	end := np + 10 + int(binary.BigEndian.Uint16(resp[np+8:np+10]))
+	return binary.BigEndian.Uint32(resp[np+4 : np+8]), binary.BigEndian.Uint32(resp[end-4 : end])
+}
+
+func TestDNSCache_lookupCountsDownNegativeAnswers(t *testing.T) {
+	cases := []struct {
+		name            string
+		resp            []byte
+		age             time.Duration
+		wantTTL         uint32
+		wantMinimumKept uint32
+	}{
+		{"NXDOMAIN from the SOA TTL", negativeResponse("nope.example.com", 3, 300, 900), 100 * time.Second, 200, 900},
+		{"NXDOMAIN from the SOA MINIMUM", negativeResponse("nope.example.com", 3, 900, 300), 100 * time.Second, 200, 300},
+		{"NODATA from the SOA MINIMUM", negativeResponse("example.com", 0, 3600, 250), 50 * time.Second, 200, 250},
+		{"an expired countdown floors at one", negativeResponse("nope.example.com", 3, 900, 60), 100 * time.Second, 1, 60},
+		{"a fresh hit takes the SOA MINIMUM", negativeResponse("nope.example.com", 3, 86400, 60), 0, 60, 60},
+	}
+	for _, tc := range cases {
+		c := newDNSCache()
+		c.store("k", tc.resp, dnsCacheNegativeMaxTTL)
+		c.entries["k"].storedAt = time.Now().Add(-tc.age)
+
+		resp := c.lookup("k", 0x1234)
+		if resp == nil {
+			t.Fatalf("%s: expected a cache hit", tc.name)
+		}
+		ttl, minimum := authoritySOA(t, resp)
+		if ttl != tc.wantTTL {
+			t.Errorf("%s: SOA ttl = %d, want %d", tc.name, ttl, tc.wantTTL)
+		}
+		if minimum != tc.wantMinimumKept {
+			t.Errorf("%s: SOA MINIMUM = %d, want %d unchanged", tc.name, minimum, tc.wantMinimumKept)
+		}
+	}
+}
+
 func TestDNSCache_lookupFloorsTTLAtOne(t *testing.T) {
 	c := newDNSCache()
 	c.store("k", dnsResponse("example.com", 300, [4]byte{1, 1, 1, 1}), 3600*time.Second)
@@ -723,6 +954,22 @@ func TestDNSCache_lookupLeavesTheStoredEntryIntact(t *testing.T) {
 	}
 }
 
+func TestDecrementTTLs_freshHitKeepsAZeroTTL(t *testing.T) {
+	resp := dnsResponse("example.com", 0, [4]byte{1, 1, 1, 1})
+	decrementTTLs(resp, 0)
+	if ttl := firstAnswerTTL(t, resp); ttl != 0 {
+		t.Errorf("ttl = %d, want 0", ttl)
+	}
+}
+
+func TestDecrementTTLs_freshHitTakesTheSOAMinimum(t *testing.T) {
+	resp := negativeResponse("nope.example.com", 3, 86400, 60)
+	decrementTTLs(resp, 0)
+	if ttl, _ := authoritySOA(t, resp); ttl != 60 {
+		t.Errorf("SOA ttl = %d, want 60", ttl)
+	}
+}
+
 func TestDecrementTTLs_keepsTheOptRecordIntact(t *testing.T) {
 	resp := withEDNS(dnsResponse("example.com", 300, [4]byte{1, 1, 1, 1}), 4096, true)
 	decrementTTLs(resp, 100*time.Second)
@@ -732,5 +979,49 @@ func TestDecrementTTLs_keepsTheOptRecordIntact(t *testing.T) {
 	}
 	if flags := binary.BigEndian.Uint32(resp[len(resp)-6 : len(resp)-2]); flags != 0x8000 {
 		t.Errorf("OPT flags = %#x, want 0x8000 (the TTL field is not a lifetime)", flags)
+	}
+}
+
+func TestDNSCache_lateAnswerFillsOnlyAMissingOrExpiredEntry(t *testing.T) {
+	c := newDNSCache()
+	q := dnsQuery("example.com")
+	c.store("fresh", dnsResponseFor(q, 60, [4]byte{2, 2, 2, 2}), time.Minute)
+	c.storeLate("fresh", dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}))
+	if resp := c.lookup("fresh", 0x1234); resp == nil || resp[len(resp)-1] != 2 {
+		t.Errorf("entry = %v, want the answer already cached kept over the late one", resp)
+	}
+
+	c.store("expired", dnsResponseFor(q, 60, [4]byte{2, 2, 2, 2}), time.Nanosecond)
+	time.Sleep(2 * time.Millisecond)
+	c.storeLate("expired", dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}))
+	if resp := c.lookup("expired", 0x1234); resp == nil || resp[len(resp)-1] != 1 {
+		t.Errorf("entry = %v, want the late answer to replace an expired one", resp)
+	}
+}
+
+func TestDNSCache_lateAnswerRacingTheWinnersStoreNeverReplacesIt(t *testing.T) {
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("the race needs two threads")
+	}
+	q := dnsQuery("example.com")
+	winner := dnsResponseFor(q, 60, [4]byte{2, 2, 2, 2})
+	late := dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1})
+	const rounds = 200000
+	replaced := 0
+	for i := 0; i < rounds; i++ {
+		c := newDNSCache()
+		stored := make(chan struct{})
+		go func() {
+			c.storeLate("key", late)
+			close(stored)
+		}()
+		c.store("key", winner, time.Minute)
+		<-stored
+		if resp := c.lookup("key", 0x1234); resp == nil || resp[len(resp)-1] != 2 {
+			replaced++
+		}
+	}
+	if replaced > 0 {
+		t.Errorf("a late answer replaced the winner's fresh answer in %d of %d races", replaced, rounds)
 	}
 }
