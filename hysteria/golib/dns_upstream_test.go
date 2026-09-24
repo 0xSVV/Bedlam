@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -858,5 +859,37 @@ func TestDNSUpstream_giveUpNamesWhereTheLoneServerStalled(t *testing.T) {
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("err = %v, want it still a deadline error", err)
+	}
+}
+
+func TestDNSUpstream_keepsAFirstServerThatAnswersOtherQueriesMeanwhile(t *testing.T) {
+	release := blockUntilCleanup(t)
+	queued := make(chan struct{})
+	busy := &stubResolver{name: "tls|busy", reply: func(q []byte) ([]byte, error) {
+		if name, _ := dnsQuestion(q); strings.Contains(name, "queued") {
+			close(queued)
+			<-release
+		}
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	second := &stubResolver{name: "tls|second", reply: echoAnswer([4]byte{2, 2, 2, 2})}
+	up := &dnsUpstream{resolvers: []dnsResolver{busy, second}, ident: uniqueUpstreamID(t, "tls")}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*dnsMinAttemptTimeout)
+	defer cancel()
+	answered := make(chan error, 1)
+	go func() {
+		_, err := up.exchange(ctx, dnsQuery("queued.example"))
+		answered <- err
+	}()
+	<-queued
+	if _, err := up.exchange(ctx, dnsQuery("other.example")); err != nil {
+		t.Fatalf("the first server answers other queries: %v", err)
+	}
+	if err := <-answered; err != nil {
+		t.Fatalf("the second server answers the queued query: %v", err)
+	}
+	if got := up.firstIndex(); got != 0 {
+		t.Errorf("preferred = %d, want the first server kept because it answered another query meanwhile", got)
 	}
 }

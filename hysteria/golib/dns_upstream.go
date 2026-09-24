@@ -60,6 +60,7 @@ type dnsUpstream struct {
 	mu             sync.Mutex
 	preferred      int
 	preferredUntil time.Time
+	answers        map[int]uint64
 }
 
 func newDNSUpstream(c client.Client, cfg *dnsUpstreamConfig) (*dnsUpstream, error) {
@@ -133,6 +134,7 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 		queryDeadline = began.Add(dnsQueryTimeout)
 	}
 	first := u.firstIndex()
+	firstAnswers := u.answersBy(first)
 	results := make(chan attemptResult, n)
 	var slice *time.Timer
 	defer func() {
@@ -186,7 +188,7 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 		case res := <-results:
 			pending--
 			if res.err == nil {
-				u.noteAnswer(first, res.index, tunnelFailed)
+				u.noteAnswer(first, res.index, firstAnswers, tunnelFailed)
 				u.settleLate(ctx, results, pending)
 				return res.resp, nil
 			}
@@ -249,8 +251,24 @@ func (u *dnsUpstream) firstIndex() int {
 	return 0
 }
 
-func (u *dnsUpstream) noteAnswer(first, answered int, tunnelFailed bool) {
-	movedAway := answered != 0 && answered != first && !tunnelFailed
+func (u *dnsUpstream) answersBy(index int) uint64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.answers[index]
+}
+
+func (u *dnsUpstream) countAnswer(index int) {
+	u.mu.Lock()
+	if u.answers == nil {
+		u.answers = map[int]uint64{}
+	}
+	u.answers[index]++
+	u.mu.Unlock()
+}
+
+func (u *dnsUpstream) noteAnswer(first, answered int, firstAnswers uint64, tunnelFailed bool) {
+	u.countAnswer(answered)
+	movedAway := answered != 0 && answered != first && !tunnelFailed && u.answersBy(first) == firstAnswers
 	u.mu.Lock()
 	previous := u.preferred
 	switch {
@@ -296,6 +314,7 @@ func (u *dnsUpstream) settleLate(ctx context.Context, results <-chan attemptResu
 	go func() {
 		for ; pending > 0; pending-- {
 			if res := <-results; res.err == nil {
+				u.countAnswer(res.index)
 				late(res.resp)
 			}
 		}
