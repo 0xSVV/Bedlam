@@ -980,3 +980,20 @@ func TestDecrementTTLs_keepsTheOptRecordIntact(t *testing.T) {
 		t.Errorf("OPT flags = %#x, want 0x8000 (the TTL field is not a lifetime)", flags)
 	}
 }
+
+func TestDNSCache_lateAnswerFillsOnlyAMissingOrExpiredEntry(t *testing.T) {
+	c := newDNSCache()
+	q := dnsQuery("example.com")
+	c.store("fresh", dnsResponseFor(q, 60, [4]byte{2, 2, 2, 2}), time.Minute)
+	c.storeLate("fresh", dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}))
+	if resp := c.lookup("fresh", 0x1234); resp == nil || resp[len(resp)-1] != 2 {
+		t.Errorf("entry = %v, want the answer already cached kept over the late one", resp)
+	}
+
+	c.store("expired", dnsResponseFor(q, 60, [4]byte{2, 2, 2, 2}), time.Nanosecond)
+	time.Sleep(2 * time.Millisecond)
+	c.storeLate("expired", dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}))
+	if resp := c.lookup("expired", 0x1234); resp == nil || resp[len(resp)-1] != 1 {
+		t.Errorf("entry = %v, want the late answer to replace an expired one", resp)
+	}
+}

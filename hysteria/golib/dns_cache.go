@@ -122,7 +122,15 @@ func lateAnswer(ctx context.Context) func(resp []byte) {
 }
 
 func (c *dnsCache) storeLate(key string, resp []byte) {
-	if ttl := cacheableTTL(resp); ttl > 0 {
+	ttl := cacheableTTL(resp)
+	if ttl <= 0 {
+		return
+	}
+	c.mu.RLock()
+	entry, ok := c.entries[key]
+	fresh := ok && time.Now().Before(entry.expiry)
+	c.mu.RUnlock()
+	if !fresh {
 		c.store(key, resp, ttl)
 	}
 }
