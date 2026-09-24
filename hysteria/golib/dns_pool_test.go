@@ -1282,3 +1282,65 @@ func TestStreamPool_closeEndsAReadThatOutlivedItsQuery(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+func loopbackStreamServer(t *testing.T, serve func(conn int, s net.Conn)) func() (net.Conn, error) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for n := 1; ; n++ {
+			s, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(s net.Conn, id int) {
+				defer s.Close()
+				serve(id, s)
+			}(s, n)
+		}
+	}()
+	return func() (net.Conn, error) { return net.Dial("tcp", ln.Addr().String()) }
+}
+
+func TestDNSCacheResolve_neverTakesTheAnswerToAnotherQuestionFromAStream(t *testing.T) {
+	dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+		var previous []byte
+		for {
+			q, err := readDNSFrame(s)
+			if err != nil {
+				return
+			}
+			if conn == 1 && previous != nil && writeDNSFrame(s, previous) != nil {
+				return
+			}
+			resp := dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})
+			if writeDNSFrame(s, resp) != nil {
+				return
+			}
+			previous = resp
+		}
+	})
+	r := newTCPResolver(&fakeClient{tcp: func(string) (net.Conn, error) { return dial() }}, "1.1.1.1:53")
+	defer r.close()
+	c := newDNSCache()
+
+	if _, err := c.resolve(context.Background(), r, dnsQuery("a.example"), nil); err != nil {
+		t.Fatalf("a.example: %v", err)
+	}
+	want, _ := dnsQuestion(dnsQuery("b.example"))
+	resp, err := c.resolve(context.Background(), r, dnsQuery("b.example"), nil)
+	if err != nil {
+		t.Fatalf("b.example: %v", err)
+	}
+	if got, _ := dnsQuestion(resp); got != want {
+		t.Errorf("b.example was answered with the answer to %q, a repeat sent under the same ID", got)
+	}
+	if cached := c.tryCached(r, dnsQuery("b.example")); cached != nil {
+		if got, _ := dnsQuestion(cached); got != want {
+			t.Errorf("the cache serves b.example the answer to %q", got)
+		}
+	}
+}

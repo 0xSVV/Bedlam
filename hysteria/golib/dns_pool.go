@@ -22,6 +22,9 @@ const (
 	dnsLateReadTimeout  = 8 * time.Second
 	dnsStreamMaxQueries = 32
 	dnsStreamStall      = dnsAttemptTimeout / 2
+
+	dnsResponseFlag = 0x80
+	dnsOpcodeMask   = 0x78
 )
 
 var errStreamStalled = errors.New("the stream stopped answering: another query on it timed out")
@@ -44,6 +47,8 @@ type pooledConn struct {
 type pendingQuery struct {
 	wireID   uint16
 	origID   uint16
+	opcode   byte
+	question string
 	sent     time.Time
 	deadline time.Time
 	flight   *flight[streamResult]
@@ -390,8 +395,11 @@ func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte
 }
 
 func (p *streamPool) send(ctx context.Context, c *pooledConn, query []byte, stream string, pooled bool) *flight[streamResult] {
+	question, _ := dnsQuestion(query)
 	q := &pendingQuery{
 		origID:   binary.BigEndian.Uint16(query[:2]),
+		opcode:   query[2] & dnsOpcodeMask,
+		question: question,
 		deadline: lateReadDeadline(ctx),
 		flight:   newFlight[streamResult](),
 		late:     lateAnswer(ctx),
@@ -463,6 +471,11 @@ func (p *streamPool) dispatch(c *pooledConn, resp []byte) bool {
 		p.fail(c, fmt.Errorf("%w: response transaction ID mismatch", errDNSMalformed))
 		return false
 	}
+	if !q.answeredBy(resp) {
+		c.mu.Unlock()
+		p.fail(c, fmt.Errorf("%w: response does not answer the question sent under its ID", errDNSMalformed))
+		return false
+	}
 	delete(c.pending, q.wireID)
 	c.last = time.Now()
 	c.answered++
@@ -484,6 +497,17 @@ func (p *streamPool) dispatch(c *pooledConn, resp []byte) bool {
 	}
 	p.signalShare()
 	return more
+}
+
+func (q *pendingQuery) answeredBy(resp []byte) bool {
+	if resp[2]&dnsResponseFlag == 0 || resp[2]&dnsOpcodeMask != q.opcode {
+		return false
+	}
+	if q.question == "" || binary.BigEndian.Uint16(resp[4:6]) == 0 {
+		return true
+	}
+	question, ok := dnsQuestion(resp)
+	return ok && question == q.question
 }
 
 func (p *streamPool) fail(c *pooledConn, cause error) {

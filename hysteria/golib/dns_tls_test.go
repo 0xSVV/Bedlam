@@ -89,11 +89,7 @@ func loopbackDoTServer(t *testing.T, cert tls.Certificate, respond func(conn int
 }
 
 func echoDoT(ip [4]byte) func(query []byte) []byte {
-	return func(q []byte) []byte {
-		resp := dnsResponse("example.com", 60, ip)
-		copy(resp[:2], q[:2])
-		return resp
-	}
+	return func(q []byte) []byte { return dnsResponseFor(q, 60, ip) }
 }
 
 func TestTLSResolver_roundTrip(t *testing.T) {
