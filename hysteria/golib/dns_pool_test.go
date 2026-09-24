@@ -1243,3 +1243,42 @@ func TestStreamPool_slowLinkBurstIsAnsweredWithinItsBudget(t *testing.T) {
 		t.Errorf("%d streams were opening at once, want at most %d", n, dnsPoolMaxOpening)
 	}
 }
+
+func TestStreamPool_closeEndsAReadThatOutlivedItsQuery(t *testing.T) {
+	held := newHeldAnswers(0)
+	t.Cleanup(func() {
+		held.holding.Store(false)
+		select {
+		case <-held.release:
+		default:
+			close(held.release)
+		}
+	})
+	dialer := newSignallingDialer(loopbackTCPDNSServer(t, held.respond))
+	p := newStreamPool("test", dialer.dial)
+	held.holding.Store(true)
+
+	base, late := collectLateAnswers(context.Background())
+	ctx, cancel := context.WithCancel(base)
+	go func() {
+		<-held.received
+		cancel()
+	}()
+	if _, err := p.exchange(ctx, dnsQuery("late.example")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	stream := <-dialer.opened
+	p.close()
+	select {
+	case <-stream.closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("closing the pool left open a stream whose read outlived its query")
+	}
+	held.holding.Store(false)
+	close(held.release)
+	select {
+	case <-late:
+		t.Error("an answer read after the pool closed reached the late-answer hook")
+	case <-time.After(200 * time.Millisecond):
+	}
+}

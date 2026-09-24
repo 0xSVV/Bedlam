@@ -478,7 +478,9 @@ func (p *streamPool) dispatch(c *pooledConn, resp []byte) bool {
 	binary.BigEndian.PutUint16(resp[:2], q.origID)
 	if !q.flight.deliver(streamResult{conn: c, pooled: q.pooled, resp: resp, stream: q.stream}) {
 		p.release(c)
-		q.late(resp)
+		if !p.closed.Load() {
+			q.late(resp)
+		}
 	}
 	p.signalShare()
 	return more
@@ -674,6 +676,13 @@ func (p *streamPool) close() {
 	p.closed.Store(true)
 	p.cancel()
 	p.drain()
+	p.mu.Lock()
+	busy := p.busy
+	p.busy = nil
+	p.mu.Unlock()
+	for c := range busy {
+		p.fail(c, net.ErrClosed)
+	}
 }
 
 func (p *streamPool) drain() {
