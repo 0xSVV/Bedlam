@@ -145,8 +145,6 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 		}
 	}()
 	var sliceEnd <-chan time.Time
-	var lastCtx context.Context
-	var lastSlice <-chan struct{}
 	var cancels []context.CancelFunc
 	started, pending, latest := 0, 0, first
 	latestStart := began
@@ -162,17 +160,12 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 		}
 		actx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
 		cancels = append(cancels, cancel)
-		if started < n {
-			if slice == nil {
-				slice = time.NewTimer(budget)
-			} else {
-				slice.Reset(budget)
-			}
-			sliceEnd = slice.C
+		if slice == nil {
+			slice = time.NewTimer(budget)
 		} else {
-			sliceEnd = nil
-			lastCtx, lastSlice = actx, actx.Done()
+			slice.Reset(budget)
 		}
+		sliceEnd = slice.C
 		index := latest
 		go func() {
 			defer cancel()
@@ -184,7 +177,7 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 	launch()
 	done := ctx.Done()
 	var latestErr error
-	tunnelFailed, latestFailed, stopping := false, false, false
+	tunnelFailed, latestFailed, lastSliceEnded, stopping := false, false, false, false
 	for {
 		select {
 		case res := <-results:
@@ -207,13 +200,15 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 				launch()
 			}
 		case <-sliceEnd:
+			if started == n {
+				sliceEnd, lastSliceEnded = nil, true
+				break
+			}
 			if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
 				log(LogLevelWarn, srcDNS, "DNS %s has not answered in %s, trying next", id, diagDuration(time.Since(latestStart)))
 			}
 			latestFailed = false
 			launch()
-		case <-lastSlice:
-			lastSlice = nil
 		case <-done:
 			done, sliceEnd, stopping = nil, nil, true
 			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -222,7 +217,6 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 				}
 			}
 		}
-		lastSliceEnded := lastCtx != nil && errors.Is(lastCtx.Err(), context.DeadlineExceeded)
 		if lastSliceEnded && latestFailed || pending == 0 && (started == n || stopping) {
 			u.settleLate(ctx, results, pending)
 			return nil, noAnswer(began, latestErr)
