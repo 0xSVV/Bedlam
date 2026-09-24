@@ -22,6 +22,7 @@ const (
 	dnsLateReadTimeout  = 8 * time.Second
 	dnsStreamMaxQueries = 32
 	dnsStreamStall      = dnsAttemptTimeout / 2
+	dnsStreamRetries    = 2
 
 	dnsResponseFlag = 0x80
 	dnsOpcodeMask   = 0x78
@@ -65,6 +66,7 @@ type streamPool struct {
 	idle        chan *pooledConn
 	opening     chan struct{}
 	openTimeout time.Duration
+	lateRead    time.Duration
 	ctx         context.Context
 	cancel      context.CancelFunc
 	closed      atomic.Bool
@@ -80,6 +82,7 @@ type streamResult struct {
 	resp   []byte
 	stream string
 	err    error
+	lost   bool
 }
 
 type openResult struct {
@@ -132,6 +135,7 @@ func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *
 		idle:        make(chan *pooledConn, dnsPoolSize),
 		opening:     make(chan struct{}, dnsPoolMaxOpening),
 		openTimeout: dnsOpenTimeout,
+		lateRead:    dnsLateReadTimeout,
 		ctx:         ctx,
 		cancel:      cancel,
 	}
@@ -157,25 +161,42 @@ func (p *streamPool) exchange(ctx context.Context, callerQuery []byte) ([]byte, 
 		if ctx.Err() != nil || deadlineExpired(failures[len(failures)-1].err) {
 			return nil, p.failed(failures)
 		}
-		retried := time.Now()
-		if c, err = p.reserveOpenOrShare(ctx); err != nil {
-			return nil, p.failed(append(failures, notOpenSince(retried, err)))
-		}
-		if c != nil {
-			result := p.exchangeOn(ctx, c, query, c.describeShared(), true)
-			if result.err != nil {
-				return nil, p.failed(append(failures, result))
-			}
-			p.release(c)
+	} else {
+		result := p.exchangeOnNewStream(ctx, query, true)
+		if result.err == nil {
+			p.release(result.conn)
 			return result.resp, nil
 		}
+		failures = []streamResult{result}
+		if !p.retryable(ctx, result) {
+			return nil, p.failed(failures)
+		}
 	}
-	result := p.exchangeOnNewStream(ctx, query, true)
-	if result.err != nil {
-		return nil, p.failed(append(failures, result))
+	for retries := 1; ; retries++ {
+		retried := time.Now()
+		c, err := p.reserveOpenOrShare(ctx)
+		if err != nil {
+			return nil, p.failed(append(failures, notOpenSince(retried, err)))
+		}
+		var result streamResult
+		if c != nil {
+			result = p.exchangeOn(ctx, c, query, c.describeShared(), true)
+		} else {
+			result = p.exchangeOnNewStream(ctx, query, true)
+		}
+		if result.err == nil {
+			p.release(result.conn)
+			return result.resp, nil
+		}
+		failures = append(failures, result)
+		if retries == dnsStreamRetries || !p.retryable(ctx, result) {
+			return nil, p.failed(failures)
+		}
 	}
-	p.release(result.conn)
-	return result.resp, nil
+}
+
+func (p *streamPool) retryable(ctx context.Context, result streamResult) bool {
+	return result.lost && ctx.Err() == nil && !p.closed.Load()
 }
 
 func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, shared bool, query []byte) ([]byte, []streamResult) {
@@ -400,7 +421,7 @@ func (p *streamPool) send(ctx context.Context, c *pooledConn, query []byte, stre
 		origID:   binary.BigEndian.Uint16(query[:2]),
 		opcode:   query[2] & dnsOpcodeMask,
 		question: question,
-		deadline: lateReadDeadline(ctx),
+		deadline: lateReadDeadline(ctx, p.lateRead),
 		flight:   newFlight[streamResult](),
 		late:     lateAnswer(ctx),
 		stream:   stream,
@@ -413,7 +434,7 @@ func (p *streamPool) send(ctx context.Context, c *pooledConn, query []byte, stre
 func (p *streamPool) write(c *pooledConn, q *pendingQuery, query []byte) {
 	wire, err := p.register(c, q, query)
 	if err != nil {
-		q.flight.deliver(streamResult{pooled: q.pooled, stream: q.stream, err: err})
+		q.flight.deliver(streamResult{pooled: q.pooled, stream: q.stream, err: err, lost: true})
 		return
 	}
 	p.signalShare()
@@ -534,7 +555,7 @@ func (p *streamPool) fail(c *pooledConn, cause error) {
 		if expired && deadlineExpired(cause) && now.Before(q.deadline) {
 			err = errStreamStalled
 		}
-		q.flight.deliver(streamResult{pooled: q.pooled, stream: q.stream, err: err})
+		q.flight.deliver(streamResult{pooled: q.pooled, stream: q.stream, err: err, lost: !deadlineExpired(err)})
 	}
 }
 
@@ -629,8 +650,8 @@ func (p *streamPool) signalShare() {
 	}
 }
 
-func lateReadDeadline(ctx context.Context) time.Time {
-	deadline := time.Now().Add(dnsLateReadTimeout)
+func lateReadDeadline(ctx context.Context, lateRead time.Duration) time.Time {
+	deadline := time.Now().Add(lateRead)
 	if callerDeadline, ok := ctx.Deadline(); ok && callerDeadline.After(deadline) {
 		return callerDeadline
 	}

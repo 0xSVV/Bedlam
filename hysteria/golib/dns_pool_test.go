@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"regexp"
@@ -1343,4 +1344,156 @@ func TestDNSCacheResolve_neverTakesTheAnswerToAnotherQuestionFromAStream(t *test
 			t.Errorf("the cache serves b.example the answer to %q", got)
 		}
 	}
+}
+
+func awaitQuestion(t *testing.T, received <-chan string, name string) {
+	t.Helper()
+	want, _ := dnsQuestion(dnsQuery(name))
+	select {
+	case got := <-received:
+		if got != want {
+			t.Fatalf("the server received %q, want %q", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s never reached the server", name)
+	}
+}
+
+func holdOpenSlots(p *streamPool) func() {
+	for i := 0; i < cap(p.opening); i++ {
+		p.opening <- struct{}{}
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			for i := 0; i < cap(p.opening); i++ {
+				<-p.opening
+			}
+		})
+	}
+}
+
+type exchangeOutcome struct {
+	resp []byte
+	err  error
+	took time.Duration
+}
+
+func exchangeInBackground(p *streamPool, budget time.Duration, name string) <-chan exchangeOutcome {
+	done := make(chan exchangeOutcome, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), budget)
+		defer cancel()
+		start := time.Now()
+		resp, err := p.exchange(ctx, dnsQuery(name))
+		done <- exchangeOutcome{resp: resp, err: err, took: time.Since(start)}
+	}()
+	return done
+}
+
+func awaitAnswer(t *testing.T, done <-chan exchangeOutcome, name string, conn int) exchangeOutcome {
+	t.Helper()
+	select {
+	case out := <-done:
+		if out.err != nil {
+			t.Fatalf("%s: %v", name, out.err)
+		}
+		want, _ := dnsQuestion(dnsQuery(name))
+		if got, _ := dnsQuestion(out.resp); got != want {
+			t.Fatalf("%s received the answer to %q", name, got)
+		}
+		if got := answerConn(out.resp); got != conn {
+			t.Errorf("%s was answered on stream %d, want stream %d", name, got, conn)
+		}
+		return out
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s never returned", name)
+	}
+	return exchangeOutcome{}
+}
+
+func TestStreamPool_retriesTheOpenersQueryWhenAnotherQueryEndsItsStream(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		close bool
+	}{
+		{"another query on it timed out", false},
+		{"it closed after answering another query", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			received := make(chan string, 8)
+			dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+				for n := 1; ; n++ {
+					q, err := readDNSFrame(s)
+					if err != nil {
+						return
+					}
+					resp := dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})
+					if conn > 1 {
+						if writeDNSFrame(s, resp) != nil {
+							return
+						}
+						continue
+					}
+					name, _ := dnsQuestion(q)
+					received <- name
+					if tc.close && n == 2 {
+						_ = writeDNSFrame(s, resp)
+						_ = s.(*net.TCPConn).CloseWrite()
+						_, _ = io.Copy(io.Discard, s)
+						return
+					}
+				}
+			})
+			p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+			defer p.close()
+			p.lateRead = 200 * time.Millisecond
+
+			opener := exchangeInBackground(p, 3*time.Second, "opener.example")
+			awaitQuestion(t, received, "opener.example")
+			c := p.share()
+			if c == nil {
+				t.Fatal("the stream the opener dialled is not open to another query")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+			if result := p.exchangeOn(ctx, c, dnsQuery("joiner.example"), c.describeShared(), true); result.err == nil {
+				p.release(result.conn)
+			}
+			awaitAnswer(t, opener, "opener.example", 2)
+		})
+	}
+}
+
+func TestStreamPool_retriesAgainWhenAnotherQueryEndsTheStreamARetryJoined(t *testing.T) {
+	received := make(chan string, 8)
+	dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+		for {
+			q, err := readDNSFrame(s)
+			if err != nil {
+				return
+			}
+			if conn == 1 {
+				name, _ := dnsQuestion(q)
+				received <- name
+				continue
+			}
+			if writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})) != nil || conn == 2 {
+				return
+			}
+		}
+	})
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+	defer p.close()
+	p.lateRead = 500 * time.Millisecond
+
+	exchangeInBackground(p, 100*time.Millisecond, "dropped.example")
+	awaitQuestion(t, received, "dropped.example")
+	fillPool(t, p, 1)
+	release := holdOpenSlots(p)
+	defer release()
+	retried := exchangeInBackground(p, 3*time.Second, "retried.example")
+	awaitQuestion(t, received, "retried.example")
+	release()
+	awaitAnswer(t, retried, "retried.example", 3)
 }
