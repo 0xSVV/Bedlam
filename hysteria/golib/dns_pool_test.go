@@ -1587,6 +1587,7 @@ func TestStreamPool_stopsSharingOnlyWhenTheServerEndsASharedStream(t *testing.T)
 		{"the server closed it", io.EOF, true},
 		{"the tunnel closed it", coreErrs.ClosedError{Err: io.EOF}, false},
 		{"the Hysteria server could not reach the DNS server", fmt.Errorf("read response length: %w", coreErrs.DialError{Message: "connection refused"}), false},
+		{"the server answered another question", fmt.Errorf("%w: response does not answer the question sent under its ID", errDNSMalformed), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opened := make(chan scriptedReadConn, 4)
