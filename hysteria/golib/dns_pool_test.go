@@ -1615,14 +1615,16 @@ func (c scriptedReadConn) Close() error {
 
 func TestStreamPool_stopsSharingOnlyWhenTheServerEndsASharedStream(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		cause  error
-		serial bool
+		name    string
+		queries int
+		cause   error
+		serial  bool
 	}{
-		{"the server closed it", io.EOF, true},
-		{"the tunnel closed it", coreErrs.ClosedError{Err: io.EOF}, false},
-		{"the Hysteria server could not reach the DNS server", fmt.Errorf("read response length: %w", coreErrs.DialError{Message: "connection refused"}), false},
-		{"the server answered another question", fmt.Errorf("%w: response does not answer the question sent under its ID", errDNSMalformed), false},
+		{"the server closed it", 2, io.EOF, true},
+		{"the stream closed before a second query was sent on it", 1, io.EOF, false},
+		{"the tunnel closed it", 2, coreErrs.ClosedError{Err: io.EOF}, false},
+		{"the Hysteria server could not reach the DNS server", 2, fmt.Errorf("read response length: %w", coreErrs.DialError{Message: "connection refused"}), false},
+		{"the server answered another question", 2, fmt.Errorf("%w: response does not answer the question sent under its ID", errDNSMalformed), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opened := make(chan scriptedReadConn, 4)
@@ -1639,6 +1641,24 @@ func TestStreamPool_stopsSharingOnlyWhenTheServerEndsASharedStream(t *testing.T)
 			}
 			if c == nil {
 				t.Fatal("the opener's stream never became open to another query")
+			}
+			if tc.queries > 1 {
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+					defer cancel()
+					p.exchangeOn(ctx, c, dnsQuery("joiner.example"), c.describeShared(), true)
+				}()
+			}
+			for start := time.Now(); ; time.Sleep(time.Millisecond) {
+				c.mu.Lock()
+				sent := c.answered + len(c.pending)
+				c.mu.Unlock()
+				if sent >= tc.queries {
+					break
+				}
+				if time.Since(start) > 2*time.Second {
+					t.Fatalf("%d queries were sent on the stream, want %d", sent, tc.queries)
+				}
 			}
 			(<-opened).fail <- tc.cause
 			for start := time.Now(); time.Since(start) < 2*time.Second; time.Sleep(time.Millisecond) {

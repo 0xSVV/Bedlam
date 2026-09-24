@@ -550,7 +550,7 @@ func (p *streamPool) fail(c *pooledConn, cause error) {
 	c.err = cause
 	pending := c.pending
 	c.pending = nil
-	oneAnswer := !c.pipelined && c.answered <= 1
+	oneOfSeveral := !c.pipelined && c.answered <= 1 && c.answered+len(pending) >= 2
 	c.mu.Unlock()
 	_ = c.conn.Close()
 	var dialErr coreErrs.DialError
@@ -558,7 +558,7 @@ func (p *streamPool) fail(c *pooledConn, cause error) {
 	now := time.Now()
 	p.mu.Lock()
 	delete(p.busy, c)
-	if c.joined && oneAnswer && len(pending) > 0 && !unreached && !errors.Is(cause, errDNSMalformed) && !deadlineExpired(cause) && !isTunnelFailure(cause) {
+	if c.joined && oneOfSeveral && !unreached && !errors.Is(cause, errDNSMalformed) && !deadlineExpired(cause) && !isTunnelFailure(cause) {
 		p.serialUntil = now.Add(dnsSerialHold)
 	}
 	p.mu.Unlock()
