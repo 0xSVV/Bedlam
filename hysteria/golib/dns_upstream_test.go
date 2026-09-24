@@ -559,6 +559,34 @@ func TestDNSUpstream_slowServerAnswersAfterItsSliceWhileTheNextIsPending(t *test
 	}
 }
 
+func TestDNSUpstream_slowServerThatKeepsTryingIsLoggedAsInfo(t *testing.T) {
+	logs := captureLogs(t)
+	release := blockUntilCleanup(t)
+	nextStarted := make(chan struct{})
+	slowID := uniqueUpstreamID(t, "tls")
+	slow := &stubResolver{name: slowID, reply: func(q []byte) ([]byte, error) {
+		<-nextStarted
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	pending := &stubResolver{name: uniqueUpstreamID(t, "tls"), reply: func([]byte) ([]byte, error) {
+		close(nextStarted)
+		<-release
+		return nil, errors.New("released")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{slow, pending}, ident: uniqueUpstreamID(t, "tls")}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if _, err := up.exchange(ctx, dnsQuery("example.com")); err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+
+	lines := logs.linesMentioning(slowID + " has not answered in")
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "INFO dns DNS "+slowID+" has not answered in ") || !strings.HasSuffix(lines[0], ", trying next") {
+		t.Errorf("logged %q, want one INFO line: the slow server keeps trying, nothing failed yet", lines)
+	}
+}
+
 func TestDNSUpstream_keepsServerOrderWhileStaggering(t *testing.T) {
 	release := blockUntilCleanup(t)
 	var mu sync.Mutex

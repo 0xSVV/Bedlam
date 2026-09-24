@@ -205,7 +205,7 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 				break
 			}
 			if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
-				log(LogLevelWarn, srcDNS, "DNS %s has not answered in %s, trying next", id, diagDuration(time.Since(latestStart)))
+				log(LogLevelInfo, srcDNS, "DNS %s has not answered in %s, trying next", id, diagDuration(time.Since(latestStart)))
 			}
 			latestFailed = false
 			launch()
