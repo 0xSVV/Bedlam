@@ -71,6 +71,7 @@ type streamPool struct {
 	opening     chan struct{}
 	openTimeout time.Duration
 	lateRead    time.Duration
+	stall       time.Duration
 	ctx         context.Context
 	cancel      context.CancelFunc
 	closed      atomic.Bool
@@ -141,6 +142,7 @@ func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *
 		opening:     make(chan struct{}, dnsPoolMaxOpening),
 		openTimeout: dnsOpenTimeout,
 		lateRead:    dnsLateReadTimeout,
+		stall:       dnsStreamStall,
 		ctx:         ctx,
 		cancel:      cancel,
 	}
@@ -579,14 +581,14 @@ func (c *pooledConn) earliestDeadlineLocked() time.Time {
 	return earliest
 }
 
-func (c *pooledConn) load(now time.Time) (int, bool) {
+func (c *pooledConn) load(now time.Time, stall time.Duration) (int, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.err != nil || !c.proven || len(c.pending) >= dnsStreamMaxQueries {
 		return 0, false
 	}
 	for _, q := range c.pending {
-		if now.Sub(q.sent) > dnsStreamStall && !c.last.After(q.sent) {
+		if now.Sub(q.sent) > stall && !c.last.After(q.sent) {
 			return 0, false
 		}
 	}
@@ -616,7 +618,7 @@ func (p *streamPool) share() *pooledConn {
 	var best *pooledConn
 	least := dnsStreamMaxQueries
 	for c := range p.busy {
-		if n, ok := c.load(now); ok && n < least {
+		if n, ok := c.load(now, p.stall); ok && n < least {
 			best, least = c, n
 		}
 	}

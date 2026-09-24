@@ -1620,3 +1620,65 @@ func TestStreamPool_stopsSharingOnlyWhenTheServerEndsASharedStream(t *testing.T)
 		})
 	}
 }
+
+func firstStreamSilentServer(t *testing.T) (func() (net.Conn, error), <-chan string) {
+	t.Helper()
+	received := make(chan string, 64)
+	dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+		for {
+			q, err := readDNSFrame(s)
+			if err != nil {
+				return
+			}
+			if conn == 1 {
+				name, _ := dnsQuestion(q)
+				received <- name
+				continue
+			}
+			if writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0})) != nil {
+				return
+			}
+		}
+	})
+	return dial, received
+}
+
+func TestStreamPool_aQueryOnAStreamAnotherQueryTimedOutRetriesOnANewStream(t *testing.T) {
+	dial, received := firstStreamSilentServer(t)
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+	defer p.close()
+	p.lateRead = 500 * time.Millisecond
+
+	exchangeInBackground(p, 100*time.Millisecond, "dropped.example")
+	awaitQuestion(t, received, "dropped.example")
+	release := holdOpenSlots(p)
+	defer release()
+	waiting := exchangeInBackground(p, 2*time.Second, "waiting.example")
+	awaitQuestion(t, received, "waiting.example")
+	release()
+
+	if out := awaitAnswer(t, waiting, "waiting.example", 2); out.took > time.Second {
+		t.Errorf("the query took %v, want it retried when the other query's deadline closed the stream", out.took)
+	}
+}
+
+func TestStreamPool_doesNotJoinAStreamThatStoppedAnswering(t *testing.T) {
+	dial, received := firstStreamSilentServer(t)
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) { return dial() })
+	defer p.close()
+	p.stall = 100 * time.Millisecond
+
+	exchangeInBackground(p, 5*time.Second, "unanswered.example")
+	awaitQuestion(t, received, "unanswered.example")
+	release := holdOpenSlots(p)
+	defer release()
+	time.Sleep(2 * p.stall)
+	next := exchangeInBackground(p, 2*time.Second, "next.example")
+	select {
+	case name := <-received:
+		t.Fatalf("%q joined a stream that left a query unanswered for %v", name, 2*p.stall)
+	case <-time.After(200 * time.Millisecond):
+	}
+	release()
+	awaitAnswer(t, next, "next.example", 2)
+}
