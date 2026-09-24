@@ -1167,3 +1167,79 @@ func TestStreamPool_skipsTheRedialWhenAPooledStreamReachesItsDeadline(t *testing
 		t.Errorf("dialled %d streams after the pooled one reached its deadline, want none", n)
 	}
 }
+
+func latencyDNSServer(t *testing.T, rtt time.Duration) func() (net.Conn, error) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			s, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(s net.Conn) {
+				defer s.Close()
+				var writeMu sync.Mutex
+				for {
+					q, err := readDNSFrame(s)
+					if err != nil {
+						return
+					}
+					time.AfterFunc(rtt, func() {
+						writeMu.Lock()
+						defer writeMu.Unlock()
+						_ = writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}))
+					})
+				}
+			}(s)
+		}
+	}()
+	return func() (net.Conn, error) { return net.Dial("tcp", ln.Addr().String()) }
+}
+
+func TestStreamPool_slowLinkBurstIsAnsweredWithinItsBudget(t *testing.T) {
+	const rtt = 100 * time.Millisecond
+	connect := latencyDNSServer(t, rtt)
+	var opening, peak atomic.Int32
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+		n := opening.Add(1)
+		for m := peak.Load(); n > m && !peak.CompareAndSwap(m, n); m = peak.Load() {
+		}
+		defer opening.Add(-1)
+		time.Sleep(rtt)
+		return connect()
+	})
+	defer p.close()
+
+	const burst = 42
+	var wg sync.WaitGroup
+	var failed atomic.Int32
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 6*rtt)
+			defer cancel()
+			query := dnsQuery(fmt.Sprintf("burst%d.example", i))
+			resp, err := p.exchange(ctx, query)
+			if err != nil {
+				failed.Add(1)
+				return
+			}
+			if got, _ := dnsQuestion(resp); got != string(query[12:]) {
+				t.Errorf("query %d received the answer to another query", i)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if n := failed.Load(); n > 0 {
+		t.Errorf("%d of %d queries sent at once were not answered within %v, with streams taking %v to open and %v to answer", n, burst, 6*rtt, rtt, rtt)
+	}
+	if n := peak.Load(); n > dnsPoolMaxOpening {
+		t.Errorf("%d streams were opening at once, want at most %d", n, dnsPoolMaxOpening)
+	}
+}

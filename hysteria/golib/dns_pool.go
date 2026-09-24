@@ -3,28 +3,53 @@ package golib
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 const (
-	dnsPoolSize        = 4
-	dnsPoolIdleTimeout = 30 * time.Second
-	dnsOpenTimeout     = 8 * time.Second
-	dnsPoolMaxOpening  = 2
-	dnsLateReadTimeout = 8 * time.Second
+	dnsPoolSize         = 4
+	dnsPoolIdleTimeout  = 30 * time.Second
+	dnsOpenTimeout      = 8 * time.Second
+	dnsPoolMaxOpening   = 2
+	dnsLateReadTimeout  = 8 * time.Second
+	dnsStreamMaxQueries = 32
+	dnsStreamStall      = dnsAttemptTimeout / 2
 )
+
+var errStreamStalled = errors.New("the stream stopped answering: another query on it timed out")
 
 type pooledConn struct {
 	conn     net.Conn
 	opened   time.Time
 	last     time.Time
 	answered int
+	users    int
+
+	writeMu sync.Mutex
+	mu      sync.Mutex
+	pending map[uint16]*pendingQuery
+	reading bool
+	proven  bool
+	err     error
+}
+
+type pendingQuery struct {
+	wireID   uint16
+	origID   uint16
+	sent     time.Time
+	deadline time.Time
+	flight   *flight[streamResult]
+	late     func([]byte)
+	stream   string
+	pooled   bool
 }
 
 // Without reuse every lookup opens its own tunnel stream, and a page that
@@ -38,6 +63,10 @@ type streamPool struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	closed      atomic.Bool
+
+	mu        sync.Mutex
+	busy      map[*pooledConn]struct{}
+	shareable chan struct{}
 }
 
 type streamResult struct {
@@ -104,16 +133,18 @@ func newStreamPool(label string, dial func(context.Context) (net.Conn, error)) *
 }
 
 func (p *streamPool) exchange(ctx context.Context, callerQuery []byte) ([]byte, error) {
+	if len(callerQuery) < dnsHeaderLen {
+		return nil, fmt.Errorf("%w: query shorter than a DNS header", errDNSMalformed)
+	}
 	query := bytes.Clone(callerQuery)
 	started := time.Now()
-	c, err := p.takeOrReserveOpen(ctx)
+	c, shared, err := p.takeOrReserveOpen(ctx)
 	if err != nil {
 		return nil, p.failed([]streamResult{notOpenSince(started, err)})
 	}
-	reserved := c == nil
 	var failures []streamResult
 	if c != nil {
-		resp, pooledFailures := p.exchangeOnPooled(ctx, c, query)
+		resp, pooledFailures := p.exchangeOnPooled(ctx, c, shared, query)
 		if pooledFailures == nil {
 			return resp, nil
 		}
@@ -121,20 +152,35 @@ func (p *streamPool) exchange(ctx context.Context, callerQuery []byte) ([]byte, 
 		if ctx.Err() != nil || deadlineExpired(failures[len(failures)-1].err) {
 			return nil, p.failed(failures)
 		}
+		retried := time.Now()
+		if c, err = p.reserveOpenOrShare(ctx); err != nil {
+			return nil, p.failed(append(failures, notOpenSince(retried, err)))
+		}
+		if c != nil {
+			result := p.exchangeOn(ctx, c, query, c.describeShared(), true)
+			if result.err != nil {
+				return nil, p.failed(append(failures, result))
+			}
+			p.release(c)
+			return result.resp, nil
+		}
 	}
-	result := p.exchangeOnNewStream(ctx, query, reserved)
+	result := p.exchangeOnNewStream(ctx, query, true)
 	if result.err != nil {
 		return nil, p.failed(append(failures, result))
 	}
-	p.put(result.conn)
+	p.release(result.conn)
 	return result.resp, nil
 }
 
-func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, query []byte) ([]byte, []streamResult) {
+func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, shared bool, query []byte) ([]byte, []streamResult) {
 	streamCtx, stopStreams := context.WithCancel(ctx)
 	defer stopStreams()
 	results := make(chan streamResult, 2)
 	stream := pooled.describe()
+	if shared {
+		stream = pooled.describeShared()
+	}
 	go func() { results <- p.exchangeOn(streamCtx, pooled, query, stream, true) }()
 	hedge := time.NewTimer(hedgeDelay(ctx))
 	defer hedge.Stop()
@@ -161,7 +207,7 @@ func (p *streamPool) exchangeOnPooled(ctx context.Context, pooled *pooledConn, q
 			if !result.pooled && (pooledPending || isTimeoutClass(failures[0].err)) {
 				p.drain()
 			}
-			p.put(result.conn)
+			p.release(result.conn)
 			if running > 0 {
 				go p.reclaim(results, running)
 			}
@@ -185,6 +231,7 @@ func (p *streamPool) exchangeOnNewStream(ctx context.Context, query []byte, rese
 	if opened.err != nil {
 		return streamResult{err: opened.err}
 	}
+	p.acquire(opened.conn, true)
 	return p.exchangeOn(ctx, opened.conn, query, "new stream dialed in "+diagDuration(opened.took).String(), false)
 }
 
@@ -192,24 +239,64 @@ func notOpenSince(started time.Time, err error) streamResult {
 	return streamResult{stream: "new stream not open after " + diagDuration(time.Since(started)).String(), err: err}
 }
 
-func (p *streamPool) takeOrReserveOpen(ctx context.Context) (*pooledConn, error) {
+func (p *streamPool) takeOrReserveOpen(ctx context.Context) (c *pooledConn, shared bool, err error) {
 	for {
+		shareable := p.shareSignal()
 		if c := p.take(); c != nil {
-			return c, nil
+			return c, false, nil
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, false, err
+		}
+		if p.tryReserveOpen() {
+			return nil, false, nil
+		}
+		if c := p.share(); c != nil {
+			return c, true, nil
 		}
 		select {
 		case c := <-p.idle:
 			if !p.closeIfStale(c) {
-				return c, nil
+				p.acquire(c, false)
+				return c, false, nil
 			}
 		case p.opening <- struct{}{}:
+			return nil, false, nil
+		case <-shareable:
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		}
+	}
+}
+
+func (p *streamPool) reserveOpenOrShare(ctx context.Context) (*pooledConn, error) {
+	for {
+		shareable := p.shareSignal()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if p.tryReserveOpen() {
 			return nil, nil
+		}
+		if c := p.share(); c != nil {
+			return c, nil
+		}
+		select {
+		case p.opening <- struct{}{}:
+			return nil, nil
+		case <-shareable:
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
+	}
+}
+
+func (p *streamPool) tryReserveOpen() bool {
+	select {
+	case p.opening <- struct{}{}:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -258,7 +345,7 @@ func (p *streamPool) open() *flight[openResult] {
 func (p *streamPool) reclaim(results <-chan streamResult, pending int) {
 	for ; pending > 0; pending-- {
 		if result := <-results; result.err == nil {
-			p.put(result.conn)
+			p.release(result.conn)
 		}
 	}
 }
@@ -303,26 +390,217 @@ func (p *streamPool) exchangeOn(ctx context.Context, c *pooledConn, query []byte
 }
 
 func (p *streamPool) send(ctx context.Context, c *pooledConn, query []byte, stream string, pooled bool) *flight[streamResult] {
-	exchanging := newFlight[streamResult]()
-	late := lateAnswer(ctx)
-	deadline := lateReadDeadline(ctx)
-	go func() {
-		_ = c.conn.SetDeadline(deadline)
-		resp, err := dnsStreamExchange(c.conn, query)
+	q := &pendingQuery{
+		origID:   binary.BigEndian.Uint16(query[:2]),
+		deadline: lateReadDeadline(ctx),
+		flight:   newFlight[streamResult](),
+		late:     lateAnswer(ctx),
+		stream:   stream,
+		pooled:   pooled,
+	}
+	go p.write(c, q, query)
+	return q.flight
+}
+
+func (p *streamPool) write(c *pooledConn, q *pendingQuery, query []byte) {
+	wire, err := p.register(c, q, query)
+	if err != nil {
+		q.flight.deliver(streamResult{pooled: q.pooled, stream: q.stream, err: err})
+		return
+	}
+	p.signalShare()
+	c.writeMu.Lock()
+	err = writeDNSFrame(c.conn, wire)
+	c.writeMu.Unlock()
+	if err != nil {
+		p.fail(c, fmt.Errorf("write query: %w", err))
+	}
+}
+
+func (p *streamPool) register(c *pooledConn, q *pendingQuery, query []byte) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.err != nil {
+		return nil, c.err
+	}
+	if c.pending == nil {
+		c.pending = map[uint16]*pendingQuery{}
+	}
+	id := q.origID
+	for c.pending[id] != nil {
+		id++
+	}
+	q.wireID, q.sent = id, time.Now()
+	c.pending[id] = q
+	_ = c.conn.SetDeadline(c.earliestDeadlineLocked())
+	if !c.reading {
+		c.reading = true
+		go p.read(c)
+	}
+	wire := bytes.Clone(query)
+	binary.BigEndian.PutUint16(wire[:2], id)
+	return wire, nil
+}
+
+func (p *streamPool) read(c *pooledConn) {
+	for {
+		resp, err := readDNSFrame(c.conn)
 		if err != nil {
-			_ = c.conn.Close()
-			exchanging.deliver(streamResult{pooled: pooled, stream: stream, err: err})
+			p.fail(c, err)
 			return
 		}
-		_ = c.conn.SetDeadline(time.Time{})
-		c.last = time.Now()
-		c.answered++
-		if !exchanging.deliver(streamResult{conn: c, pooled: pooled, resp: resp, stream: stream}) {
-			p.put(c)
-			late(resp)
+		if !p.dispatch(c, resp) {
+			return
 		}
-	}()
-	return exchanging
+	}
+}
+
+func (p *streamPool) dispatch(c *pooledConn, resp []byte) bool {
+	c.mu.Lock()
+	q := c.pending[binary.BigEndian.Uint16(resp[:2])]
+	if q == nil {
+		c.mu.Unlock()
+		p.fail(c, fmt.Errorf("%w: response transaction ID mismatch", errDNSMalformed))
+		return false
+	}
+	delete(c.pending, q.wireID)
+	c.last = time.Now()
+	c.answered++
+	c.proven = true
+	more := len(c.pending) > 0
+	if more {
+		_ = c.conn.SetDeadline(c.earliestDeadlineLocked())
+	} else {
+		c.reading = false
+		_ = c.conn.SetDeadline(time.Time{})
+	}
+	c.mu.Unlock()
+	binary.BigEndian.PutUint16(resp[:2], q.origID)
+	if !q.flight.deliver(streamResult{conn: c, pooled: q.pooled, resp: resp, stream: q.stream}) {
+		p.release(c)
+		q.late(resp)
+	}
+	p.signalShare()
+	return more
+}
+
+func (p *streamPool) fail(c *pooledConn, cause error) {
+	c.mu.Lock()
+	if c.err != nil {
+		c.mu.Unlock()
+		return
+	}
+	c.err = cause
+	pending := c.pending
+	c.pending = nil
+	c.mu.Unlock()
+	_ = c.conn.Close()
+	p.mu.Lock()
+	delete(p.busy, c)
+	p.mu.Unlock()
+	now := time.Now()
+	expired := false
+	for _, q := range pending {
+		expired = expired || !now.Before(q.deadline)
+	}
+	for _, q := range pending {
+		err := cause
+		if expired && deadlineExpired(cause) && now.Before(q.deadline) {
+			err = errStreamStalled
+		}
+		q.flight.deliver(streamResult{pooled: q.pooled, stream: q.stream, err: err})
+	}
+}
+
+func (c *pooledConn) earliestDeadlineLocked() time.Time {
+	var earliest time.Time
+	for _, q := range c.pending {
+		if earliest.IsZero() || q.deadline.Before(earliest) {
+			earliest = q.deadline
+		}
+	}
+	return earliest
+}
+
+func (c *pooledConn) load(now time.Time) (int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.err != nil || !c.proven || len(c.pending) >= dnsStreamMaxQueries {
+		return 0, false
+	}
+	for _, q := range c.pending {
+		if now.Sub(q.sent) > dnsStreamStall && !c.last.After(q.sent) {
+			return 0, false
+		}
+	}
+	return len(c.pending), true
+}
+
+func (p *streamPool) acquire(c *pooledConn, proven bool) {
+	c.mu.Lock()
+	c.proven = proven
+	c.mu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	c.users = 1
+	if p.busy == nil {
+		p.busy = map[*pooledConn]struct{}{}
+	}
+	p.busy[c] = struct{}{}
+}
+
+func (p *streamPool) share() *pooledConn {
+	now := time.Now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var best *pooledConn
+	least := dnsStreamMaxQueries
+	for c := range p.busy {
+		if n, ok := c.load(now); ok && n < least {
+			best, least = c, n
+		}
+	}
+	if best != nil {
+		best.users++
+	}
+	return best
+}
+
+func (p *streamPool) release(c *pooledConn) {
+	p.mu.Lock()
+	c.users--
+	idle := c.users <= 0
+	if idle {
+		delete(p.busy, c)
+	}
+	p.mu.Unlock()
+	if !idle {
+		return
+	}
+	c.mu.Lock()
+	alive := c.err == nil
+	c.mu.Unlock()
+	if alive {
+		p.put(c)
+	}
+}
+
+func (p *streamPool) shareSignal() <-chan struct{} {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shareable == nil {
+		p.shareable = make(chan struct{})
+	}
+	return p.shareable
+}
+
+func (p *streamPool) signalShare() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shareable != nil {
+		close(p.shareable)
+		p.shareable = nil
+	}
 }
 
 func lateReadDeadline(ctx context.Context) time.Time {
@@ -334,8 +612,17 @@ func lateReadDeadline(ctx context.Context) time.Time {
 }
 
 func (c *pooledConn) describe() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return fmt.Sprintf("pooled stream idle %s (open %s, answered %d)",
 		diagDuration(wallSince(c.last)), diagDuration(wallSince(c.opened)), c.answered)
+}
+
+func (c *pooledConn) describeShared() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return fmt.Sprintf("shared stream (open %s, answered %d, %d waiting)",
+		diagDuration(wallSince(c.opened)), c.answered, len(c.pending))
 }
 
 func wallSince(t time.Time) time.Duration {
@@ -351,6 +638,7 @@ func (p *streamPool) take() *pooledConn {
 		select {
 		case c := <-p.idle:
 			if !p.closeIfStale(c) {
+				p.acquire(c, false)
 				return c
 			}
 		default:
