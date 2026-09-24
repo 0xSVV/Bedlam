@@ -1170,6 +1170,41 @@ func TestStreamPool_skipsTheRedialWhenAPooledStreamReachesItsDeadline(t *testing
 	}
 }
 
+func TestStreamPool_skipsTheRedialWhenThePoolClosesUnderAPooledQuery(t *testing.T) {
+	var dialed atomic.Int32
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+		dialed.Add(1)
+		return nil, errors.New("dial refused")
+	})
+	c := &pooledConn{conn: newScriptedReadConn(), opened: time.Now(), last: time.Now()}
+	p.idle <- c
+	done := exchangeInBackground(p, 2*time.Second, "example.com")
+	for start := time.Now(); ; time.Sleep(time.Millisecond) {
+		c.mu.Lock()
+		sent := len(c.pending) > 0
+		c.mu.Unlock()
+		if sent {
+			break
+		}
+		if time.Since(start) > 2*time.Second {
+			t.Fatal("the query never reached the pooled stream")
+		}
+	}
+	p.close()
+
+	select {
+	case out := <-done:
+		if !errors.Is(out.err, net.ErrClosed) {
+			t.Errorf("err = %v, want the closed pool's error", out.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the query never returned after the pool closed")
+	}
+	if n := dialed.Load(); n != 0 {
+		t.Errorf("dialled %d streams after the pool closed, want none", n)
+	}
+}
+
 func latencyDNSServer(t *testing.T, rtt time.Duration) func() (net.Conn, error) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

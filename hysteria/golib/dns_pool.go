@@ -167,7 +167,7 @@ func (p *streamPool) exchange(ctx context.Context, callerQuery []byte) ([]byte, 
 			return resp, nil
 		}
 		failures = pooledFailures
-		if ctx.Err() != nil || deadlineExpired(failures[len(failures)-1].err) {
+		if ctx.Err() != nil || p.closed.Load() || deadlineExpired(failures[len(failures)-1].err) {
 			return nil, p.failed(failures)
 		}
 	} else {
