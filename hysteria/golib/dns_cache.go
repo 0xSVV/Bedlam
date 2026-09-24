@@ -126,13 +126,14 @@ func (c *dnsCache) storeLate(key string, resp []byte) {
 	if ttl <= 0 {
 		return
 	}
-	c.mu.RLock()
-	entry, ok := c.entries[key]
-	fresh := ok && time.Now().Before(entry.expiry)
-	c.mu.RUnlock()
-	if !fresh {
-		c.store(key, resp, ttl)
+	respCopy := make([]byte, len(resp))
+	copy(respCopy, resp)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if entry, ok := c.entries[key]; ok && time.Now().Before(entry.expiry) {
+		return
 	}
+	c.storeLocked(key, respCopy, ttl)
 }
 
 func (c *dnsCache) lookup(key string, txID uint16) []byte {
@@ -171,7 +172,10 @@ func (c *dnsCache) store(key string, response []byte, ttl time.Duration) {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.storeLocked(key, respCopy, ttl)
+}
 
+func (c *dnsCache) storeLocked(key string, respCopy []byte, ttl time.Duration) {
 	if existing, ok := c.entries[key]; ok {
 		existing.response = respCopy
 		existing.storedAt = time.Now()

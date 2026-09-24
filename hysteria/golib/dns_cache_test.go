@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -995,5 +996,32 @@ func TestDNSCache_lateAnswerFillsOnlyAMissingOrExpiredEntry(t *testing.T) {
 	c.storeLate("expired", dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1}))
 	if resp := c.lookup("expired", 0x1234); resp == nil || resp[len(resp)-1] != 1 {
 		t.Errorf("entry = %v, want the late answer to replace an expired one", resp)
+	}
+}
+
+func TestDNSCache_lateAnswerRacingTheWinnersStoreNeverReplacesIt(t *testing.T) {
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("the race needs two threads")
+	}
+	q := dnsQuery("example.com")
+	winner := dnsResponseFor(q, 60, [4]byte{2, 2, 2, 2})
+	late := dnsResponseFor(q, 60, [4]byte{1, 1, 1, 1})
+	const rounds = 200000
+	replaced := 0
+	for i := 0; i < rounds; i++ {
+		c := newDNSCache()
+		stored := make(chan struct{})
+		go func() {
+			c.storeLate("key", late)
+			close(stored)
+		}()
+		c.store("key", winner, time.Minute)
+		<-stored
+		if resp := c.lookup("key", 0x1234); resp == nil || resp[len(resp)-1] != 2 {
+			replaced++
+		}
+	}
+	if replaced > 0 {
+		t.Errorf("a late answer replaced the winner's fresh answer in %d of %d races", replaced, rounds)
 	}
 }
