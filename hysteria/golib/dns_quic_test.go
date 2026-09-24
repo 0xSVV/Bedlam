@@ -437,3 +437,45 @@ func TestDNSUpstream_movesPastADoQServerWhoseHandshakeTimesOut(t *testing.T) {
 		t.Errorf("preferred = %d, want the working server once the other's handshake timed out", got)
 	}
 }
+
+type pastDeadlineContext struct{ context.Context }
+
+func (pastDeadlineContext) Deadline() (time.Time, bool) { return time.Now().Add(-time.Second), true }
+
+func TestDoQResolver_aQueryOutOfTimeKeepsTheConnection(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ctx  func() context.Context
+	}{
+		{"cancelled", func() context.Context {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			return ctx
+		}},
+		{"deadline passed before its timer fired", func() context.Context {
+			return pastDeadlineContext{context.Background()}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDoQServer(t, [4]byte{5, 5, 5, 5})
+			fc, bridges := d.client(t)
+			r := newDoQResolver(fc, d.server(), &tls.Config{RootCAs: d.pool})
+			defer r.close()
+			warm, cancelWarm := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancelWarm()
+			if _, err := r.exchange(warm, dnsQuery("warm.example")); err != nil {
+				t.Fatalf("warm-up: %v", err)
+			}
+
+			if _, err := r.exchange(tc.ctx(), dnsQuery("late.example")); err == nil {
+				t.Fatal("a query with no time left must fail")
+			}
+			if _, err := r.exchange(warm, dnsQuery("next.example")); err != nil {
+				t.Fatalf("the next query: %v", err)
+			}
+			if n := len(bridges()); n != 1 {
+				t.Errorf("opened %d UDP sessions, want the connection kept when a query ran out of time", n)
+			}
+		})
+	}
+}
