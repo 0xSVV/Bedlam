@@ -204,7 +204,7 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 				sliceEnd, lastSliceEnded = nil, true
 				break
 			}
-			if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
+			if id := u.resolvers[latest].id(); dnsSlowServerLimiter.allow(id) {
 				log(LogLevelInfo, srcDNS, "DNS %s has not answered in %s, trying next", id, diagDuration(time.Since(latestStart)))
 			}
 			latestFailed = false
@@ -500,3 +500,5 @@ func dohDialAddr(rawURL string) (host, dial string, err error) {
 }
 
 var dnsFailoverLimiter = newRateLimiter(2 * time.Second)
+
+var dnsSlowServerLimiter = newRateLimiter(time.Minute)

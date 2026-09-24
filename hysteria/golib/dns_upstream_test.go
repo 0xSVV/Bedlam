@@ -587,6 +587,39 @@ func TestDNSUpstream_slowServerThatKeepsTryingIsLoggedAsInfo(t *testing.T) {
 	}
 }
 
+func TestDNSUpstream_slowServerNoteIsLoggedOncePerMinute(t *testing.T) {
+	logs := captureLogs(t)
+	release := blockUntilCleanup(t)
+	nextStarted := make(chan struct{}, 2)
+	slowID := uniqueUpstreamID(t, "tls")
+	slow := &stubResolver{name: slowID, reply: func(q []byte) ([]byte, error) {
+		<-nextStarted
+		return echoAnswer([4]byte{1, 1, 1, 1})(q)
+	}}
+	pending := &stubResolver{name: uniqueUpstreamID(t, "tls"), reply: func([]byte) ([]byte, error) {
+		nextStarted <- struct{}{}
+		<-release
+		return nil, errors.New("released")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{slow, pending}, ident: uniqueUpstreamID(t, "tls")}
+	exchange := func() {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if _, err := up.exchange(ctx, dnsQuery("example.com")); err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+	}
+
+	exchange()
+	time.Sleep(2100 * time.Millisecond)
+	exchange()
+
+	if lines := logs.linesMentioning(slowID + " has not answered in"); len(lines) != 1 {
+		t.Errorf("logged %q, want one line a minute for a server that stays slow", lines)
+	}
+}
+
 func TestDNSUpstream_keepsServerOrderWhileStaggering(t *testing.T) {
 	release := blockUntilCleanup(t)
 	var mu sync.Mutex
