@@ -128,6 +128,10 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 		return nil, err
 	}
 	began := time.Now()
+	queryDeadline, ok := ctx.Deadline()
+	if !ok {
+		queryDeadline = began.Add(dnsQueryTimeout)
+	}
 	first := u.firstIndex()
 	results := make(chan attemptResult, n)
 	var slice *time.Timer
@@ -139,6 +143,7 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 	var sliceEnd <-chan time.Time
 	var lastCtx context.Context
 	var lastSlice <-chan struct{}
+	var cancels []context.CancelFunc
 	started, pending, latest := 0, 0, first
 	latestStart := began
 	launch := func() {
@@ -147,7 +152,12 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 		budget := u.attemptBudget(ctx, n-started)
 		started++
 		pending++
-		actx, cancel := ctx, context.CancelFunc(func() {})
+		deadline := queryDeadline
+		if started == n && latestStart.Add(budget).Before(deadline) {
+			deadline = latestStart.Add(budget)
+		}
+		actx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
+		cancels = append(cancels, cancel)
 		if started < n {
 			if slice == nil {
 				slice = time.NewTimer(budget)
@@ -157,7 +167,6 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 			sliceEnd = slice.C
 		} else {
 			sliceEnd = nil
-			actx, cancel = context.WithDeadline(ctx, latestStart.Add(budget))
 			lastCtx, lastSlice = actx, actx.Done()
 		}
 		index := latest
@@ -204,6 +213,11 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 			lastSlice = nil
 		case <-done:
 			done, sliceEnd, stopping = nil, nil, true
+			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				for _, cancel := range cancels {
+					cancel()
+				}
+			}
 		}
 		lastSliceEnded := lastCtx != nil && errors.Is(lastCtx.Err(), context.DeadlineExceeded)
 		if lastSliceEnded && latestFailed || pending == 0 && (started == n || stopping) {

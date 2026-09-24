@@ -633,6 +633,7 @@ func TestDNSUpstream_lateAnswerFromAServerThatLostReachesTheHook(t *testing.T) {
 	ctx, cancel := context.WithTimeout(base, 3*time.Second)
 	defer cancel()
 	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	cancel()
 	if err != nil {
 		t.Fatalf("exchange: %v", err)
 	}
@@ -815,5 +816,25 @@ func TestDNSUpstream_staleStreamsCostOneSlowQueryNotFour(t *testing.T) {
 		if i > 0 && elapsed > 300*time.Millisecond {
 			t.Errorf("query %d took %v, want only the first query to wait on a stale stream", i, elapsed)
 		}
+	}
+}
+
+func TestDNSUpstream_cancelWhileAServerIsPendingReturnsPromptly(t *testing.T) {
+	release := blockUntilCleanup(t)
+	pending := &stubResolver{name: "pending", reply: func([]byte) ([]byte, error) {
+		<-release
+		return nil, errors.New("released")
+	}}
+	up := &dnsUpstream{resolvers: []dnsResolver{pending}, ident: "tls|pending"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := up.exchange(ctx, dnsQuery("example.com"))
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want the cancel", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("a cancelled query returned after %v, want it to stop its pending server at once", elapsed)
 	}
 }
