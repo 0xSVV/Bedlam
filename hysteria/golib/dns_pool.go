@@ -581,18 +581,18 @@ func (c *pooledConn) earliestDeadlineLocked() time.Time {
 	return earliest
 }
 
-func (c *pooledConn) load(now time.Time, stall time.Duration) (int, bool) {
+func (c *pooledConn) shareable(now time.Time, stall time.Duration) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.err != nil || !c.proven || len(c.pending) >= dnsStreamMaxQueries {
-		return 0, false
+	if c.err != nil || !c.proven {
+		return false
 	}
 	for _, q := range c.pending {
 		if now.Sub(q.sent) > stall && !c.last.After(q.sent) {
-			return 0, false
+			return false
 		}
 	}
-	return len(c.pending), true
+	return true
 }
 
 func (p *streamPool) acquire(c *pooledConn, proven bool) {
@@ -616,10 +616,9 @@ func (p *streamPool) share() *pooledConn {
 		return nil
 	}
 	var best *pooledConn
-	least := dnsStreamMaxQueries
 	for c := range p.busy {
-		if n, ok := c.load(now, p.stall); ok && n < least {
-			best, least = c, n
+		if c.users < dnsStreamMaxQueries && (best == nil || c.users < best.users) && c.shareable(now, p.stall) {
+			best = c
 		}
 	}
 	if best != nil {

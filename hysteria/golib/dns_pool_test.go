@@ -1682,3 +1682,57 @@ func TestStreamPool_doesNotJoinAStreamThatStoppedAnswering(t *testing.T) {
 	release()
 	awaitAnswer(t, next, "next.example", 2)
 }
+
+func TestStreamPool_putsAtMostTheQueryCapOnOneStream(t *testing.T) {
+	var onFirst atomic.Int32
+	answer := make(chan struct{})
+	dial := loopbackStreamServer(t, func(conn int, s net.Conn) {
+		var writeMu sync.Mutex
+		for {
+			q, err := readDNSFrame(s)
+			if err != nil {
+				return
+			}
+			if conn == 1 {
+				onFirst.Add(1)
+			}
+			go func() {
+				<-answer
+				writeMu.Lock()
+				defer writeMu.Unlock()
+				_ = writeDNSFrame(s, dnsResponseFor(q, 60, [4]byte{byte(conn), 0, 0, 0}))
+			}()
+		}
+	})
+	gate := make(chan struct{})
+	var dials atomic.Int32
+	p := newStreamPool("test", func(context.Context) (net.Conn, error) {
+		if dials.Add(1) > 1 {
+			<-gate
+		}
+		return dial()
+	})
+	defer p.close()
+
+	const callers = 4 * dnsStreamMaxQueries
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, _ = p.exchange(ctx, dnsQuery(fmt.Sprintf("cap%d.example", i)))
+		}(i)
+	}
+	for start := time.Now(); onFirst.Load() < dnsStreamMaxQueries && time.Since(start) < 2*time.Second; {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if n := onFirst.Load(); n != dnsStreamMaxQueries {
+		t.Errorf("%d queries waited on one stream at once, want the cap of %d", n, dnsStreamMaxQueries)
+	}
+	close(gate)
+	close(answer)
+	wg.Wait()
+}
