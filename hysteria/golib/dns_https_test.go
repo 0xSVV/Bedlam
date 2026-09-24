@@ -881,3 +881,42 @@ func TestHTTPSResolver_retiredConnectionFinishesTheQueriesStillOnIt(t *testing.T
 		t.Errorf("dialed %d times, want the connection that went quiet replaced once", got)
 	}
 }
+
+func TestDNSCacheResolve_loneDoHServerRedialsOnceItsConnectionGoesSilent(t *testing.T) {
+	d := newUnstartedDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	ln := &mutingListener{Listener: d.srv.Listener}
+	d.srv.Listener = ln
+	d.srv.StartTLS()
+	var dials atomic.Int32
+	fc := d.client()
+	inner := fc.tcp
+	fc.tcp = func(addr string) (net.Conn, error) {
+		dials.Add(1)
+		c, err := inner(addr)
+		if err != nil {
+			return nil, err
+		}
+		return lateCloseConn{c}, nil
+	}
+	r, err := newHTTPSResolver(fc, d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := &dnsUpstream{resolvers: []dnsResolver{r}, ident: uniqueUpstreamID(t, "https")}
+	defer up.close()
+	c := newDNSCache()
+	if _, err := c.resolve(context.Background(), up, dnsQuery("warm.example"), nil); err != nil {
+		t.Fatalf("warm-up: %v", err)
+	}
+
+	ln.muteAccepted()
+	if _, err := c.resolve(context.Background(), up, dnsQuery("silent.example"), nil); !isTimeoutClass(err) {
+		t.Fatalf("err = %v, want the lookup on the silent connection to time out", err)
+	}
+	if _, err := c.resolve(context.Background(), up, dnsQuery("next.example"), nil); err != nil {
+		t.Fatalf("the lookup after the silent one must redial, dials = %d: %v", dials.Load(), err)
+	}
+	if got := dials.Load(); got != 2 {
+		t.Errorf("dialed %d times, want the warm-up connection and one redial", got)
+	}
+}

@@ -130,29 +130,48 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 	began := time.Now()
 	first := u.firstIndex()
 	results := make(chan attemptResult, n)
-	slice := time.NewTimer(u.attemptBudget(ctx, n))
-	defer slice.Stop()
+	var slice *time.Timer
+	defer func() {
+		if slice != nil {
+			slice.Stop()
+		}
+	}()
+	var sliceEnd <-chan time.Time
+	var lastCtx context.Context
+	var lastSlice <-chan struct{}
 	started, pending, latest := 0, 0, first
 	latestStart := began
 	launch := func() {
 		latest = (first + started) % n
-		if started > 0 {
-			latestStart = time.Now()
-			slice.Reset(u.attemptBudget(ctx, n-started))
-		}
+		latestStart = time.Now()
+		budget := u.attemptBudget(ctx, n-started)
 		started++
 		pending++
+		actx, cancel := ctx, context.CancelFunc(func() {})
+		if started < n {
+			if slice == nil {
+				slice = time.NewTimer(budget)
+			} else {
+				slice.Reset(budget)
+			}
+			sliceEnd = slice.C
+		} else {
+			sliceEnd = nil
+			actx, cancel = context.WithDeadline(ctx, latestStart.Add(budget))
+			lastCtx, lastSlice = actx, actx.Done()
+		}
 		index := latest
 		go func() {
-			resp, err := u.resolvers[index].exchange(ctx, query)
+			defer cancel()
+			resp, err := u.resolvers[index].exchange(actx, query)
 			results <- attemptResult{index: index, resp: resp, err: err}
 		}()
 	}
 
 	launch()
-	done, sliceEnd := ctx.Done(), slice.C
+	done := ctx.Done()
 	var lastErr error
-	tunnelFailed := false
+	tunnelFailed, latestFailed, stopping := false, false, false
 	for {
 		select {
 		case res := <-results:
@@ -164,28 +183,35 @@ func (u *dnsUpstream) exchange(ctx context.Context, query []byte) ([]byte, error
 			}
 			lastErr = res.err
 			tunnelFailed = tunnelFailed || isTunnelFailure(res.err)
-			if res.index == latest && started < n && ctx.Err() == nil {
+			if res.index != latest {
+				break
+			}
+			latestFailed = true
+			if started < n && !stopping {
 				if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
 					log(LogLevelWarn, srcDNS, "DNS %s failed, trying next: %s", id, res.err)
 				}
+				latestFailed = false
 				launch()
-				continue
-			}
-			if pending == 0 {
-				return nil, lastErr
 			}
 		case <-sliceEnd:
-			if started < n {
-				if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
-					log(LogLevelWarn, srcDNS, "DNS %s has not answered in %s, trying next", id, diagDuration(time.Since(latestStart)))
-				}
-				launch()
-				continue
+			if id := u.resolvers[latest].id(); dnsFailoverLimiter.allow(id) {
+				log(LogLevelWarn, srcDNS, "DNS %s has not answered in %s, trying next", id, diagDuration(time.Since(latestStart)))
 			}
-			u.settleLate(ctx, results, pending)
-			return nil, fmt.Errorf("no answer in %s: %w", diagDuration(time.Since(began)), context.DeadlineExceeded)
+			latestFailed = false
+			launch()
+		case <-lastSlice:
+			lastSlice = nil
 		case <-done:
-			done, sliceEnd = nil, nil
+			done, sliceEnd, stopping = nil, nil, true
+		}
+		lastSliceEnded := lastCtx != nil && errors.Is(lastCtx.Err(), context.DeadlineExceeded)
+		if lastSliceEnded && latestFailed || pending == 0 && (started == n || stopping) {
+			u.settleLate(ctx, results, pending)
+			if lastSliceEnded {
+				return nil, fmt.Errorf("no answer in %s: %w", diagDuration(time.Since(began)), context.DeadlineExceeded)
+			}
+			return nil, lastErr
 		}
 	}
 }
