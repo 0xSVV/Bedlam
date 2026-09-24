@@ -23,7 +23,9 @@ fun redactionRules(profiles: List<Profile>): RedactionRules = RedactionRules(
         TunConfig.IPV4_DNS_ADDRESS,
         TunConfig.IPV6_DNS_ADDRESS,
     ) + DnsPresets.cloudflareAddresses() + DnsPresets.googleAddresses(),
-    hostNames = profiles.mapNotNull { serverHostName(it.config.server.address) }.toSet(),
+    hostNames = profiles.flatMap { profile ->
+        listOfNotNull(serverHostName(profile.config.server.address), dnsHostName(profile.config.tls.tlsSni))
+    }.toSet(),
 )
 
 fun redactAddresses(text: String, rules: RedactionRules): String {
@@ -60,7 +62,11 @@ private fun serverHostName(address: String): String? {
     } else {
         parseHost(trimmed)
     } ?: return null
-    val name = host.removeSuffix(".").lowercase()
+    return dnsHostName(host)
+}
+
+private fun dnsHostName(host: String): String? {
+    val name = host.trim().removeSuffix(".").lowercase()
     val isName = '.' in name &&
             name.all { it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '-' } &&
             name.any { it in 'a'..'z' }

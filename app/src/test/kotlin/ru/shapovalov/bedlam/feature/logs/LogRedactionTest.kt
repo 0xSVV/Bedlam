@@ -165,8 +165,21 @@ class LogRedactionTest {
         )
 
         assertEquals(
-            setOf("vpn.example.com", "hop.example.net", "realm.example.org", "rv.example.io", "bare.example.com"),
+            setOf("vpn.example.com", "hop.example.net", "realm.example.org", "rv.example.io", "bare.example.com", "example.com"),
             redactionRules(profiles).hostNames,
+        )
+    }
+
+    @Test
+    fun `saved profiles supply their TLS server names`() {
+        val base = testProfile("a", address = "203.0.113.7:443")
+        val profile = base.copy(config = base.config.copy(tls = base.config.tls.copy(tlsSni = "Real.Example.org")))
+        val rules = redactionRules(listOf(profile))
+
+        assertEquals(setOf("real.example.org"), rules.hostNames)
+        assertEquals(
+            "sni=\"<host-1>\" insecure=false, server <ip-1>:443",
+            redact("sni=\"real.example.org\" insecure=false, server 203.0.113.7:443", rules),
         )
     }
 
@@ -177,7 +190,7 @@ class LogRedactionTest {
             testProfile("b", address = "nas"),
         )
 
-        assertEquals(emptySet<String>(), redactionRules(profiles).hostNames)
+        assertEquals(setOf("example.com"), redactionRules(profiles).hostNames)
     }
 
     @Test
