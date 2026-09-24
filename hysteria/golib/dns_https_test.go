@@ -920,3 +920,33 @@ func TestDNSCacheResolve_loneDoHServerRedialsOnceItsConnectionGoesSilent(t *test
 		t.Errorf("dialed %d times, want the warm-up connection and one redial", got)
 	}
 }
+
+func TestHTTPSResolver_http1ServerAnswersABurstInParallel(t *testing.T) {
+	d := newUnstartedDoHServer(t, [4]byte{1, 1, 1, 1}, http.StatusOK)
+	d.srv.EnableHTTP2 = false
+	d.srv.StartTLS()
+	d.delay.Store(int64(500 * time.Millisecond))
+	r, err := newHTTPSResolver(d.client(), d.url(), &tls.Config{RootCAs: d.pool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+
+	const burst = 16
+	var wg sync.WaitGroup
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if _, err := r.exchange(ctx, dnsQuery(fmt.Sprintf("burst%d.example", i))); err != nil {
+				t.Errorf("query %d: %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if proto := d.proto.Load(); proto != 1 {
+		t.Errorf("server saw HTTP/%d, want the HTTP/1.1 this test is about", proto)
+	}
+}

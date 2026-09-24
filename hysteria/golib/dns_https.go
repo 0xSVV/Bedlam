@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptrace"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,6 +23,8 @@ const (
 	dohContentType = "application/dns-message"
 	dohMaxResponse = 64 * 1024
 )
+
+var errDoHOverHTTP1 = errors.New("the DoH server answers only over HTTP/1.1")
 
 type dohStatusError struct {
 	status   int
@@ -39,11 +43,17 @@ type httpsResolver struct {
 	tlsCfg      *tls.Config
 	openTimeout time.Duration
 	active      atomic.Pointer[dohTransport]
+	http1       atomic.Bool
 }
 
 type dohTransport struct {
-	rt *http.Transport
-	hc *http.Client
+	rt     *http.Transport
+	hc     *http.Client
+	shared bool
+
+	mu      sync.Mutex
+	waiting map[*context.CancelCauseFunc]struct{}
+	moved   bool
 }
 
 type dohConn struct {
@@ -85,17 +95,19 @@ func newHTTPSResolver(c client.Client, rawURL string, base *tls.Config) (*httpsR
 }
 
 func (r *httpsResolver) newTransport() *dohTransport {
-	t := &dohTransport{}
+	t := &dohTransport{shared: !r.http1.Load()}
 	t.rt = &http.Transport{
 		DialTLSContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return r.dialTLS(ctx, t)
 		},
 		ForceAttemptHTTP2:   true,
-		MaxConnsPerHost:     2,
 		MaxIdleConns:        2,
 		MaxIdleConnsPerHost: 2,
 		IdleConnTimeout:     90 * time.Second,
 		DisableCompression:  true,
+	}
+	if t.shared {
+		t.rt.MaxConnsPerHost = 2
 	}
 	t.hc = &http.Client{
 		Transport: t.rt,
@@ -118,13 +130,66 @@ func (r *httpsResolver) dialTLS(ctx context.Context, owner *dohTransport) (net.C
 		_ = raw.Close()
 		return nil, fmt.Errorf("TLS handshake with %s: %w", r.dial, err)
 	}
+	if owner.shared && tc.ConnectionState().NegotiatedProtocol != "h2" {
+		r.useHTTP1(owner)
+	}
 	return tc, nil
 }
 
+func (r *httpsResolver) useHTTP1(owner *dohTransport) {
+	r.http1.Store(true)
+	r.active.CompareAndSwap(owner, r.newTransport())
+	owner.mu.Lock()
+	owner.moved = true
+	waiting := owner.waiting
+	owner.waiting = nil
+	owner.mu.Unlock()
+	for cancel := range waiting {
+		(*cancel)(errDoHOverHTTP1)
+	}
+	owner.rt.CloseIdleConnections()
+}
+
+func (t *dohTransport) awaitConn(cancel context.CancelCauseFunc) (connected func()) {
+	if !t.shared {
+		return func() {}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.moved {
+		cancel(errDoHOverHTTP1)
+		return func() {}
+	}
+	if t.waiting == nil {
+		t.waiting = map[*context.CancelCauseFunc]struct{}{}
+	}
+	key := &cancel
+	t.waiting[key] = struct{}{}
+	return func() {
+		t.mu.Lock()
+		delete(t.waiting, key)
+		t.mu.Unlock()
+	}
+}
+
 func (r *httpsResolver) exchange(ctx context.Context, query []byte) ([]byte, error) {
+	for {
+		resp, err := r.exchangeOn(ctx, r.active.Load(), query)
+		if !errors.Is(err, errDoHOverHTTP1) || ctx.Err() != nil {
+			return resp, err
+		}
+	}
+}
+
+func (r *httpsResolver) exchangeOn(ctx context.Context, t *dohTransport, query []byte) ([]byte, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	connected := t.awaitConn(cancel)
+	defer connected()
 	var conn *dohConn
 	var readsBefore uint64
 	trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+		connected()
 		if conn != nil {
 			conn.release()
 			conn = nil
@@ -136,7 +201,10 @@ func (r *httpsResolver) exchange(ctx context.Context, query []byte) ([]byte, err
 			}
 		}
 	}}
-	resp, err := dohExchange(httptrace.WithClientTrace(ctx, trace), r.active.Load().hc, r.url, query)
+	resp, err := dohExchange(httptrace.WithClientTrace(ctx, trace), t.hc, r.url, query)
+	if err != nil && errors.Is(context.Cause(ctx), errDoHOverHTTP1) {
+		err = errDoHOverHTTP1
+	}
 	if conn != nil {
 		if err != nil && isTimeoutClass(err) && conn.reads.Load() == readsBefore {
 			r.retire(conn)
