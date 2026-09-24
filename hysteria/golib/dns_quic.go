@@ -136,7 +136,7 @@ func (r *doqResolver) exchangeOnce(ctx context.Context, query []byte) ([]byte, e
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		r.drop(conn)
-		return nil, err
+		return nil, &serverConnError{err}
 	}
 
 	deadline, ok := ctx.Deadline()
@@ -155,13 +155,13 @@ func (r *doqResolver) exchangeOnce(ctx context.Context, query []byte) ([]byte, e
 	if err := writeDNSFrame(stream, wire); err != nil {
 		stream.CancelRead(0)
 		r.drop(conn)
-		return nil, err
+		return nil, &serverConnError{err}
 	}
 	// Closing the send side tells the server the query is complete.
 	if err := stream.Close(); err != nil {
 		stream.CancelRead(0)
 		r.drop(conn)
-		return nil, err
+		return nil, &serverConnError{err}
 	}
 	resp, err := readDNSFrame(stream)
 	if err != nil {
@@ -169,7 +169,7 @@ func (r *doqResolver) exchangeOnce(ctx context.Context, query []byte) ([]byte, e
 		if !errors.Is(err, os.ErrDeadlineExceeded) || conn.Context().Err() != nil {
 			r.drop(conn)
 		}
-		return nil, err
+		return nil, &serverConnError{err}
 	}
 	if len(resp) >= 2 && len(query) >= 2 {
 		binary.BigEndian.PutUint16(resp[:2], binary.BigEndian.Uint16(query[:2]))
@@ -234,7 +234,7 @@ func (r *doqResolver) open(ctx context.Context) (*quic.Conn, *quic.Transport, *h
 	if err != nil {
 		_ = tr.Close()
 		_ = pkt.Close()
-		return nil, nil, nil, err
+		return nil, nil, nil, &serverConnError{err}
 	}
 	return qc, tr, pkt, nil
 }

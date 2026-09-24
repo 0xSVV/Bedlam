@@ -273,9 +273,19 @@ func (u *dnsUpstream) noteAnswer(first, answered int, tunnelFailed bool) {
 	}
 }
 
+type serverConnError struct{ err error }
+
+func (e *serverConnError) Error() string { return e.err.Error() }
+
+func (e *serverConnError) Unwrap() error { return e.err }
+
 func isTunnelFailure(err error) bool {
 	var closed coreErrs.ClosedError
-	return errors.Is(err, errDialBackoff) || errors.As(err, &closed) || errors.Is(err, net.ErrClosed)
+	if errors.Is(err, errDialBackoff) || errors.As(err, &closed) {
+		return true
+	}
+	var own *serverConnError
+	return errors.Is(err, net.ErrClosed) && !errors.As(err, &own)
 }
 
 func (u *dnsUpstream) settleLate(ctx context.Context, results <-chan attemptResult, pending int) {

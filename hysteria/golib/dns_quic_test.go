@@ -418,3 +418,22 @@ func TestDoQResolver_newSessionRetriesDoQ(t *testing.T) {
 		t.Error("a new session should retry DoQ")
 	}
 }
+
+func TestDNSUpstream_movesPastADoQServerWhoseHandshakeTimesOut(t *testing.T) {
+	fc := &fakeClient{udp: func() (client.HyUDPConn, error) { return newFakeUDPConn(nil), nil }}
+	unreachable := newDoQResolver(fc, "dns.test:853", nil)
+	unreachable.qcfg.HandshakeIdleTimeout = 100 * time.Millisecond
+	working := &stubResolver{name: "quic|working.test:853", reply: echoAnswer([4]byte{2, 2, 2, 2})}
+	up := &dnsUpstream{resolvers: []dnsResolver{unreachable, working}, ident: uniqueUpstreamID(t, "quic")}
+	defer up.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), dnsQueryTimeout)
+	defer cancel()
+	resp, err := up.exchange(ctx, dnsQuery("example.com"))
+	if err != nil || resp[len(resp)-1] != 2 {
+		t.Fatalf("resp = %v, err = %v, want the working server's answer", resp, err)
+	}
+	if got := up.firstIndex(); got != 1 {
+		t.Errorf("preferred = %d, want the working server once the other's handshake timed out", got)
+	}
+}
