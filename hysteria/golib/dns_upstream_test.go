@@ -893,3 +893,40 @@ func TestDNSUpstream_keepsAFirstServerThatAnswersOtherQueriesMeanwhile(t *testin
 		t.Errorf("preferred = %d, want the first server kept because it answered another query meanwhile", got)
 	}
 }
+
+func TestDNSUpstream_lastPreferenceLineMatchesThePreferredServer(t *testing.T) {
+	logs := captureLogs(t)
+	order := &callOrder{}
+	first, second := newSwitchableServer("tls|one.one.one.one:853", 1, order), newSwitchableServer("tls|1.1.1.1:853", 2, order)
+	clock := newFakeClock()
+	up := &dnsUpstream{resolvers: []dnsResolver{first, second}, ident: uniqueUpstreamID(t, "tls"), now: clock.now}
+	query := func() {
+		t.Helper()
+		if _, err := up.exchange(context.Background(), dnsQuery("example.com")); err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+	}
+
+	first.down.Store(true)
+	query()
+	clock.advance(dnsPreferenceCooldown + time.Second)
+	first.down.Store(false)
+	query()
+	first.down.Store(true)
+	query()
+
+	var last string
+	logs.mu.Lock()
+	for _, line := range logs.lines {
+		if strings.Contains(line, "DNS now answered by") || strings.HasSuffix(line, " again") {
+			last = line
+		}
+	}
+	logs.mu.Unlock()
+	switch got := up.firstIndex(); {
+	case got == 0 && !strings.HasSuffix(last, "again"):
+		t.Errorf("the first server is preferred, but the last line logged is %q", last)
+	case got == 1 && !strings.Contains(last, "now answered by tls|1.1.1.1:853"):
+		t.Errorf("the second server is preferred, but the last line logged is %q", last)
+	}
+}

@@ -21,6 +21,7 @@ const (
 	dnsAttemptTimeout     = 5 * time.Second
 	dnsMinAttemptTimeout  = 1500 * time.Millisecond
 	dnsPreferenceCooldown = 5 * time.Minute
+	dnsPreferenceHold     = time.Minute
 )
 
 const (
@@ -60,6 +61,7 @@ type dnsUpstream struct {
 	mu             sync.Mutex
 	preferred      int
 	preferredUntil time.Time
+	changedAt      time.Time
 	answers        map[int]uint64
 }
 
@@ -268,27 +270,35 @@ func (u *dnsUpstream) countAnswer(index int) {
 
 func (u *dnsUpstream) noteAnswer(first, answered int, firstAnswers uint64, tunnelFailed bool) {
 	u.countAnswer(answered)
-	movedAway := answered != 0 && answered != first && !tunnelFailed && u.answersBy(first) == firstAnswers
-	u.mu.Lock()
-	previous := u.preferred
 	switch {
 	case answered == 0:
-		u.preferred = 0
-	case movedAway:
-		u.preferred = answered
-		u.preferredUntil = u.clock().Add(dnsPreferenceCooldown)
+		u.prefer(0, first)
+	case answered != first && !tunnelFailed && u.answersBy(first) == firstAnswers:
+		u.prefer(answered, first)
+	}
+}
+
+func (u *dnsUpstream) prefer(index, instead int) {
+	u.mu.Lock()
+	now := u.clock()
+	changed := u.preferred != 0
+	if index != 0 {
+		changed = u.preferred != index || !now.Before(u.preferredUntil)
+	}
+	if !changed || !u.changedAt.IsZero() && now.Sub(u.changedAt) < dnsPreferenceHold {
+		u.mu.Unlock()
+		return
+	}
+	u.preferred, u.changedAt = index, now
+	if index != 0 {
+		u.preferredUntil = now.Add(dnsPreferenceCooldown)
 	}
 	u.mu.Unlock()
-	switch {
-	case movedAway:
-		if dnsPreferenceLimiter.allow("away|" + u.ident) {
-			log(LogLevelInfo, srcDNS, "DNS now answered by %s; %s did not answer", u.resolvers[answered].id(), u.resolvers[first].id())
-		}
-	case answered == 0 && previous != 0:
-		if dnsPreferenceLimiter.allow("back|" + u.ident) {
-			log(LogLevelInfo, srcDNS, "DNS answered by %s again", u.resolvers[0].id())
-		}
+	if index == 0 {
+		log(LogLevelInfo, srcDNS, "DNS answered by %s again", u.resolvers[0].id())
+		return
 	}
+	log(LogLevelInfo, srcDNS, "DNS now answered by %s; %s did not answer", u.resolvers[index].id(), u.resolvers[instead].id())
 }
 
 type serverConnError struct{ err error }
@@ -495,7 +505,4 @@ func dohDialAddr(rawURL string) (host, dial string, err error) {
 	return host, net.JoinHostPort(host, port), nil
 }
 
-var (
-	dnsFailoverLimiter   = newRateLimiter(2 * time.Second)
-	dnsPreferenceLimiter = newRateLimiter(time.Minute)
-)
+var dnsFailoverLimiter = newRateLimiter(2 * time.Second)
