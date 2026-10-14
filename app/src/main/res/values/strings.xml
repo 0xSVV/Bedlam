@@ -65,6 +65,7 @@
 
     <string name="dashboard_error_no_profile">Select a profile first</string>
     <string name="dashboard_error_duplicate_profile">Already saved as \"%1$s\"</string>
+    <string name="local_network_permission_denied">Bedlam needs local network access to use your network DNS and reach local VPN servers.</string>
 
     <string name="import_title">Import profile</string>
     <string name="import_format_link">Link</string>
