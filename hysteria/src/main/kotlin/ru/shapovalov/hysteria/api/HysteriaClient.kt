@@ -41,9 +41,10 @@ interface HysteriaClient {
      *   imminent.
      * @param tun invoked once after the handshake succeeds; must return a
      *   [ParcelFileDescriptor] for an established Android TUN device. The
-     *   client takes ownership: the fd is detached and passed to the native
-     *   layer on success, or closed if [start] fails before the native layer
-     *   adopts it.
+     *   client owns the descriptor returned by the factory. It detaches the fd,
+     *   borrows it for the synchronous native call, and closes the original
+     *   descriptor when that call returns. Native code duplicates it before
+     *   transferring the duplicate to sing-tun.
      *
      * @throws IllegalStateException if a tunnel is already running or starting.
      * @throws Exception with the original cause if the handshake fails.
@@ -91,6 +92,9 @@ interface HysteriaClient {
     suspend fun resetConnections()
 
     suspend fun resetConnectionsKeepingDnsCache()
+
+    /** Changes response caching without replacing TUNs or DNS transports. */
+    suspend fun setDnsCacheEnabled(enabled: Boolean)
 
     /**
      * Runs an immediate liveness probe and reconnects if the tunnel is dead.
@@ -164,8 +168,9 @@ interface HysteriaClient {
      *
      * @return `true` if the socket was successfully protected.
      */
-    fun interface SocketProtector {
+    interface SocketProtector {
         fun protect(fd: Int): Boolean
+        fun bindAndProtect(fd: Int): Boolean
     }
 
     /**

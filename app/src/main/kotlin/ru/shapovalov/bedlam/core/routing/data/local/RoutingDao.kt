@@ -62,4 +62,30 @@ interface RoutingDao {
             insertResolved(cidrs.map { ResolvedCidrEntity(sourceId = sourceId, cidr = it) })
         }
     }
+
+    @Transaction
+    suspend fun commitResolution(
+        expected: RouteSourceEntity,
+        cidrs: List<String>,
+        resolvedAtMillis: Long,
+        error: String?,
+    ): Boolean {
+        val current = getSource(expected.id) ?: return false
+        if (!current.matchesIdentity(expected)) return false
+        replaceResolved(expected.id, cidrs)
+        setSourceResolutionState(expected.id, resolvedAtMillis, error)
+        return true
+    }
+
+    @Transaction
+    suspend fun commitResolutionError(expected: RouteSourceEntity, error: String?): Boolean {
+        val current = getSource(expected.id) ?: return false
+        if (!current.matchesIdentity(expected)) return false
+        setSourceError(expected.id, error)
+        return true
+    }
 }
+
+private fun RouteSourceEntity.matchesIdentity(expected: RouteSourceEntity): Boolean =
+    id == expected.id && kind == expected.kind && rawValue == expected.rawValue &&
+        comment == expected.comment && enabled == expected.enabled && orderIndex == expected.orderIndex

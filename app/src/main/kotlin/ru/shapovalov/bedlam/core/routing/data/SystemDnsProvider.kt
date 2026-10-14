@@ -18,6 +18,13 @@ import java.net.InetAddress
 @Inject
 class SystemDnsProvider(private val context: Context) {
 
+    /** System resolvers for Direct DNS; private LAN addresses are valid on a bound network. */
+    fun directDnsServers(network: Network): List<String> {
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return emptyList()
+        val links = cm.getLinkProperties(network) ?: return emptyList()
+        return links.dnsServers.mapNotNull { it.toDirectDnsAddress() }.distinct()
+    }
+
     fun publicDnsServers(): List<String> {
         val cm = context.getSystemService(ConnectivityManager::class.java)
             ?: return emptyList()
@@ -53,6 +60,11 @@ class SystemDnsProvider(private val context: Context) {
             is Cidr.V6 -> LanRanges.IPV6.any { CidrMath.contains(it, cidr) }
         }
         if (isLan) return null
+        return hostAddress?.substringBefore('%')
+    }
+
+    private fun InetAddress.toDirectDnsAddress(): String? {
+        if (isLoopbackAddress || isAnyLocalAddress || isLinkLocalAddress || isMulticastAddress) return null
         return hostAddress?.substringBefore('%')
     }
 }

@@ -23,16 +23,26 @@ class LogExporter(
         hideAddresses: Boolean,
     ): String {
         val snapshot = buffer.current()
+        val routingConfig = routing.get()
+        val appFilterConfig = appFilter.get()
+        val profileSnapshot = profiles.observeAll().first()
         val header = LogExportHeader(
             exportedAt = exportedAt,
             device = device,
             connection = connectionSummary(client.state.value, exportedAt.zone),
-            routing = routingSummary(routing.get(), appFilter.get()),
+            routing = routingSummary(routingConfig, appFilterConfig),
             dropped = snapshot.dropped,
             addressesHidden = hideAddresses,
         )
         val text = formatLogExport(snapshot.entries, header)
         if (!hideAddresses) return text
-        return redactAddresses(text, redactionRules(profiles.observeAll().first(), routing.get().customDns))
+        return redactAddresses(
+            text,
+            redactionRules(
+                profiles = profileSnapshot,
+                customDns = routingConfig.customDns,
+                directCustomDns = routingConfig.directCustomDns,
+            ),
+        )
     }
 }

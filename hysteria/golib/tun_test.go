@@ -70,10 +70,10 @@ func (c *fakePacketConn) Close() error {
 	return nil
 }
 
-func (c *fakePacketConn) LocalAddr() net.Addr                { return nil }
-func (c *fakePacketConn) SetDeadline(time.Time) error        { return nil }
-func (c *fakePacketConn) SetReadDeadline(time.Time) error    { return nil }
-func (c *fakePacketConn) SetWriteDeadline(time.Time) error   { return nil }
+func (c *fakePacketConn) LocalAddr() net.Addr              { return nil }
+func (c *fakePacketConn) SetDeadline(time.Time) error      { return nil }
+func (c *fakePacketConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *fakePacketConn) SetWriteDeadline(time.Time) error { return nil }
 
 func testHandler(t *testing.T, resolver dnsResolver) *tunHandler {
 	t.Helper()

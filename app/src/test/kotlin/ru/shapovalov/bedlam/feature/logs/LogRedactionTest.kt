@@ -116,7 +116,7 @@ class LogRedactionTest {
     @ParameterizedTest
     @ValueSource(
         strings = [
-            "Bedlam 1.6.5 (10605) · Hysteria core v2.12.3",
+            "Bedlam 1.6.5 (10605) · Hysteria core v2.13.0",
             "15:41:40.506 INFO tunnel connected",
             "Exported 2026-09-24 15:41:40 +03:00",
             "at 15:41:40 after 1:30:00",

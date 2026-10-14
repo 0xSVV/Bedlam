@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.core.routing.domain.usecase
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -24,8 +25,8 @@ class RefreshRouteSourcesUseCaseTest {
 
     private class FakeRepo(config: RoutingConfig) : RoutingRepository {
         var current = config
-        val resolutions = mutableListOf<Pair<String, List<Cidr>>>()
-        val errors = mutableListOf<Pair<String, String?>>()
+        val resolutions = mutableListOf<Pair<DirectRouteSource, List<Cidr>>>()
+        val errors = mutableListOf<Pair<DirectRouteSource, String?>>()
 
         override fun observe(): Flow<RoutingConfig> = flowOf(current)
         override suspend fun get(): RoutingConfig = current
@@ -34,22 +35,35 @@ class RefreshRouteSourcesUseCaseTest {
         override suspend fun setDnsMode(mode: DnsMode) = Unit
         override suspend fun setDnsTransport(transport: DnsTransport) = Unit
         override suspend fun setCustomDns(servers: List<String>) = Unit
+        override suspend fun setDirectDnsMode(mode: DnsMode) = Unit
+        override suspend fun setDirectDnsTransport(transport: DnsTransport) = Unit
+        override suspend fun setDirectCustomDns(servers: List<String>) = Unit
+        override suspend fun setDnsCacheEnabled(enabled: Boolean) = Unit
         override suspend fun setMtu(mtu: Int) = Unit
-        override suspend fun upsertSource(source: DirectRouteSource) = Unit
-        override suspend fun removeSource(id: String) = Unit
+        override suspend fun upsertSource(source: DirectRouteSource) {
+            current = current.copy(
+                sources = current.sources.filterNot { it.source.id == source.id } +
+                    ResolvedSource(source, emptyList(), null, null),
+            )
+        }
+        override suspend fun removeSource(id: String) {
+            current = current.copy(sources = current.sources.filterNot { it.source.id == id })
+        }
         override suspend fun setSourceEnabled(id: String, enabled: Boolean) = Unit
         override suspend fun hasEquivalent(source: DirectRouteSource): Boolean = false
 
         override suspend fun recordResolution(
-            sourceId: String,
+            source: DirectRouteSource,
             cidrs: List<Cidr>,
             error: String?,
         ) {
-            resolutions += sourceId to cidrs
+            if (current.sources.none { it.source == source }) return
+            resolutions += source to cidrs
         }
 
-        override suspend fun recordResolutionError(sourceId: String, error: String?) {
-            errors += sourceId to error
+        override suspend fun recordResolutionError(source: DirectRouteSource, error: String?) {
+            if (current.sources.none { it.source == source }) return
+            errors += source to error
         }
     }
 
@@ -71,10 +85,11 @@ class RefreshRouteSourcesUseCaseTest {
         val repo = repoWithResolvedSource()
         val resolver = DirectRouteResolver { Result.failure(IllegalStateException("HTTP 429")) }
 
-        RefreshRouteSourcesUseCase(repo, resolver)()
+        val outcome = RefreshRouteSourcesUseCase(repo, resolver)()
 
         assertTrue(repo.resolutions.isEmpty())
-        assertEquals(listOf("s1" to "HTTP 429"), repo.errors)
+        assertEquals(listOf(asn to "HTTP 429"), repo.errors)
+        assertEquals(1, outcome.transientFailures)
     }
 
     @Test
@@ -83,10 +98,36 @@ class RefreshRouteSourcesUseCaseTest {
         val fresh = listOf(Cidr.parse("104.16.0.0/13"))
         val resolver = DirectRouteResolver { Result.success(fresh) }
 
+        val outcome = RefreshRouteSourcesUseCase(repo, resolver)()
+
+        assertEquals(listOf(asn to fresh), repo.resolutions)
+        assertTrue(repo.errors.isEmpty())
+        assertEquals(1, outcome.succeeded)
+    }
+
+    @Test
+    fun `a deleted source drops a late resolution result`() = runTest {
+        val repo = repoWithResolvedSource()
+        val resolver = DirectRouteResolver {
+            repo.removeSource("s1")
+            Result.success(listOf(Cidr.parse("104.16.0.0/13")))
+        }
+
         RefreshRouteSourcesUseCase(repo, resolver)()
 
-        assertEquals(listOf("s1" to fresh), repo.resolutions)
+        assertTrue(repo.resolutions.isEmpty())
         assertTrue(repo.errors.isEmpty())
+    }
+
+    @Test
+    fun `I O failures are marked retryable`() = runTest {
+        val repo = repoWithResolvedSource()
+        val resolver = DirectRouteResolver { Result.failure(IOException("temporary outage")) }
+
+        val outcome = RefreshRouteSourcesUseCase(repo, resolver)()
+
+        assertEquals(1, outcome.transientFailures)
+        assertEquals(0, outcome.permanentFailures)
     }
 
     @Test
@@ -98,7 +139,7 @@ class RefreshRouteSourcesUseCaseTest {
 
         assertTrue(added)
         assertTrue(repo.resolutions.isEmpty())
-        assertEquals(listOf("s1" to "offline"), repo.errors)
+        assertEquals(listOf(asn to "offline"), repo.errors)
     }
 
     @Test

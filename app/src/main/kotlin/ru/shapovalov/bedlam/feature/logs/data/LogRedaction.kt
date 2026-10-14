@@ -19,8 +19,12 @@ data class RedactionRules(
     val dnsServers: List<String> = emptyList(),
 )
 
-fun redactionRules(profiles: List<Profile>, customDns: List<String> = emptyList()): RedactionRules {
-    val dnsServers = customDns
+fun redactionRules(
+    profiles: List<Profile>,
+    customDns: List<String> = emptyList(),
+    directCustomDns: List<String> = emptyList(),
+): RedactionRules {
+    val dnsServers = (customDns + directCustomDns)
         .flatMap { raw -> listOf(raw.trim()) + DnsTransport.entries.mapNotNull { DnsServer.normalizeOrNull(raw, it) } }
         .filter { it.isNotEmpty() }
         .distinct()

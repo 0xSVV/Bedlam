@@ -17,7 +17,6 @@ var errDNSQueryInvalid = errors.New("not a DNS query with one question")
 
 const (
 	dnsCacheMaxEntries     = 1024
-	dnsCacheMinTTL         = 5 * time.Second
 	dnsCacheMaxTTL         = 1 * time.Hour
 	dnsCacheNegativeMaxTTL = 5 * time.Minute
 )
@@ -42,12 +41,15 @@ type dnsCache struct {
 	entries map[string]*dnsCacheEntry
 	lru     *list.List // front = most recently used
 	sf      singleflight.Group
+	enabled bool
+	epoch   uint64
 }
 
 func newDNSCache() *dnsCache {
 	return &dnsCache{
 		entries: make(map[string]*dnsCacheEntry),
 		lru:     list.New(),
+		enabled: true,
 	}
 }
 
@@ -57,22 +59,45 @@ func (c *dnsCache) resolve(ctx context.Context, r dnsResolver, query []byte, onT
 		return nil, fmt.Errorf("%w (%d bytes)", errDNSQueryInvalid, len(query))
 	}
 
-	cacheKey := r.id() + "\x00" + qKey
+	if !dnsQueryCacheSafe(query) {
+		resp, err := r.exchange(ctx, query)
+		countTunnelDNS(onTunnel, query, resp, err)
+		return resp, err
+	}
+
+	c.mu.RLock()
+	enabled, epoch := c.enabled, c.epoch
+	c.mu.RUnlock()
+	if !enabled {
+		resp, err := r.exchange(ctx, query)
+		countTunnelDNS(onTunnel, query, resp, err)
+		return resp, err
+	}
+	cacheKey := strconv.FormatUint(epoch, 10) + "\x00" + r.id() + "\x00" + qKey
 
 	if resp := c.lookup(cacheKey, txID); resp != nil {
 		return resp, nil
 	}
 
 	result, err, _ := c.sf.Do(cacheKey, func() (any, error) {
+		if !c.isCurrentEpoch(epoch) {
+			resp, err := r.exchange(ctx, query)
+			countTunnelDNS(onTunnel, query, resp, err)
+			return resp, err
+		}
 		if resp := c.lookup(cacheKey, txID); resp != nil {
 			return resp, nil
 		}
 
 		// Coalesced callers share this result, so the shared work gets its own
 		// full budget instead of inheriting whatever the leader had left.
-		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dnsQueryTimeout)
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			deadline = time.Now().Add(dnsQueryTimeout)
+		}
+		sctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
 		defer cancel()
-		sctx = withLateAnswer(sctx, func(late []byte) { c.storeLate(cacheKey, late) })
+		sctx = withLateAnswer(sctx, func(late []byte) { c.storeLateEpoch(epoch, cacheKey, late) })
 
 		resp, err := r.exchange(sctx, query)
 		countTunnelDNS(onTunnel, query, resp, err)
@@ -81,7 +106,7 @@ func (c *dnsCache) resolve(ctx context.Context, r dnsResolver, query []byte, onT
 		}
 
 		if ttl := cacheableTTL(resp); ttl > 0 {
-			c.store(cacheKey, resp, ttl)
+			c.storeEpoch(epoch, cacheKey, resp, ttl)
 		}
 		return resp, nil
 	})
@@ -102,10 +127,36 @@ func (c *dnsCache) resolve(ctx context.Context, r dnsResolver, query []byte, onT
 // of the in-flight query slots.
 func (c *dnsCache) tryCached(r dnsResolver, query []byte) []byte {
 	txID, qKey, ok := parseDNSQuery(query)
-	if !ok {
+	if !ok || !dnsQueryCacheSafe(query) {
 		return nil
 	}
-	return c.lookup(r.id()+"\x00"+qKey, txID)
+	c.mu.RLock()
+	enabled, epoch := c.enabled, c.epoch
+	c.mu.RUnlock()
+	if !enabled {
+		return nil
+	}
+	return c.lookup(strconv.FormatUint(epoch, 10)+"\x00"+r.id()+"\x00"+qKey, txID)
+}
+
+func (c *dnsCache) drop(r dnsResolver, query []byte) {
+	_, qKey, ok := parseDNSQuery(query)
+	if !ok || !dnsQueryCacheSafe(query) {
+		return
+	}
+	c.mu.Lock()
+	key := strconv.FormatUint(c.epoch, 10) + "\x00" + r.id() + "\x00" + qKey
+	if entry := c.entries[key]; entry != nil {
+		delete(c.entries, key)
+		c.lru.Remove(entry.elem)
+	}
+	c.mu.Unlock()
+}
+
+func (c *dnsCache) isCurrentEpoch(epoch uint64) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.enabled && c.epoch == epoch
 }
 
 type lateAnswerKey struct{}
@@ -122,6 +173,13 @@ func lateAnswer(ctx context.Context) func(resp []byte) {
 }
 
 func (c *dnsCache) storeLate(key string, resp []byte) {
+	c.mu.RLock()
+	epoch := c.epoch
+	c.mu.RUnlock()
+	c.storeLateEpoch(epoch, key, resp)
+}
+
+func (c *dnsCache) storeLateEpoch(epoch uint64, key string, resp []byte) {
 	ttl := cacheableTTL(resp)
 	if ttl <= 0 {
 		return
@@ -130,6 +188,9 @@ func (c *dnsCache) storeLate(key string, resp []byte) {
 	copy(respCopy, resp)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !c.enabled || c.epoch != epoch {
+		return
+	}
 	if entry, ok := c.entries[key]; ok && time.Now().Before(entry.expiry) {
 		return
 	}
@@ -167,11 +228,21 @@ func countTunnelDNS(onTunnel func(tx, rx int), query, resp []byte, err error) {
 }
 
 func (c *dnsCache) store(key string, response []byte, ttl time.Duration) {
+	c.mu.RLock()
+	epoch := c.epoch
+	c.mu.RUnlock()
+	c.storeEpoch(epoch, key, response, ttl)
+}
+
+func (c *dnsCache) storeEpoch(epoch uint64, key string, response []byte, ttl time.Duration) {
 	respCopy := make([]byte, len(response))
 	copy(respCopy, response)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !c.enabled || c.epoch != epoch {
+		return
+	}
 	c.storeLocked(key, respCopy, ttl)
 }
 
@@ -209,9 +280,22 @@ func (c *dnsCache) removeLocked(e *dnsCacheEntry) {
 
 func (c *dnsCache) clear() {
 	c.mu.Lock()
+	c.epoch++
 	c.entries = make(map[string]*dnsCacheEntry)
 	c.lru.Init()
 	c.mu.Unlock()
+}
+
+func (c *dnsCache) setEnabled(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.enabled == enabled {
+		return
+	}
+	c.enabled = enabled
+	c.epoch++
+	c.entries = make(map[string]*dnsCacheEntry)
+	c.lru.Init()
 }
 
 func parseDNSQuery(query []byte) (uint16, string, bool) {
@@ -224,6 +308,49 @@ func parseDNSQuery(query []byte) (uint16, string, bool) {
 	}
 	txID := binary.BigEndian.Uint16(query[0:2])
 	return txID, question + "\x00" + dnsQuerySignature(query), true
+}
+
+// Only share requests whose additional records cannot carry requester-specific
+// semantics. In particular ECS, Cookies, and TSIG must not share answers or
+// singleflight work with another request.
+func dnsQueryCacheSafe(msg []byte) bool {
+	if !validDNSQuery(msg) {
+		return false
+	}
+	qdCount := binary.BigEndian.Uint16(msg[4:6])
+	anCount := binary.BigEndian.Uint16(msg[6:8])
+	nsCount := binary.BigEndian.Uint16(msg[8:10])
+	arCount := binary.BigEndian.Uint16(msg[10:12])
+	pos := 12
+	for i := uint16(0); i < qdCount; i++ {
+		np := skipName(msg, pos)
+		if np < 0 || np+4 > len(msg) {
+			return false
+		}
+		pos = np + 4
+	}
+	for i := 0; i < int(anCount)+int(nsCount); i++ {
+		np := skipName(msg, pos)
+		if np < 0 || np+10 > len(msg) {
+			return false
+		}
+		pos = np + 10 + int(binary.BigEndian.Uint16(msg[np+8:np+10]))
+		if pos > len(msg) {
+			return false
+		}
+	}
+	for i := uint16(0); i < arCount; i++ {
+		np := skipName(msg, pos)
+		if np < 0 || np+10 > len(msg) || binary.BigEndian.Uint16(msg[np:np+2]) != 41 {
+			return false
+		}
+		rdataLen := int(binary.BigEndian.Uint16(msg[np+8 : np+10]))
+		if rdataLen != 0 {
+			return false
+		}
+		pos = np + 10
+	}
+	return true
 }
 
 // dnsQuestion returns the single question as a comparison key, with the name
@@ -352,7 +479,7 @@ func cacheableTTL(response []byte) time.Duration {
 		if answerTTL == 0 {
 			return 0
 		}
-		return clampDuration(time.Duration(answerTTL)*time.Second, dnsCacheMinTTL, dnsCacheMaxTTL)
+		return min(time.Duration(answerTTL)*time.Second, dnsCacheMaxTTL)
 	}
 
 	ttl, ok := negativeTTL(response, pos, nsCount)
@@ -454,8 +581,8 @@ func decrementTTLs(response []byte, age time.Duration) {
 			}
 			if ttl > secs {
 				ttl -= secs
-			} else if secs > 0 {
-				ttl = 1
+			} else {
+				ttl = 0
 			}
 			binary.BigEndian.PutUint32(response[np+4:np+8], ttl)
 		}

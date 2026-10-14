@@ -16,6 +16,15 @@ class TunConfigTest {
     fun `defaults construct without error`() {
         val c = TunConfig.Default
         assertEquals(1280, c.mtu)
+        assertEquals(Ipv6Mode.Enabled, c.ipv6Mode)
+        assertEquals("enabled", c.ipv6Mode.wire)
+    }
+
+    @Test
+    fun `IPv6 modes keep distinct native values`() {
+        assertEquals("disabled", Ipv6Mode.Disabled.wire)
+        assertEquals("bypass_only", Ipv6Mode.BypassOnly.wire)
+        assertFalse(TunConfig(ipv6Mode = Ipv6Mode.BypassOnly).ipv6Enabled)
     }
 
     @Test

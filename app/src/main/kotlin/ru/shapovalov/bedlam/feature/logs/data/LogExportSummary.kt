@@ -19,6 +19,12 @@ fun routingSummary(routing: RoutingConfig, appFilter: AppFilter): String {
         DnsMode.Custom -> " (${countOf(routing.customDns.size, "server")})"
         else -> ""
     }
+    val directTransport = DnsPresets.effectiveTransport(routing.directDnsMode, routing.directDnsTransport)
+    val directDnsServers = when (routing.directDnsMode) {
+        DnsMode.Custom -> " (${countOf(routing.directCustomDns.size, "server")})"
+        else -> ""
+    }
+    val cache = if (routing.dnsCacheEnabled) "DNS cache on" else "DNS cache off"
     val ipv6 = when (routing.ipv6Mode) {
         Ipv6Mode.Enabled -> "IPv6 on"
         Ipv6Mode.Disabled -> "IPv6 off"
@@ -36,7 +42,9 @@ fun routingSummary(routing: RoutingConfig, appFilter: AppFilter): String {
     val lan = if (routing.bypassLan) "LAN bypass on" else "LAN bypass off"
     val sources = countOf(routing.sources.count { it.source.enabled }, "direct-route source")
     return listOf(
-        "DNS ${routing.dnsMode.name}$dnsServers over ${transport.label()}",
+        "Remote DNS ${routing.dnsMode.name}$dnsServers over ${transport.label()}",
+        "Direct DNS ${routing.directDnsMode.name}$directDnsServers over ${directTransport.label()}",
+        cache,
         ipv6,
         mtu,
         apps,

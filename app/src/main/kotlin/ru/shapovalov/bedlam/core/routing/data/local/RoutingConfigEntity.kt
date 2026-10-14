@@ -15,6 +15,14 @@ data class RoutingConfigEntity(
     val dnsTransport: String = "Tcp",
     @ColumnInfo(defaultValue = "0")
     val mtu: Int = 0,
+    @ColumnInfo(defaultValue = "System")
+    val directDnsMode: String = "System",
+    @ColumnInfo(defaultValue = "Udp")
+    val directDnsTransport: String = "Udp",
+    @ColumnInfo(defaultValue = "")
+    val directCustomDnsCsv: String = "",
+    @ColumnInfo(defaultValue = "1")
+    val dnsCacheEnabled: Boolean = true,
 ) {
     companion object {
         const val SINGLETON_ID = 1

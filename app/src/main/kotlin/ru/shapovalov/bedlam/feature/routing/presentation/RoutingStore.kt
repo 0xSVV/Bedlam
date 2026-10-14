@@ -15,6 +15,10 @@ interface RoutingStore : Store<RoutingStore.Intent, RoutingStore.State, Nothing>
         data class SetDnsMode(val mode: DnsMode) : Intent
         data class SetDnsTransport(val transport: DnsTransport) : Intent
         data class SetCustomDns(val servers: List<String>) : Intent
+        data class SetDirectDnsMode(val mode: DnsMode) : Intent
+        data class SetDirectDnsTransport(val transport: DnsTransport) : Intent
+        data class SetDirectCustomDns(val servers: List<String>) : Intent
+        data class SetDnsCacheEnabled(val enabled: Boolean) : Intent
         data class SetMtu(val mtu: Int) : Intent
         data class AddSource(val source: DirectRouteSource) : Intent
         data class RemoveSource(val id: String) : Intent

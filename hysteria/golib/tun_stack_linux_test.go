@@ -118,7 +118,11 @@ func (r *tunStackRig) start(ipv6Enabled bool) {
 	}
 	r.tunFD, r.appFD = fds[0], fds[1]
 	dns := `{"transport":"tcp","servers":["` + stackUpstreamDNS + `"],"listen":["172.19.0.2","fdfe:dcba:9876::2"]}`
-	if err := r.sess.StartTUN(int32(r.tunFD), 1500, "172.19.0.1/30", "fdfe:dcba:9876::1/126", ipv6Enabled, dns); err != nil {
+	ipv6Mode := "enabled"
+	if !ipv6Enabled {
+		ipv6Mode = "disabled"
+	}
+	if err := r.sess.StartTUN(int32(r.tunFD), 1500, "172.19.0.1/30", "fdfe:dcba:9876::1/126", ipv6Mode, dns); err != nil {
 		unix.Close(r.tunFD)
 		unix.Close(r.appFD)
 		t.Fatal(err)

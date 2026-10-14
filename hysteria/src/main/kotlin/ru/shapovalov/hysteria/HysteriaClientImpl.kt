@@ -30,6 +30,7 @@ import ru.shapovalov.hysteria.api.HysteriaClient
 import ru.shapovalov.hysteria.api.HysteriaClient.LogEntry
 import ru.shapovalov.hysteria.api.HysteriaClient.LogLevel
 import ru.shapovalov.hysteria.api.TunConfig
+import ru.shapovalov.hysteria.api.toWireJson
 import ru.shapovalov.hysteria.config.HysteriaConfig
 import ru.shapovalov.hysteria.config.toJson
 import ru.shapovalov.hysteria.config.toWireJson
@@ -77,7 +78,7 @@ class HysteriaClientImpl : HysteriaClient {
         val generation = liveGeneration.incrementAndGet()
         try {
             withContext(Dispatchers.IO) {
-                val s = openSession(config, protector, generation)
+                val s = openSession(config, tunConfig, protector, generation)
                 val published = synchronized(lifecycleLock) {
                     if (liveGeneration.get() == generation) {
                         session = s
@@ -121,11 +122,16 @@ class HysteriaClientImpl : HysteriaClient {
 
     private fun openSession(
         config: HysteriaConfig,
+        tunConfig: TunConfig,
         protector: HysteriaClient.SocketProtector,
         generation: Long,
     ): Session = Golib.newSession(
         config.toJson(),
-        { fd: Int -> protector.protect(fd) },
+        tunConfig.directDns.toWireJson(),
+        object : golib.FdProtector {
+            override fun protect(fd: Int): Boolean = protector.protect(fd)
+            override fun bindAndProtect(fd: Int): Boolean = protector.bindAndProtect(fd)
+        },
         sessionEventHandler(generation),
     )
 
@@ -200,12 +206,14 @@ class HysteriaClientImpl : HysteriaClient {
                 tunConfig.mtu,
                 TunConfig.IPV4_CIDR,
                 TunConfig.IPV6_CIDR,
-                tunConfig.ipv6Enabled,
+                tunConfig.ipv6Mode.wire,
                 tunConfig.dns.toWireJson(),
+                tunConfig.directDns.toWireJson(),
             )
-        } catch (t: Throwable) {
+        } finally {
+            // Go duplicates this borrowed descriptor before giving it to
+            // sing-tun. Kotlin remains the owner of the detached original.
             runCatching { ParcelFileDescriptor.adoptFd(fd).close() }
-            throw t
         }
     }
 
@@ -279,6 +287,11 @@ class HysteriaClientImpl : HysteriaClient {
     override suspend fun resetConnectionsKeepingDnsCache() {
         val s = session ?: return
         withContext(Dispatchers.IO) { runCatching { s.resetConnectionsKeepingDNSCache() } }
+    }
+
+    override suspend fun setDnsCacheEnabled(enabled: Boolean) {
+        val s = session ?: return
+        withContext(Dispatchers.IO) { s.setDNSCacheEnabled(enabled) }
     }
 
     override suspend fun checkConnection() {

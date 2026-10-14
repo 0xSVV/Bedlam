@@ -2,6 +2,7 @@ package ru.shapovalov.bedlam.core.routing.domain.model
 
 import ru.shapovalov.bedlam.core.appfilter.domain.model.AppFilter
 import ru.shapovalov.hysteria.api.DnsUpstream
+import ru.shapovalov.hysteria.api.DirectDnsDomain
 
 data class RoutePlan(
     val claimedV4: List<Cidr.V4>,
@@ -12,5 +13,8 @@ data class RoutePlan(
     val dnsUpstream: DnsUpstream,
     val appFilter: AppFilter,
     val ipv6Enabled: Boolean,
+    val ipv6Mode: Ipv6Mode = Ipv6Mode.Enabled,
+    val dnsCacheEnabled: Boolean = true,
+    val directDnsDomains: List<DirectDnsDomain> = emptyList(),
     val mtu: Int,
 )

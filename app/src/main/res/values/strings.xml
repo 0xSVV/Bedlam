@@ -277,6 +277,11 @@
     <string name="routing_dns_transport_https">DNS over HTTPS</string>
     <string name="routing_dns_transport_http3">DNS over HTTP/3</string>
     <string name="routing_dns_transport_system_hint">System resolvers speak plain DNS — UDP or TCP only</string>
+    <string name="routing_direct_dns_title">Direct DNS</string>
+    <string name="routing_direct_dns_hint">Used for server bootstrap and explicitly bypassed domains. Other captured DNS stays on Remote DNS.</string>
+    <string name="routing_direct_dns_unavailable">Bootstrap and enabled domain bypass rules use this network’s system DNS over protected UDP. Other Direct DNS providers and transports are not available yet.</string>
+    <string name="routing_dns_cache_title">Cache DNS responses</string>
+    <string name="routing_dns_cache_hint">Reuse Bedlam DNS answers when enabled. Does not control Android, browser, or resolver caches.</string>
 
     <string name="routing_sources_title">Direct routes</string>
     <string name="routing_sources_hint">CIDRs, ASNs, or domains that skip the tunnel. ASNs and domains are re-resolved daily.</string>

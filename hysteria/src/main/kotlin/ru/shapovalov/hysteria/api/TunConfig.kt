@@ -1,13 +1,13 @@
 package ru.shapovalov.hysteria.api
 
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
 data class TunConfig(
     val mtu: Int = DEFAULT_MTU,
-    /**
-     * When false, IPv6 flows entering the TUN are rejected immediately instead
-     * of being relayed. The interface must still claim `::/0` so v6 traffic
-     * sinks here rather than leaking around the VPN; apps fall back to IPv4.
-     */
-    val ipv6Enabled: Boolean = true,
+    /** IPv6 payload policy; BypassOnly deliberately leaves IPv6 outside the TUN. */
+    val ipv6Mode: Ipv6Mode = Ipv6Mode.Enabled,
     /**
      * Where queries reaching the on-TUN resolver ([IPV4_DNS_ADDRESS] /
      * [IPV6_DNS_ADDRESS]) are forwarded. The TUN factory must advertise
@@ -15,7 +15,9 @@ data class TunConfig(
      * answers UDP and TCP port 53 on them and refuses every other port.
      */
     val dns: DnsUpstream = DnsUpstream.Default,
+    val directDns: DirectDnsConfig = DirectDnsConfig(),
 ) {
+    val ipv6Enabled: Boolean get() = ipv6Mode == Ipv6Mode.Enabled
     init {
         require(mtu in MIN_MTU..MAX_MTU) { "MTU out of range: $mtu" }
     }
@@ -38,6 +40,23 @@ data class TunConfig(
 
         val Default: TunConfig = TunConfig()
     }
+}
+
+@Serializable
+data class DirectDnsConfig(
+    val servers: List<String> = emptyList(),
+    val domains: List<DirectDnsDomain> = emptyList(),
+)
+
+@Serializable
+data class DirectDnsDomain(val id: String, val name: String)
+
+internal fun DirectDnsConfig.toWireJson(): String = Json.encodeToString(this)
+
+enum class Ipv6Mode(val wire: String) {
+    Enabled("enabled"),
+    Disabled("disabled"),
+    BypassOnly("bypass_only"),
 }
 
 internal enum class IpFamily(val maxPrefix: Int) { V4(32), V6(128) }

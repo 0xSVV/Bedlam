@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.net.Network
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -13,6 +15,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -92,6 +95,8 @@ class BedlamVpnService : VpnService() {
     }
     private val selfStopLock = Any()
     private var networkObserver: UnderlyingNetworkObserver? = null
+    @Volatile private var selectedUnderlyingNetwork: Network? = null
+    private var initialNetworkSelection = CompletableDeferred<Unit>()
     private var notificationJob: Job? = null
     private var runtimeHeartbeatJob: Job? = null
     private var livenessKickJob: Job? = null
@@ -101,6 +106,7 @@ class BedlamVpnService : VpnService() {
     private var startJob: Job? = null
     private val startMutex = Mutex()
     private val networkChangeMutex = Mutex()
+    private val routeApplyMutex = Mutex()
     private var reconnectWatchdogJob: Job? = null
 
     @Volatile
@@ -306,13 +312,22 @@ class BedlamVpnService : VpnService() {
     private suspend fun launchTunnel(config: HysteriaConfig) {
         currentConfig = config
         try {
+            val networkReady = withTimeoutOrNull(INITIAL_NETWORK_SELECTION_TIMEOUT_MS) {
+                initialNetworkSelection.await()
+            }
+            if (networkReady == null || selectedUnderlyingNetwork == null) {
+                throw IllegalStateException("No usable underlying network is available for protected tunnel sockets")
+            }
             val plan = buildRoutePlan()
             currentRoutePlan = plan
             client.start(
                 config = config,
                 tunConfig = plan.toTunConfig(),
-                protector = { fd -> protect(fd) },
-                tun = { tunConfig -> establishTun(tunConfig) },
+                protector = object : HysteriaClient.SocketProtector {
+                    override fun protect(fd: Int): Boolean = this@BedlamVpnService.protect(fd)
+                    override fun bindAndProtect(fd: Int): Boolean = this@BedlamVpnService.bindAndProtect(fd, requireUnderlyingNetwork = true)
+                },
+                tun = { tunConfig -> establishTun(plan, tunConfig) },
             )
             startSettingsWatcher()
         } catch (e: CancellationException) {
@@ -324,7 +339,29 @@ class BedlamVpnService : VpnService() {
     }
 
     private fun RoutePlan.toTunConfig(): TunConfig =
-        TunConfig(mtu = mtu, ipv6Enabled = ipv6Enabled, dns = dnsUpstream)
+        TunConfig(
+            mtu = mtu,
+            ipv6Mode = when (ipv6Mode) {
+                ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode.Disabled -> ru.shapovalov.hysteria.api.Ipv6Mode.Disabled
+                ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode.BypassOnly -> ru.shapovalov.hysteria.api.Ipv6Mode.BypassOnly
+                ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode.Enabled -> ru.shapovalov.hysteria.api.Ipv6Mode.Enabled
+            },
+            dns = dnsUpstream,
+            directDns = ru.shapovalov.hysteria.api.DirectDnsConfig(
+                servers = selectedUnderlyingNetwork
+                    ?.let { getSystemService(ConnectivityManager::class.java)?.getLinkProperties(it)?.dnsServers }
+                    .orEmpty()
+                    .mapNotNull { address ->
+                        if (address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress || address.isMulticastAddress) null
+                        else {
+                            val host = address.hostAddress ?: return@mapNotNull null
+                            val numericHost = host.substringBefore('%')
+                            "${if (address.address.size == 16) "[$numericHost]" else numericHost}:53"
+                        }
+                    },
+                domains = directDnsDomains,
+            ),
+        )
 
     private fun startProfileNameWatcher(profileId: String?) {
         profileNameWatcherJob?.cancel()
@@ -351,29 +388,35 @@ class BedlamVpnService : VpnService() {
                     if (!client.state.value.isActiveTunnel) return@collect
                     val newPlan = runCatching { buildRoutePlan() }.getOrNull() ?: return@collect
                     if (newPlan == currentRoutePlan) return@collect
+                    val previous = currentRoutePlan
+                    if (previous != null && newPlan.copy(dnsCacheEnabled = previous.dnsCacheEnabled) == previous) {
+                        client.setDnsCacheEnabled(newPlan.dnsCacheEnabled)
+                        currentRoutePlan = newPlan
+                        return@collect
+                    }
                     reapplyTunnel(newPlan)
                 }
         }
     }
 
     private suspend fun reapplyTunnel(plan: RoutePlan) {
-        try {
-            Log.i(TAG, "Reapplying tunnel after settings change")
-            currentRoutePlan = plan
-            client.updateTun(plan.toTunConfig()) { tunConfig ->
-                establishTun(tunConfig)
+        routeApplyMutex.withLock {
+            try {
+                Log.i(TAG, "Reapplying tunnel after settings change")
+                client.updateTun(plan.toTunConfig()) { tunConfig ->
+                    establishTun(plan, tunConfig)
+                }
+                currentRoutePlan = plan
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Reapply failed", e)
+                stopOnItsOwn(SelfStop.ReapplyFailure(e))
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "Reapply failed", e)
-            stopOnItsOwn(SelfStop.ReapplyFailure(e))
         }
     }
 
-    private fun establishTun(tunConfig: TunConfig): ParcelFileDescriptor {
-        val plan = currentRoutePlan
-            ?: throw IllegalStateException("RoutePlan not built before establishTun()")
+    private fun establishTun(plan: RoutePlan, tunConfig: TunConfig): ParcelFileDescriptor {
         val builder = Builder()
             .setSession(connectionName.ifEmpty { getString(R.string.vpn_session_default) })
             .setMtu(tunConfig.mtu)
@@ -470,10 +513,15 @@ class BedlamVpnService : VpnService() {
 
     private fun startNetworkObserver() {
         if (networkObserver != null) return
+        initialNetworkSelection = CompletableDeferred()
         networkObserver = UnderlyingNetworkObserver(
             context = this,
             scope = scope,
-            onAvailable = { network -> setUnderlyingNetworks(network?.let { arrayOf(it) }) },
+            onAvailable = { network ->
+                selectedUnderlyingNetwork = network
+                initialNetworkSelection.complete(Unit)
+                setUnderlyingNetworks(network?.let { arrayOf(it) })
+            },
             onSettledChange = {
                 scope.launch { handleUnderlyingNetworkChange() }
             },
@@ -481,10 +529,37 @@ class BedlamVpnService : VpnService() {
         ).also { it.start() }
     }
 
+    /** Bind native sockets to the selected physical network before protecting them from the VPN. */
+    private fun bindAndProtect(fd: Int, requireUnderlyingNetwork: Boolean = false): Boolean {
+        val network = selectedUnderlyingNetwork
+        if (requireUnderlyingNetwork && network == null) return false
+        if (network != null) {
+            val duplicate = try {
+                ParcelFileDescriptor.fromFd(fd)
+            } catch (e: Exception) {
+                Log.w(TAG, "Cannot duplicate native socket for network binding", e)
+                return false
+            }
+            try {
+                network.bindSocket(duplicate.fileDescriptor)
+            } catch (e: Exception) {
+                Log.w(TAG, "Cannot bind native socket to the selected network", e)
+                return false
+            } finally {
+                runCatching { duplicate.close() }
+            }
+        }
+        return protect(fd)
+    }
+
     private suspend fun handleUnderlyingNetworkChange() {
         networkChangeMutex.withLock {
             val newPlan = runCatching { buildRoutePlan() }.getOrNull()
-            if (newPlan != null && newPlan != currentRoutePlan) {
+            if (newPlan != null) {
+                // The Direct resolver list is read from LinkProperties and is
+                // not part of RoutePlan equality. Recreate the TUN on every
+                // settled network change so native bootstrap and query sockets
+                // pick up the new network's resolver snapshot.
                 reapplyDnsForNetworkChange(newPlan)
             }
             runCatching { client.resetAfterNetworkChange() }
@@ -493,25 +568,24 @@ class BedlamVpnService : VpnService() {
     }
 
     private suspend fun reapplyDnsForNetworkChange(plan: RoutePlan) {
-        val previous = currentRoutePlan
-        repeat(TUN_REAPPLY_ATTEMPTS) { attempt ->
-            currentRoutePlan = plan
-            try {
-                client.updateTun(plan.toTunConfig()) { tunConfig ->
-                    establishTun(tunConfig)
-                }
-                return
-            } catch (e: CancellationException) {
-                currentRoutePlan = previous
-                throw e
-            } catch (e: Exception) {
-                currentRoutePlan = previous
-                if (attempt < TUN_REAPPLY_ATTEMPTS - 1) {
-                    Log.w(TAG, "DNS reapply after network change failed; retrying", e)
-                    delay(TUN_REAPPLY_RETRY_DELAY_MS)
-                } else {
-                    Log.e(TAG, "DNS reapply after network change failed; no interface left", e)
-                    stopOnItsOwn(SelfStop.Interruption("DNS reapply after network change failed"))
+        routeApplyMutex.withLock {
+            repeat(TUN_REAPPLY_ATTEMPTS) { attempt ->
+                try {
+                    client.updateTun(plan.toTunConfig()) { tunConfig ->
+                        establishTun(plan, tunConfig)
+                    }
+                    currentRoutePlan = plan
+                    return
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (attempt < TUN_REAPPLY_ATTEMPTS - 1) {
+                        Log.w(TAG, "DNS reapply after network change failed; retrying", e)
+                        delay(TUN_REAPPLY_RETRY_DELAY_MS)
+                    } else {
+                        Log.e(TAG, "DNS reapply after network change failed; no interface left", e)
+                        stopOnItsOwn(SelfStop.Interruption("DNS reapply after network change failed"))
+                    }
                 }
             }
         }
@@ -682,6 +756,7 @@ class BedlamVpnService : VpnService() {
         private const val SLEEP_GAP_CHECK_MS = 20_000L
         private const val TUN_REAPPLY_ATTEMPTS = 2
         private const val TUN_REAPPLY_RETRY_DELAY_MS = 500L
+        private const val INITIAL_NETWORK_SELECTION_TIMEOUT_MS = 10_000L
         const val ACTION_STOP = "ru.shapovalov.bedlam.STOP_VPN"
         const val ACTION_RECONNECT = "ru.shapovalov.bedlam.RECONNECT_VPN"
         const val EXTRA_CONFIG_JSON = "config_json"

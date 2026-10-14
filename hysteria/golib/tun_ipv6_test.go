@@ -157,3 +157,12 @@ func TestBuildNoData_rejectsTruncatedQueries(t *testing.T) {
 		t.Error("a truncated question must not be answered")
 	}
 }
+
+func TestAnswerLocally_bypassOnlyDoesNotImpersonateDisabled(t *testing.T) {
+	h := testHandler(t, &stubResolver{name: "stub"})
+	h.ipv6Mode = "bypass_only"
+	h.ipv6Enabled = false
+	if resp := h.answerLocally(aaaaQuery("example.com")); resp != nil {
+		t.Fatal("BypassOnly must not synthesize the Disabled-mode NODATA response")
+	}
+}

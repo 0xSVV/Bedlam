@@ -59,18 +59,28 @@ internal fun BasicsCard(
     dnsMode: DnsMode,
     dnsTransport: DnsTransport,
     customDns: List<String>,
+    directDnsMode: DnsMode,
+    directDnsTransport: DnsTransport,
+    directCustomDns: List<String>,
+    dnsCacheEnabled: Boolean,
     mtu: Int,
     onSetBypassLan: (Boolean) -> Unit,
     onSetIpv6Mode: (Ipv6Mode) -> Unit,
     onSetDnsMode: (DnsMode) -> Unit,
     onSetDnsTransport: (DnsTransport) -> Unit,
     onSetCustomDns: (List<String>) -> Unit,
+    onSetDirectDnsMode: (DnsMode) -> Unit,
+    onSetDirectDnsTransport: (DnsTransport) -> Unit,
+    onSetDirectCustomDns: (List<String>) -> Unit,
+    onSetDnsCacheEnabled: (Boolean) -> Unit,
     onSetMtu: (Int) -> Unit,
 ) {
     val ipv6Options = remember { Ipv6Mode.entries.toList() }
     val dnsOptions = remember { DnsMode.entries.toList() }
     val transportOptions = remember(dnsMode) { DnsPresets.supportedTransports(dnsMode) }
     val effectiveTransport = DnsPresets.effectiveTransport(dnsMode, dnsTransport)
+    val directTransportOptions = remember(directDnsMode) { DnsPresets.supportedTransports(directDnsMode) }
+    val effectiveDirectTransport = DnsPresets.effectiveTransport(directDnsMode, directDnsTransport)
 
     ElevatedCard(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
         Column(modifier = Modifier.padding(vertical = MaterialTheme.spacing.small)) {
@@ -124,6 +134,49 @@ internal fun BasicsCard(
                     onChange = onSetCustomDns,
                 )
             }
+            HorizontalDivider(modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large))
+            Text(
+                text = stringResource(R.string.routing_direct_dns_title),
+                modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large, vertical = MaterialTheme.spacing.small),
+                style = MaterialTheme.typography.titleMediumEmphasized,
+            )
+            Text(
+                text = stringResource(R.string.routing_direct_dns_unavailable),
+                modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            DropdownRow(
+                title = stringResource(R.string.routing_dns_title),
+                value = directDnsMode.label(),
+                options = dnsOptions,
+                renderLabel = { it.label() },
+                onPick = onSetDirectDnsMode,
+                enabled = false,
+            )
+            DropdownRow(
+                title = stringResource(R.string.routing_dns_transport_title),
+                value = effectiveDirectTransport.label(),
+                subtitle = if (directDnsMode == DnsMode.System) stringResource(R.string.routing_dns_transport_system_hint) else null,
+                options = directTransportOptions,
+                renderLabel = { it.label() },
+                onPick = onSetDirectDnsTransport,
+                enabled = false,
+            )
+            if (directDnsMode == DnsMode.Custom) {
+                CustomDnsEditor(
+                    initial = directCustomDns,
+                    transport = effectiveDirectTransport,
+                    onChange = onSetDirectCustomDns,
+                    enabled = false,
+                )
+            }
+            ToggleRow(
+                title = stringResource(R.string.routing_dns_cache_title),
+                subtitle = stringResource(R.string.routing_dns_cache_hint),
+                checked = dnsCacheEnabled,
+                onCheckedChange = onSetDnsCacheEnabled,
+            )
         }
     }
 }
@@ -215,13 +268,14 @@ private fun <T> DropdownRow(
     renderLabel: @Composable (T) -> String,
     onPick: (T) -> Unit,
     subtitle: String? = null,
+    enabled: Boolean = true,
 ) {
     val spacing = MaterialTheme.spacing
     var expanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { expanded = true }
+            .clickable(enabled = enabled) { expanded = true }
             .padding(horizontal = spacing.large, vertical = spacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -240,7 +294,7 @@ private fun <T> DropdownRow(
             Text(
                 text = value,
                 style = MaterialTheme.typography.labelLargeEmphasized,
-                color = MaterialTheme.colorScheme.primary,
+                color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->
@@ -341,6 +395,7 @@ private fun CustomDnsEditor(
     initial: List<String>,
     transport: DnsTransport,
     onChange: (List<String>) -> Unit,
+    enabled: Boolean = true,
 ) {
     val spacing = MaterialTheme.spacing
     var text by remember { mutableStateOf(initial.joinToString(", ")) }
@@ -365,6 +420,7 @@ private fun CustomDnsEditor(
             label = { Text(stringResource(R.string.routing_dns_custom_label)) },
             placeholder = { Text(transport.placeholder()) },
             isError = invalid.isNotEmpty(),
+            enabled = enabled,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
                 autoCorrectEnabled = false,

@@ -17,10 +17,12 @@ class RouteRefreshWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
 
-    override suspend fun doWork(): Result = runCatching {
-        applicationContext.appComponent.refreshRouteSources(staleAfterMillis = STALE_MS)
-        Result.success()
-    }.getOrElse { e ->
+    override suspend fun doWork(): Result = try {
+        val outcome = applicationContext.appComponent.refreshRouteSources(staleAfterMillis = STALE_MS)
+        if (outcome.transientFailures > 0) Result.retry() else Result.success()
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (e: Exception) {
         Log.e(TAG, "Route refresh failed", e)
         Result.retry()
     }

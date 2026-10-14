@@ -14,8 +14,8 @@ class AddRouteSourceUseCase(
         if (repo.hasEquivalent(source)) return false
         repo.upsertSource(source)
         val result = resolver.resolve(source)
-        result.onSuccess { repo.recordResolution(source.id, it, error = null) }
-        result.onFailure { repo.recordResolutionError(source.id, it.message) }
+        result.onSuccess { repo.recordResolution(source, it, error = null) }
+        result.onFailure { repo.recordResolutionError(source, it.message) }
         return true
     }
 }
