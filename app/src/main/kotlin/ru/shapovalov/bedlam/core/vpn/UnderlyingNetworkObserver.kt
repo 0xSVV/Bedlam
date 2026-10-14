@@ -31,7 +31,6 @@ class UnderlyingNetworkObserver(
             return@DefaultNetworkListener
         }
         report("Underlying network changed: ${describe(network)}")
-        if (network == null) return@DefaultNetworkListener
         debounceJob?.cancel()
         debounceJob = scope.launch {
             delay(debounceMs)

@@ -29,6 +29,13 @@ class RoutingComponent(
     fun onSetMtu(mtu: Int) = store.accept(RoutingStore.Intent.SetMtu(mtu))
     fun onSetCustomDns(servers: List<String>) =
         store.accept(RoutingStore.Intent.SetCustomDns(servers))
+    fun onSetDirectDnsMode(mode: DnsMode) = store.accept(RoutingStore.Intent.SetDirectDnsMode(mode))
+    fun onSetDirectDnsTransport(transport: DnsTransport) =
+        store.accept(RoutingStore.Intent.SetDirectDnsTransport(transport))
+    fun onSetDirectCustomDns(servers: List<String>) =
+        store.accept(RoutingStore.Intent.SetDirectCustomDns(servers))
+    fun onSetDnsCacheEnabled(enabled: Boolean) =
+        store.accept(RoutingStore.Intent.SetDnsCacheEnabled(enabled))
 
     fun onAddSource(source: DirectRouteSource) = store.accept(RoutingStore.Intent.AddSource(source))
     fun onRemoveSource(id: String) = store.accept(RoutingStore.Intent.RemoveSource(id))

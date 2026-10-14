@@ -71,8 +71,9 @@ func dialRealm(cfg *clientConfig, session *Session) (*client.Config, error) {
 	ctx := context.Background()
 	stunServers := realmSTUNServers(cfg, addr)
 	localAddrs, err := realm.Discover(ctx, baseConn, realm.STUNConfig{
-		Servers: stunServers,
-		Timeout: durationOrDefault(cfg.RealmStunTimeoutMs, defaultRealmStunTimeout),
+		Servers:  stunServers,
+		Timeout:  durationOrDefault(cfg.RealmStunTimeoutMs, defaultRealmStunTimeout),
+		Resolver: session.directResolver(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("realm: STUN discovery: %w", err)
@@ -156,7 +157,7 @@ func (s *Session) listenProtectedUDP(localPort int) (net.PacketConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if perr := s.protectPacketConn(conn); perr != nil {
+	if perr := s.bindAndProtectPacketConn(conn); perr != nil {
 		_ = conn.Close()
 		return nil, perr
 	}
@@ -166,29 +167,52 @@ func (s *Session) listenProtectedUDP(localPort int) (net.PacketConn, error) {
 // realmHTTPClient returns an HTTP client whose sockets are protected from the
 // VPN, so the rendezvous request survives reconnects while the TUN is up.
 func (s *Session) realmHTTPClient(insecure bool) *http.Client {
-	dialer := &net.Dialer{Timeout: 15 * time.Second}
-	if p := s.protector; p != nil {
-		dialer.Control = func(_, _ string, c syscall.RawConn) error {
-			var protected bool
-			if err := c.Control(func(fd uintptr) {
-				protected = p.Protect(int32(fd))
-			}); err != nil {
-				return err
-			}
-			if !protected {
-				return errors.New("realm: failed to protect socket from the VPN")
-			}
-			return nil
-		}
-	}
+	dialer := &net.Dialer{Timeout: 15 * time.Second, Control: s.bindAndProtectControl}
 	transport := &http.Transport{
-		DialContext:       dialer.DialContext,
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := s.lookupDirectHost(ctx, host)
+			if err != nil {
+				return nil, fmt.Errorf("realm: Direct DNS lookup failed for %q: %w", host, err)
+			}
+			var lastErr error
+			for _, ip := range ips {
+				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+				if err == nil {
+					return conn, nil
+				}
+				lastErr = err
+			}
+			if lastErr == nil {
+				lastErr = errors.New("Direct DNS returned no addresses")
+			}
+			return nil, lastErr
+		},
 		DisableKeepAlives: true,
 	}
 	if insecure {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 	return &http.Client{Transport: transport, Timeout: 30 * time.Second}
+}
+
+func (s *Session) bindAndProtectControl(_, _ string, raw syscall.RawConn) error {
+	if s.protector == nil {
+		return errors.New("realm: Direct socket requires binding and protection")
+	}
+	var ok bool
+	if err := raw.Control(func(fd uintptr) {
+		ok = s.protector.BindAndProtect(int32(fd))
+	}); err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("realm: failed to bind socket to the selected network and protect it")
+	}
+	return nil
 }
 
 type singleUseConnFactory struct {

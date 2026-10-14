@@ -17,6 +17,10 @@ interface RoutingRepository {
     suspend fun setDnsMode(mode: DnsMode)
     suspend fun setDnsTransport(transport: DnsTransport)
     suspend fun setCustomDns(servers: List<String>)
+    suspend fun setDirectDnsMode(mode: DnsMode)
+    suspend fun setDirectDnsTransport(transport: DnsTransport)
+    suspend fun setDirectCustomDns(servers: List<String>)
+    suspend fun setDnsCacheEnabled(enabled: Boolean)
     suspend fun setMtu(mtu: Int)
 
     suspend fun upsertSource(source: DirectRouteSource)
@@ -24,6 +28,6 @@ interface RoutingRepository {
     suspend fun setSourceEnabled(id: String, enabled: Boolean)
 
     suspend fun hasEquivalent(source: DirectRouteSource): Boolean
-    suspend fun recordResolution(sourceId: String, cidrs: List<Cidr>, error: String?)
-    suspend fun recordResolutionError(sourceId: String, error: String?)
+    suspend fun recordResolution(source: DirectRouteSource, cidrs: List<Cidr>, error: String?)
+    suspend fun recordResolutionError(source: DirectRouteSource, error: String?)
 }

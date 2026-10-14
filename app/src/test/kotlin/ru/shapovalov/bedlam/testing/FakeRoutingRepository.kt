@@ -38,6 +38,18 @@ class FakeRoutingRepository(
     override suspend fun setCustomDns(servers: List<String>) =
         config.update { it.copy(customDns = servers) }
 
+    override suspend fun setDirectDnsMode(mode: DnsMode) =
+        config.update { it.copy(directDnsMode = mode) }
+
+    override suspend fun setDirectDnsTransport(transport: DnsTransport) =
+        config.update { it.copy(directDnsTransport = transport) }
+
+    override suspend fun setDirectCustomDns(servers: List<String>) =
+        config.update { it.copy(directCustomDns = servers) }
+
+    override suspend fun setDnsCacheEnabled(enabled: Boolean) =
+        config.update { it.copy(dnsCacheEnabled = enabled) }
+
     override suspend fun setMtu(mtu: Int) =
         config.update { it.copy(mtu = mtu) }
 
@@ -57,13 +69,17 @@ class FakeRoutingRepository(
     override suspend fun hasEquivalent(source: DirectRouteSource): Boolean =
         config.value.sources.any { it.source.dedupeKey() == source.dedupeKey() }
 
-    override suspend fun recordResolution(sourceId: String, cidrs: List<Cidr>, error: String?) =
-        updateSource(sourceId) {
+    override suspend fun recordResolution(source: DirectRouteSource, cidrs: List<Cidr>, error: String?) =
+        updateSource(source.id) {
+            if (it.source != source) return@updateSource it
             it.copy(cidrs = cidrs, lastResolvedMillis = resolvedAtMillis, lastError = error)
         }
 
-    override suspend fun recordResolutionError(sourceId: String, error: String?) =
-        updateSource(sourceId) { it.copy(lastError = error) }
+    override suspend fun recordResolutionError(source: DirectRouteSource, error: String?) =
+        updateSource(source.id) {
+            if (it.source != source) return@updateSource it
+            it.copy(lastError = error)
+        }
 
     private fun updateSources(transform: (List<ResolvedSource>) -> List<ResolvedSource>) =
         config.update { current ->

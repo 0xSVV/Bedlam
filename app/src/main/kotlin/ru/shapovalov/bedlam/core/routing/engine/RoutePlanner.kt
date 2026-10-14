@@ -10,6 +10,7 @@ import ru.shapovalov.bedlam.core.routing.domain.model.RoutePlan
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.hysteria.api.DnsTransport
 import ru.shapovalov.hysteria.api.DnsUpstream
+import ru.shapovalov.hysteria.api.DirectDnsDomain
 
 class RoutePlanner(
     private val supportsExcludeRoute: Boolean,
@@ -34,14 +35,18 @@ class RoutePlanner(
         val systemExclusionsV6 = listOf<Cidr.V6>(tunPrefixV6)
 
         val lanExclusionsV4 = if (config.bypassLan) LanRanges.IPV4 else emptyList()
-        val lanExclusionsV6 = if (config.bypassLan) LanRanges.IPV6 else emptyList()
+        val lanExclusionsV6 = if (config.bypassLan && config.ipv6Mode != Ipv6Mode.Disabled) {
+            LanRanges.IPV6
+        } else {
+            emptyList()
+        }
 
         val budget = maxTotalRoutes - baseV4.size - baseV6.size -
                 systemExclusionsV4.size - systemExclusionsV6.size -
                 lanExclusionsV4.size - lanExclusionsV6.size
 
         val enabledSources = config.sources
-            .filter { it.source.enabled && it.cidrs.isNotEmpty() }
+            .filter { it.source.enabled && it.source !is ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource.Domain && it.cidrs.isNotEmpty() }
             .sortedBy { it.cidrs.size }
         val kept = mutableListOf<Cidr>()
         var used = 0
@@ -58,7 +63,7 @@ class RoutePlanner(
             used += resolved.cidrs.size
         }
         val keptSourceV4 = kept.filterIsInstance<Cidr.V4>()
-        val keptSourceV6 = kept.filterIsInstance<Cidr.V6>()
+        val keptSourceV6 = if (config.ipv6Mode == Ipv6Mode.Disabled) emptyList() else kept.filterIsInstance<Cidr.V6>()
 
         val excludedV4Raw: List<Cidr> = systemExclusionsV4 + lanExclusionsV4 + keptSourceV4
         val excludedV6Raw: List<Cidr> = systemExclusionsV6 + lanExclusionsV6 + keptSourceV6
@@ -100,6 +105,12 @@ class RoutePlanner(
                 dnsUpstream = upstream.dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
+                ipv6Mode = config.ipv6Mode,
+                dnsCacheEnabled = config.dnsCacheEnabled,
+                directDnsDomains = config.sources.mapNotNull { resolved ->
+                    val source = resolved.source as? ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource.Domain
+                    if (source != null && source.enabled) DirectDnsDomain(source.id, source.hostname) else null
+                },
                 mtu = RoutingConfig.resolveMtu(config.mtu),
             )
         } else {
@@ -118,6 +129,12 @@ class RoutePlanner(
                 dnsUpstream = upstream.dnsUpstream,
                 appFilter = appFilter,
                 ipv6Enabled = ipv6Enabled,
+                ipv6Mode = config.ipv6Mode,
+                dnsCacheEnabled = config.dnsCacheEnabled,
+                directDnsDomains = config.sources.mapNotNull { resolved ->
+                    val source = resolved.source as? ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource.Domain
+                    if (source != null && source.enabled) DirectDnsDomain(source.id, source.hostname) else null
+                },
                 mtu = RoutingConfig.resolveMtu(config.mtu),
             )
         }

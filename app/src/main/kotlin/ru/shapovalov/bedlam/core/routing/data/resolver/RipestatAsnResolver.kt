@@ -1,6 +1,7 @@
 package ru.shapovalov.bedlam.core.routing.data.resolver
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -14,15 +15,19 @@ class RipestatAsnResolver(
     private val json: Json,
 ) {
 
-    suspend fun resolve(asn: Int): Result<List<Cidr>> = runCatching {
-        withContext(Dispatchers.IO) {
+    suspend fun resolve(asn: Int): Result<List<Cidr>> = try {
+        Result.success(withContext(Dispatchers.IO) {
             val body = httpClient.get(
                 url = "https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS$asn",
                 timeoutMs = TIMEOUT_MS,
             )
             val response = json.decodeFromString(RipestatResponse.serializer(), body)
             response.data.prefixes.mapNotNull { Cidr.parseOrNull(it.prefix) }
-        }
+        })
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Result.failure(error)
     }
 
     @Serializable

@@ -54,13 +54,11 @@ object DnsPresets {
         private val httpsUrl: String,
     ) {
 
-        private val ipv4Addresses: List<String> = addresses.filter { ':' !in it }
-
         fun endpoints(transport: DnsTransport): List<String> = when (transport) {
             DnsTransport.Udp, DnsTransport.Tcp -> addresses.map { "${endpointHost(it)}:53" }
             DnsTransport.Doq -> addresses.map { "${endpointHost(it)}:853" }
-            DnsTransport.Tls -> listOf("$tlsHost:853") + ipv4Addresses.map { "$it:853" }
-            DnsTransport.Https -> listOf(httpsUrl) + ipv4Addresses.map { "https://$it/dns-query" }
+            DnsTransport.Tls -> listOf("$tlsHost:853")
+            DnsTransport.Https -> listOf(httpsUrl)
             DnsTransport.Http3 -> addresses.map { "https://${endpointHost(it)}/dns-query" }
         }
 

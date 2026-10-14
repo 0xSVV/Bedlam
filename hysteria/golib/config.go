@@ -1,7 +1,6 @@
 package golib
 
 import (
-	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -265,45 +264,6 @@ func validateClientKeyPair(cert, key string) error {
 		return fmt.Errorf("invalid client key pair: %w", err)
 	}
 	return nil
-}
-
-func resolveHost(server string) (net.Addr, error) {
-	host, port, err := net.SplitHostPort(server)
-	if err != nil {
-		return nil, fmt.Errorf("invalid host address %q: %w", server, err)
-	}
-
-	if isPortHopping(port) {
-		return udphop.ResolveUDPHopAddr(server)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), serverResolveTimeout)
-	defer cancel()
-
-	ips, err := net.DefaultResolver.LookupHost(ctx, host)
-	if err != nil {
-		return nil, fmt.Errorf("DNS lookup failed for %q: %w", host, err)
-	}
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("no addresses found for %q", host)
-	}
-	portNum, err := net.LookupPort("udp", port)
-	if err != nil {
-		return nil, err
-	}
-
-	pick := ips[0]
-	for _, ip := range ips {
-		if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() != nil {
-			pick = ip
-			break
-		}
-	}
-	log(LogLevelInfo, srcDNS, "Resolved %s → %s (candidates: %v)", host, pick, ips)
-	return &net.UDPAddr{
-		IP:   net.ParseIP(pick),
-		Port: portNum,
-	}, nil
 }
 
 func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr net.Addr, session *Session) error {

@@ -45,13 +45,14 @@ type reconnectClient struct {
 	statsFunc     func() (tx, rx int64)
 	echConfigured bool
 
-	mu         sync.Mutex
-	inner      client.Client
-	closed     bool
-	fatal      atomic.Bool
-	attempt    atomic.Int32
-	generation uint64 // guarded by mu; bumped on every state transition
-	sessionSeq atomic.Uint64
+	mu          sync.Mutex
+	inner       client.Client
+	clientToken uint64 // guarded by mu; never derived from interface comparability
+	closed      bool
+	fatal       atomic.Bool
+	attempt     atomic.Int32
+	generation  uint64 // guarded by mu; bumped on every state transition
+	sessionSeq  atomic.Uint64
 
 	awaitingFirstUse atomic.Bool
 
@@ -192,6 +193,7 @@ func (rc *reconnectClient) dial(force bool) error {
 		return coreErrs.ClosedError{}
 	}
 	rc.inner = cli
+	rc.clientToken++
 	rc.sessionSeq.Add(1)
 	prevAttempt := rc.attempt.Swap(0)
 	rc.generation++
@@ -205,13 +207,21 @@ func (rc *reconnectClient) dial(force bool) error {
 }
 
 func (rc *reconnectClient) markDead(err error, source string) {
+	rc.markDeadIfCurrent(0, err, source)
+}
+
+// markDeadIfCurrent retires the client that produced an error. A zero token is
+// reserved for explicit resets, which intentionally retire whichever client is
+// current.
+func (rc *reconnectClient) markDeadIfCurrent(token uint64, err error, source string) bool {
 	rc.mu.Lock()
-	if rc.closed || rc.fatal.Load() || rc.inner == nil {
+	if rc.closed || rc.fatal.Load() || rc.inner == nil || (token != 0 && token != rc.clientToken) {
 		rc.mu.Unlock()
-		return
+		return false
 	}
 	old := rc.inner
 	rc.inner = nil
+	rc.clientToken++
 	rc.generation++
 	gen := rc.generation
 	rc.mu.Unlock()
@@ -220,6 +230,7 @@ func (rc *reconnectClient) markDead(err error, source string) {
 	rc.emit(gen, func() {
 		rc.handler.OnReconnecting(attempt, fmt.Sprintf("[%s] %s", source, err.Error()))
 	})
+	return true
 }
 
 func (rc *reconnectClient) reset() {
@@ -241,29 +252,35 @@ func (rc *reconnectClient) failTerminal(err error) {
 }
 
 func (rc *reconnectClient) currentClient(callerSource string) (client.Client, error) {
+	c, _, err := rc.currentClientRef(callerSource)
+	return c, err
+}
+
+func (rc *reconnectClient) currentClientRef(callerSource string) (client.Client, uint64, error) {
 	rc.mu.Lock()
 	if rc.closed || rc.fatal.Load() {
 		rc.mu.Unlock()
-		return nil, coreErrs.ClosedError{}
+		return nil, 0, coreErrs.ClosedError{}
 	}
 	if rc.inner != nil {
 		c := rc.inner
+		token := rc.clientToken
 		rc.mu.Unlock()
-		return c, nil
+		return c, token, nil
 	}
 	rc.mu.Unlock()
 	if err := rc.dial(false); err != nil {
 		if errors.Is(err, errDialBackoff) || errors.Is(err, errAwaitingFirstUse) {
-			return nil, err
+			return nil, 0, err
 		}
 		if rc.isTerminal(err) {
 			rc.failTerminal(err)
-			return nil, err
+			return nil, 0, err
 		}
 		rc.mu.Lock()
 		if rc.closed || rc.fatal.Load() || rc.inner != nil {
 			rc.mu.Unlock()
-			return nil, err
+			return nil, 0, err
 		}
 		rc.generation++
 		gen := rc.generation
@@ -272,15 +289,16 @@ func (rc *reconnectClient) currentClient(callerSource string) (client.Client, er
 		rc.emit(gen, func() {
 			rc.handler.OnReconnecting(attempt, fmt.Sprintf("[%s] dial: %s", callerSource, err.Error()))
 		})
-		return nil, err
+		return nil, 0, err
 	}
 	rc.mu.Lock()
 	c := rc.inner
+	token := rc.clientToken
 	rc.mu.Unlock()
 	if c == nil {
-		return nil, coreErrs.ClosedError{}
+		return nil, 0, coreErrs.ClosedError{}
 	}
-	return c, nil
+	return c, token, nil
 }
 
 // SessionSeq identifies the current Hysteria session: it increments every
@@ -292,26 +310,26 @@ func (rc *reconnectClient) SessionSeq() uint64 {
 
 func (rc *reconnectClient) TCP(addr string) (net.Conn, error) {
 	rc.awaitingFirstUse.Store(false)
-	c, err := rc.currentClient(srcStream)
+	c, token, err := rc.currentClientRef(srcStream)
 	if err != nil {
 		return nil, err
 	}
 	conn, err := c.TCP(addr)
 	if isTunnelDead(err) {
-		rc.markDead(err, srcStream)
+		rc.markDeadIfCurrent(token, err, srcStream)
 	}
 	return conn, err
 }
 
 func (rc *reconnectClient) UDP() (client.HyUDPConn, error) {
 	rc.awaitingFirstUse.Store(false)
-	c, err := rc.currentClient(srcStream)
+	c, token, err := rc.currentClientRef(srcStream)
 	if err != nil {
 		return nil, err
 	}
 	udp, err := c.UDP()
 	if isTunnelDead(err) {
-		rc.markDead(err, srcStream)
+		rc.markDeadIfCurrent(token, err, srcStream)
 	}
 	return udp, err
 }
@@ -366,6 +384,7 @@ func (rc *reconnectClient) checkNow() {
 		return
 	}
 	c := rc.inner
+	token := rc.clientToken
 	rc.mu.Unlock()
 	if c == nil {
 		if _, err := rc.currentClient(srcWatchdog); err != nil {
@@ -380,7 +399,9 @@ func (rc *reconnectClient) checkNow() {
 	if !probeIndicatesDead(err) {
 		return
 	}
-	rc.markDead(fmt.Errorf("liveness probe failed: %w", err), srcWatchdog)
+	if !rc.markDeadIfCurrent(token, fmt.Errorf("liveness probe failed: %w", err), srcWatchdog) {
+		return
+	}
 	if _, err := rc.currentClient(srcWatchdog); err != nil {
 		log(LogLevelDebug, srcWatchdog, "Re-dial after probe failure failed: %s", err)
 	}
@@ -404,6 +425,7 @@ func (rc *reconnectClient) tick() {
 		return
 	}
 	c := rc.inner
+	token := rc.clientToken
 	rc.mu.Unlock()
 
 	if c == nil {
@@ -423,9 +445,9 @@ func (rc *reconnectClient) tick() {
 	tx, rx := rc.statsFunc()
 	switch rc.nextProbe(tx, rx) {
 	case probeStalled:
-		rc.probe(c, "Traffic stalled")
+		rc.probeIfCurrent(c, token, "Traffic stalled")
 	case probeIdle:
-		rc.probe(c, "Idle")
+		rc.probeIfCurrent(c, token, "Idle")
 	}
 }
 
@@ -455,10 +477,14 @@ func (rc *reconnectClient) nextProbe(tx, rx int64) probeDecision {
 // session the server has already dropped looks identical to a quiet one. A
 // round trip through the tunnel settles both.
 func (rc *reconnectClient) probe(c client.Client, reason string) {
+	rc.probeIfCurrent(c, 0, reason)
+}
+
+func (rc *reconnectClient) probeIfCurrent(c client.Client, token uint64, reason string) {
 	log(LogLevelDebug, srcWatchdog, "%s; probing tunnel", reason)
 	_, err := dnsOverTCP(c, probeDNSServer, buildDNSQuery())
 	if probeIndicatesDead(err) {
-		rc.markDead(fmt.Errorf("%s probe failed: %w", strings.ToLower(reason), err), srcWatchdog)
+		rc.markDeadIfCurrent(token, fmt.Errorf("%s probe failed: %w", strings.ToLower(reason), err), srcWatchdog)
 	}
 }
 

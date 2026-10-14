@@ -72,6 +72,26 @@ class RoutingRepositoryImpl(
         dao.upsertConfig(current.copy(customDnsCsv = servers.joinToString(",")))
     }
 
+    override suspend fun setDirectDnsMode(mode: DnsMode) = mutex.withLock {
+        val current = dao.getConfig() ?: RoutingConfigEntity()
+        dao.upsertConfig(current.copy(directDnsMode = mode.name))
+    }
+
+    override suspend fun setDirectDnsTransport(transport: DnsTransport) = mutex.withLock {
+        val current = dao.getConfig() ?: RoutingConfigEntity()
+        dao.upsertConfig(current.copy(directDnsTransport = transport.name))
+    }
+
+    override suspend fun setDirectCustomDns(servers: List<String>) = mutex.withLock {
+        val current = dao.getConfig() ?: RoutingConfigEntity()
+        dao.upsertConfig(current.copy(directCustomDnsCsv = servers.joinToString(",")))
+    }
+
+    override suspend fun setDnsCacheEnabled(enabled: Boolean) = mutex.withLock {
+        val current = dao.getConfig() ?: RoutingConfigEntity()
+        dao.upsertConfig(current.copy(dnsCacheEnabled = enabled))
+    }
+
     override suspend fun upsertSource(source: DirectRouteSource) {
         dao.upsertSource(source.toEntity())
     }
@@ -89,13 +109,12 @@ class RoutingRepositoryImpl(
         return dao.getSources().any { it.toDomainOrNull()?.dedupeKey() == key }
     }
 
-    override suspend fun recordResolution(sourceId: String, cidrs: List<Cidr>, error: String?) {
-        dao.replaceResolved(sourceId, cidrs.map { it.asString() })
-        dao.setSourceResolutionState(sourceId, System.currentTimeMillis(), error)
+    override suspend fun recordResolution(source: DirectRouteSource, cidrs: List<Cidr>, error: String?) {
+        dao.commitResolution(source.toEntity(), cidrs.map { it.asString() }, System.currentTimeMillis(), error)
     }
 
-    override suspend fun recordResolutionError(sourceId: String, error: String?) {
-        dao.setSourceError(sourceId, error)
+    override suspend fun recordResolutionError(source: DirectRouteSource, error: String?) {
+        dao.commitResolutionError(source.toEntity(), error)
     }
 
     private fun buildConfig(
@@ -124,6 +143,12 @@ class RoutingRepositoryImpl(
                 .getOrDefault(DnsMode.Cloudflare),
             dnsTransport = runCatching { DnsTransport.valueOf(configEntity.dnsTransport) }
                 .getOrDefault(DnsTransport.Tcp),
+            directDnsMode = runCatching { DnsMode.valueOf(configEntity.directDnsMode) }
+                .getOrDefault(DnsMode.System),
+            directDnsTransport = runCatching { DnsTransport.valueOf(configEntity.directDnsTransport) }
+                .getOrDefault(DnsTransport.Udp),
+            directCustomDns = configEntity.directCustomDnsCsv.toCsvList(),
+            dnsCacheEnabled = configEntity.dnsCacheEnabled,
             customDns = configEntity.customDnsCsv.toCsvList(),
             mtu = configEntity.mtu,
             sources = domain,

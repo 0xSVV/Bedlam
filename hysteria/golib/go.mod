@@ -7,11 +7,11 @@ toolchain go1.26.8
 require (
 	github.com/apernet/hysteria/core/v2 v2.0.0-00010101000000-000000000000
 	github.com/apernet/hysteria/extras/v2 v2.0.0-00010101000000-000000000000
-	github.com/apernet/quic-go v0.62.1-0.20260912175848-73339f7edbb9
+	github.com/apernet/quic-go v0.63.1-0.20261004180939-a10df75c260c
 	github.com/refraction-networking/utls v1.8.2
 	github.com/sagernet/gvisor v0.0.0-20260727.0-sing-box-mod.1
 	github.com/sagernet/sing v0.9.4
-	github.com/sagernet/sing-tun v0.9.3
+	github.com/sagernet/sing-tun v0.9.6
 	golang.org/x/mobile v0.0.0-20260908204917-8b95e45f8d3e
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0

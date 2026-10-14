@@ -104,6 +104,7 @@ func newTunStackRig(t *testing.T, ipv6Enabled bool) *tunStackRig {
 		client:      &reconnectClient{inner: fc},
 		activeConns: map[net.PacketConn]struct{}{},
 		dnsCache:    newDNSCache(),
+		domainIPs:   newDomainAddressRegistry(4096),
 	}
 	r.start(ipv6Enabled)
 	return r
@@ -118,7 +119,11 @@ func (r *tunStackRig) start(ipv6Enabled bool) {
 	}
 	r.tunFD, r.appFD = fds[0], fds[1]
 	dns := `{"transport":"tcp","servers":["` + stackUpstreamDNS + `"],"listen":["172.19.0.2","fdfe:dcba:9876::2"]}`
-	if err := r.sess.StartTUN(int32(r.tunFD), 1500, "172.19.0.1/30", "fdfe:dcba:9876::1/126", ipv6Enabled, dns); err != nil {
+	ipv6Mode := "enabled"
+	if !ipv6Enabled {
+		ipv6Mode = "disabled"
+	}
+	if err := r.sess.StartTUN(int32(r.tunFD), 1500, "172.19.0.1/30", "fdfe:dcba:9876::1/126", ipv6Mode, dns, ""); err != nil {
 		unix.Close(r.tunFD)
 		unix.Close(r.appFD)
 		t.Fatal(err)
@@ -158,8 +163,10 @@ func (r *tunStackRig) stop() {
 	if err := r.sess.StopTUN(); err != nil {
 		r.t.Errorf("StopTUN after %s: %v", time.Since(start), err)
 	}
-	if _, err := unix.FcntlInt(uintptr(r.tunFD), unix.F_GETFD, 0); !errors.Is(err, unix.EBADF) {
-		r.t.Errorf("TUN fd after StopTUN: fcntl err = %v, want EBADF", err)
+	if _, err := unix.FcntlInt(uintptr(r.tunFD), unix.F_GETFD, 0); err != nil {
+		r.t.Errorf("caller-owned TUN fd after StopTUN: %v", err)
+	} else if err := unix.Close(r.tunFD); err != nil {
+		r.t.Errorf("close caller-owned TUN fd: %v", err)
 	}
 	if r.app != nil {
 		r.app.Close()

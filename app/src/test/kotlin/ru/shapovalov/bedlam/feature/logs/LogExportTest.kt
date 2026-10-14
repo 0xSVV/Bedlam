@@ -23,7 +23,7 @@ class LogExportTest {
         device = LogExportDevice(
             appVersionName = "1.6.5",
             appVersionCode = 10605L,
-            coreVersion = "v2.12.3",
+            coreVersion = "v2.13.0",
             manufacturer = "Acme",
             model = "Phone 9",
             androidRelease = "16",
@@ -59,7 +59,7 @@ class LogExportTest {
         val text = formatLogExport(listOf(entry("hello")), header)
         val lines = text.lines()
 
-        assertEquals("Bedlam 1.6.5 (10605) · Hysteria core v2.12.3", lines[0])
+        assertEquals("Bedlam 1.6.5 (10605) · Hysteria core v2.13.0", lines[0])
         assertEquals("Exported 2026-09-24 15:41:40 +03:00", lines[1])
         assertEquals("Acme Phone 9 · Android 16 (SDK 36) · arm64-v8a, armeabi-v7a", lines[2])
         assertEquals("Connection: Connected", lines[3])

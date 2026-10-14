@@ -36,7 +36,7 @@ class LogExporterTest {
     private val device = LogExportDevice(
         appVersionName = "1.6.5",
         appVersionCode = 10605L,
-        coreVersion = "v2.12.3",
+        coreVersion = "v2.13.0",
         manufacturer = "Acme",
         model = "Phone 9",
         androidRelease = "16",
@@ -75,7 +75,7 @@ class LogExporterTest {
         assertEquals("Exported 2026-09-24 15:41:40 +00:00", lines[1])
         assertEquals("Connection: Connecting", lines[3])
         assertEquals(
-            "Routing: DNS Cloudflare over TCP · IPv6 on · MTU 1400 · blocklist of 2 apps · LAN bypass on · 0 direct-route sources",
+            "Routing: Remote DNS Cloudflare over TCP · Direct DNS System over UDP · DNS cache on · IPv6 on · MTU 1400 · blocklist of 2 apps · LAN bypass on · 0 direct-route sources",
             lines[4],
         )
     }
@@ -98,7 +98,7 @@ class LogExporterTest {
         assertTrue(hidden.contains("Connecting to <host-1>:443 via tls|1.1.1.1:853 from 192.168.1.5"), hidden)
         assertTrue(hidden.contains("Connection: Reconnecting, attempt 2: dial <ip-1>:443 failed"), hidden)
         assertTrue(hidden.contains("\nAddresses hidden\n"), hidden)
-        assertTrue(hidden.contains("Bedlam 1.6.5 (10605) · Hysteria core v2.12.3"), hidden)
+        assertTrue(hidden.contains("Bedlam 1.6.5 (10605) · Hysteria core v2.13.0"), hidden)
     }
 
     @Test
@@ -113,5 +113,24 @@ class LogExporterTest {
 
         assertTrue(hidden.contains("DNS https|<dns-1> has not answered in 1.5s, trying next"), hidden)
         assertTrue("abc123" !in hidden, hidden)
+    }
+
+    @Test
+    fun `hiding addresses masks custom Direct DNS endpoints too`() = runTest {
+        routing.config.value = RoutingConfig(
+            directCustomDns = listOf("https://private-dns.example.net/query-token"),
+        )
+        val exporter = exporter()
+        runCurrent()
+        client.logEntries.emit(
+            logEntry(1).copy(message = "Direct resolver https|https://private-dns.example.net/query-token failed"),
+        )
+        runCurrent()
+
+        val hidden = exporter.export(device, exportedAt, hideAddresses = true)
+
+        assertTrue("Direct DNS System over UDP" in hidden, hidden)
+        assertTrue("query-token" !in hidden, hidden)
+        assertTrue("private-dns.example.net" !in hidden, hidden)
     }
 }

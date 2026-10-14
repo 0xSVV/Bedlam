@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -50,6 +51,21 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (!granted) Log.w(TAG, "Notification permission denied")
+    }
+
+    private val localNetworkPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val profileId = pendingStartProfileId
+        pendingStartProfileId = null
+        if (!granted) {
+            Log.w(TAG, "Local network permission denied")
+            Toast.makeText(this, R.string.local_network_permission_denied, Toast.LENGTH_LONG).show()
+        } else if (profileId != null) {
+            lifecycleScope.launch {
+                profileRepository.get(profileId)?.let(::requestVpnPermission)
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,6 +129,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestVpnPermissionThen(profile: Profile) {
+        if (Build.VERSION.SDK_INT >= ANDROID_17_API &&
+            checkSelfPermission(LOCAL_NETWORK_PERMISSION) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingStartProfileId = profile.id
+            localNetworkPermissionLauncher.launch(LOCAL_NETWORK_PERMISSION)
+            return
+        }
+        requestVpnPermission(profile)
+    }
+
+    private fun requestVpnPermission(profile: Profile) {
         val intent = vpnServiceLauncher.prepareIntent()
         if (intent != null) {
             pendingStartProfileId = profile.id
@@ -133,6 +160,8 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "Bedlam"
+        const val ANDROID_17_API = 37
+        const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
         const val RELEASES_URL = "https://github.com/0xSVV/Bedlam/releases"
         const val KEY_PENDING_PROFILE_ID = "pending_start_profile_id"
         const val KEY_NOTIFICATION_PERMISSION_REQUESTED = "notification_permission_requested"

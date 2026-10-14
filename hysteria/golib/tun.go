@@ -15,6 +15,7 @@ import (
 	"github.com/sagernet/sing/common/canceler"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -23,7 +24,7 @@ const (
 	udpSessionLimit        = 16384
 )
 
-func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string, enableIPv6 bool, dnsJSON string) error {
+func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string, ipv6Mode string, dnsJSON string, directDNSJSON string) error {
 	s.tunMu.Lock()
 	defer s.tunMu.Unlock()
 
@@ -53,22 +54,61 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 	if err != nil {
 		return fmt.Errorf("dns upstream: %w", err)
 	}
-
-	tunOpts := tunOptions(fd, mtu, inet4, inet6)
-	tunIface, err := singtun.New(tunOpts)
+	directCfg, err := parseDirectDNSConfig(directDNSJSON)
 	if err != nil {
 		upstream.close()
+		return fmt.Errorf("direct DNS config: %w", err)
+	}
+	s.directDNSMu.Lock()
+	s.directDNS = directCfg
+	s.directDNSMu.Unlock()
+	directUpstream, err := newDirectDNSUpstream(s, directCfg)
+	if err != nil {
+		upstream.close()
+		return fmt.Errorf("direct DNS upstream: %w", err)
+	}
+	if ipv6Mode != "enabled" && ipv6Mode != "disabled" && ipv6Mode != "bypass_only" {
+		upstream.close()
+		directUpstream.close()
+		return fmt.Errorf("unsupported IPv6 mode %q", ipv6Mode)
+	}
+
+	// The Kotlin caller owns fd for the duration of this synchronous call. Give
+	// sing-tun a duplicate so its Close cannot invalidate a descriptor reused by
+	// Android while the caller unwinds an error.
+	ownedFD, err := unix.Dup(int(fd))
+	if err != nil {
+		upstream.close()
+		directUpstream.close()
+		return fmt.Errorf("duplicate TUN fd: %w", err)
+	}
+	tunOpts := tunOptions(int32(ownedFD), mtu, inet4, inet6)
+	tunIface, err := singtun.New(tunOpts)
+	if err != nil {
+		_ = unix.Close(ownedFD)
+		upstream.close()
+		directUpstream.close()
 		return fmt.Errorf("create TUN: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	handler := &tunHandler{session: s, client: c, ipv6Enabled: enableIPv6, dns: upstream}
+	policy, err := newDNSPolicy(directCfg.Domains, ipv6Mode)
+	if err != nil {
+		cancel()
+		tunIface.Close()
+		upstream.close()
+		directUpstream.close()
+		return fmt.Errorf("Direct DNS policy: %w", err)
+	}
+	s.domainIPs.reset()
+	handler := &tunHandler{session: s, client: c, ipv6Enabled: ipv6Mode != "disabled", ipv6Mode: ipv6Mode, dns: upstream, directDNS: directUpstream, dnsPolicy: policy}
 	stack, err := singtun.NewGVisor(tunStackOptions(ctx, tunIface, tunOpts, handler))
 	if err != nil {
 		cancel()
 		tunIface.Close()
 		upstream.close()
+		directUpstream.close()
 		return fmt.Errorf("create TUN stack: %w", err)
 	}
 
@@ -76,6 +116,7 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 		cancel()
 		tunIface.Close()
 		upstream.close()
+		directUpstream.close()
 		return fmt.Errorf("start TUN: %w", err)
 	}
 
@@ -84,6 +125,7 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 		_ = stack.Close()
 		tunIface.Close()
 		upstream.close()
+		directUpstream.close()
 		return fmt.Errorf("start TUN stack: %w", err)
 	}
 
@@ -93,7 +135,7 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 	s.tunDNS = upstream
 
 	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor, ipv6=%v, dns=%s)",
-		fd, mtu, enableIPv6, upstream.id())
+		fd, mtu, ipv6Mode, upstream.id())
 	return nil
 }
 
@@ -129,7 +171,7 @@ func (h *tunHandler) isResolverAddr(dest M.Socksaddr) bool {
 }
 
 func (h *tunHandler) answerLocally(query []byte) []byte {
-	if h.ipv6Enabled {
+	if h.ipv6Mode != "disabled" && !(h.ipv6Mode == "" && !h.ipv6Enabled) {
 		return nil
 	}
 	qtype, ok := dnsQuestionType(query)
@@ -225,7 +267,18 @@ func (h *tunHandler) newConnection(ctx context.Context, conn net.Conn, source M.
 	target := destination.String()
 	log(LogLevelDebug, srcTun, "TCP: %s → %s", source, target)
 
-	remote, err := h.client.TCP(target)
+	var remote net.Conn
+	var err error
+	directFlow := h.session.domainIPs.hasAnyOwner(destination.Addr, time.Now())
+	if directFlow {
+		dialer := (&directUDPResolver{session: h.session}).dialer()
+		remote, err = dialer.DialContext(ctx, "tcp", target)
+		if err != nil {
+			return fmt.Errorf("protected Direct TCP dial failed: %w", err)
+		}
+	} else {
+		remote, err = h.client.TCP(target)
+	}
 	if err != nil {
 		if tcpDialErrLimiter.allow(target) {
 			log(LogLevelWarn, srcTun, "TCP dial error: %s → %s: %s", source, target, err)
@@ -238,12 +291,20 @@ func (h *tunHandler) newConnection(ctx context.Context, conn net.Conn, source M.
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(&countingWriter{w: remote, add: h.session.addTx}, conn)
+		if directFlow {
+			_, _ = io.Copy(remote, conn)
+		} else {
+			_, _ = io.Copy(&countingWriter{w: remote, add: h.session.addTx}, conn)
+		}
 		_ = remote.Close()
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(&countingWriter{w: conn, add: h.session.addRx}, remote)
+		if directFlow {
+			_, _ = io.Copy(conn, remote)
+		} else {
+			_, _ = io.Copy(&countingWriter{w: conn, add: h.session.addRx}, remote)
+		}
 		_ = conn.Close()
 	}()
 	wg.Wait()
@@ -286,16 +347,72 @@ func (h *tunHandler) newPacketConnection(ctx context.Context, conn N.PacketConn,
 		return h.serveDNSPackets(ctx, conn, dest)
 	}
 
+	if h.session.domainIPs.hasAnyOwner(destination.Addr, time.Now()) {
+		return h.handleDirectUDPRelay(ctx, conn, destination)
+	}
 	return h.handleUDPRelay(ctx, conn, destination)
 }
 
-const (
-	maxConcurrentDNS     = 64
-	dnsStreamIdleTimeout = 10 * time.Second
-)
+const dnsStreamIdleTimeout = 10 * time.Second
+
+func srcAddrForDNS(address string) M.Socksaddr {
+	if ap, err := netip.ParseAddrPort(address); err == nil {
+		return M.SocksaddrFromNetIP(ap)
+	}
+	return M.Socksaddr{}
+}
+
+func (h *tunHandler) selectDNSUpstream(query []byte) (*dnsUpstream, string) {
+	if h.dnsPolicy != nil {
+		if ruleID, direct := h.dnsPolicy.directRuleFor(query); direct {
+			if h.directDNS != nil && len(h.directDNS.resolvers) > 0 {
+				return h.directDNS, ruleID
+			}
+			return nil, ruleID
+		}
+	}
+	return h.dns, ""
+}
+
+func (h *tunHandler) cachedDNSResponse(upstream *dnsUpstream, query []byte, ruleID string) []byte {
+	if upstream == nil {
+		return nil
+	}
+	resp := h.session.dnsCache.tryCached(upstream, query)
+	if resp == nil || ruleID == "" {
+		return resp
+	}
+	addresses, _, err := domainAnswerAddresses(query, resp)
+	if err != nil || !h.session.domainIPs.hasFresh(ruleID, addresses, time.Now()) {
+		h.session.dnsCache.drop(upstream, query)
+		return nil
+	}
+	return resp
+}
+
+func (h *tunHandler) resolveDNS(ctx context.Context, upstream *dnsUpstream, query []byte, ruleID string) ([]byte, error) {
+	if upstream == nil {
+		return nil, fmt.Errorf("Direct DNS is unavailable")
+	}
+	countTraffic := h.countDNS
+	if ruleID != "" {
+		countTraffic = func(int, int) {}
+	}
+	resp, err := h.session.dnsCache.resolve(ctx, upstream, query, countTraffic)
+	if err != nil || ruleID == "" {
+		return resp, err
+	}
+	addresses, ttl, err := domainAnswerAddresses(query, resp)
+	if err != nil {
+		return nil, err
+	}
+	if !h.session.domainIPs.admit(ruleID, addresses, ttl, time.Now()) {
+		return nil, fmt.Errorf("Direct DNS answer could not be admitted to the route lease registry")
+	}
+	return resp, nil
+}
 
 func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, defaultDest string) error {
-	sem := make(chan struct{}, maxConcurrentDNS)
 	for {
 		buffer := buf.NewPacket()
 		dest, err := conn.ReadPacket(buffer)
@@ -312,14 +429,17 @@ func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, def
 		if !isDNSPort(dnsAddr) {
 			dnsAddr = defaultDest
 		}
-		resolver := h.dns
+		resolver, ruleID := h.selectDNSUpstream(query)
+		if resolver == nil {
+			if sf := buildServFail(query); sf != nil {
+				_ = conn.WritePacket(buf.As(sf), srcAddrForDNS(dnsAddr))
+			}
+			continue
+		}
 
 		log(LogLevelDebug, srcDNS, "DNS query for %s via %s (%d bytes)", dnsAddr, resolver.id(), len(query))
 
-		var src M.Socksaddr
-		if ap, perr := netip.ParseAddrPort(dnsAddr); perr == nil {
-			src = M.SocksaddrFromNetIP(ap)
-		}
+		src := srcAddrForDNS(dnsAddr)
 
 		if resp := h.answerLocally(query); resp != nil {
 			if werr := conn.WritePacket(buf.As(resp), src); werr != nil {
@@ -328,28 +448,27 @@ func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, def
 			continue
 		}
 
-		if resp := h.session.dnsCache.tryCached(resolver, query); resp != nil {
+		if resp := h.cachedDNSResponse(resolver, query, ruleID); resp != nil {
 			log(LogLevelDebug, srcDNS, "DNS response: %d bytes from %s (cached)", len(resp), resolver.id())
 			if werr := conn.WritePacket(buf.As(resp), src); werr != nil {
 				log(LogLevelDebug, srcDNS, "DNS write to local error: %s", werr)
 			}
 			continue
 		}
-
-		go func() {
-			// Waiting for a slot here rather than in the read loop keeps the
-			// loop draining, so a cached name never queues behind a burst of
-			// misses.
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
+		if _, _, ok := parseDNSQuery(query); !ok {
+			logDNSError(resolver.id(), query, errDNSQueryInvalid)
+			if sf := buildServFail(query); sf != nil {
+				if werr := conn.WritePacket(buf.As(sf), src); werr != nil {
+					log(LogLevelDebug, srcDNS, "DNS servfail write error: %s", werr)
+				}
 			}
-			defer func() { <-sem }()
+			continue
+		}
 
-			qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
+		qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
+		accepted := h.session.dnsWorkScheduler().submit(dnsWork{ctx: qctx, run: func(qctx context.Context) {
 			defer cancel()
-			resp, err := h.session.dnsCache.resolve(qctx, resolver, query, h.countDNS)
+			resp, err := h.resolveDNS(qctx, resolver, query, ruleID)
 
 			if err != nil {
 				logDNSError(resolver.id(), query, err)
@@ -364,7 +483,15 @@ func (h *tunHandler) serveDNSPackets(ctx context.Context, conn N.PacketConn, def
 			if werr := conn.WritePacket(buf.As(resp), src); werr != nil {
 				log(LogLevelDebug, srcDNS, "DNS write to local error: %s", werr)
 			}
-		}()
+		}})
+		if !accepted {
+			cancel()
+			if sf := buildServFail(query); sf != nil {
+				if werr := conn.WritePacket(buf.As(sf), src); werr != nil {
+					log(LogLevelDebug, srcDNS, "DNS queue overflow response error: %s", werr)
+				}
+			}
+		}
 	}
 }
 
@@ -377,17 +504,48 @@ func (h *tunHandler) serveDNSStream(ctx context.Context, conn net.Conn) error {
 		}
 		_ = conn.SetReadDeadline(time.Time{})
 
+		resolver, ruleID := h.selectDNSUpstream(query)
 		resp := h.answerLocally(query)
+		if resp == nil && resolver == nil {
+			resp = buildServFail(query)
+		}
 		if resp == nil {
-			qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
-			resp, err = h.session.dnsCache.resolve(qctx, h.dns, query, h.countDNS)
-			cancel()
-			if err != nil {
-				logDNSError(h.dns.id(), query, err)
+			if cached := h.cachedDNSResponse(resolver, query, ruleID); cached != nil {
+				resp = cached
+			} else if _, _, ok := parseDNSQuery(query); !ok {
+				logDNSError(resolver.id(), query, errDNSQueryInvalid)
 				resp = buildServFail(query)
-				if resp == nil {
-					return err
+			} else {
+				qctx, cancel := context.WithTimeout(ctx, dnsQueryTimeout)
+				type answer struct {
+					response []byte
+					err      error
 				}
+				result := make(chan answer, 1)
+				accepted := h.session.dnsWorkScheduler().submit(dnsWork{ctx: qctx, run: func(qctx context.Context) {
+					response, resolveErr := h.resolveDNS(qctx, resolver, query, ruleID)
+					result <- answer{response: response, err: resolveErr}
+				}})
+				if !accepted {
+					cancel()
+					resp = buildServFail(query)
+				} else {
+					select {
+					case resolved := <-result:
+						cancel()
+						resp, err = resolved.response, resolved.err
+					case <-qctx.Done():
+						cancel()
+						err = qctx.Err()
+					}
+				}
+				if err != nil {
+					logDNSError(resolver.id(), query, err)
+					resp = buildServFail(query)
+				}
+			}
+			if resp == nil {
+				return errDNSQueryInvalid
 			}
 		}
 		_ = conn.SetWriteDeadline(time.Now().Add(dnsIOTimeout))
@@ -406,6 +564,54 @@ func logDNSError(upstreamID string, query []byte, err error) {
 	}
 	if dnsErrLimiter.allow(upstreamID) {
 		log(LogLevelWarn, srcDNS, "DNS error: %s: %s", upstreamID, err)
+	}
+}
+
+func (h *tunHandler) handleDirectUDPRelay(ctx context.Context, conn N.PacketConn, origin M.Socksaddr) error {
+	dialer := (&directUDPResolver{session: h.session}).dialer()
+	remote, err := dialer.DialContext(ctx, "udp", origin.String())
+	if err != nil {
+		return fmt.Errorf("protected Direct UDP dial failed: %w", err)
+	}
+	defer remote.Close()
+	defer conn.Close()
+	done := make(chan error, 2)
+	go func() {
+		packet := make([]byte, 65535)
+		for {
+			n, err := remote.Read(packet)
+			if err != nil {
+				done <- err
+				return
+			}
+			if err := conn.WritePacket(buf.As(packet[:n]), origin); err != nil {
+				done <- err
+				return
+			}
+		}
+	}()
+	go func() {
+		for {
+			packet := buf.NewPacket()
+			_, err := conn.ReadPacket(packet)
+			if err != nil {
+				packet.Release()
+				done <- err
+				return
+			}
+			_, err = remote.Write(packet.Bytes())
+			packet.Release()
+			if err != nil {
+				done <- err
+				return
+			}
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
 	}
 }
 

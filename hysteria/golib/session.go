@@ -27,18 +27,24 @@ type Session struct {
 	tunCancel context.CancelFunc
 	tunDNS    *dnsUpstream
 
-	protector FdProtector
+	protector   FdProtector
+	directDNSMu sync.RWMutex
+	directDNS   *directDNSConfig
+	dnsPolicy   *dnsPolicy
+	domainIPs   *domainAddressRegistry
 
 	activeConnsMu sync.Mutex
 	activeConns   map[net.PacketConn]struct{}
 
-	dnsCache *dnsCache
+	dnsCache       *dnsCache
+	dnsSchedulerMu sync.Mutex
+	dnsScheduler   *dnsScheduler
 
 	txBytes atomic.Int64
 	rxBytes atomic.Int64
 }
 
-func NewSession(configJSON string, protector FdProtector, handler EventHandler) (*Session, error) {
+func NewSession(configJSON string, directDNSJSON string, protector FdProtector, handler EventHandler) (*Session, error) {
 	var cfg clientConfig
 	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
 		return nil, fmt.Errorf("invalid config JSON: %w", err)
@@ -50,8 +56,19 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 		log(LogLevelInfo, srcTunnel, "Lazy mode: connecting when the first connection needs the tunnel")
 	}
 
+	directCfg, err := parseDirectDNSConfig(directDNSJSON)
+	if err != nil {
+		return nil, fmt.Errorf("direct DNS config: %w", err)
+	}
+	policy, err := newDNSPolicy(directCfg.Domains, "enabled")
+	if err != nil {
+		return nil, err
+	}
 	s := &Session{
 		protector:   protector,
+		directDNS:   directCfg,
+		dnsPolicy:   policy,
+		domainIPs:   newDomainAddressRegistry(4096),
 		activeConns: map[net.PacketConn]struct{}{},
 		dnsCache:    newDNSCache(),
 	}
@@ -65,7 +82,7 @@ func NewSession(configJSON string, protector FdProtector, handler EventHandler) 
 	} else {
 		var lastResolved net.Addr
 		configFunc = func() (*client.Config, error) {
-			addr, rerr := resolveHost(cfg.Server)
+			addr, rerr := s.resolveHost(cfg.Server)
 			if rerr != nil {
 				if lastResolved == nil {
 					return nil, fmt.Errorf("resolve server: %w", rerr)
@@ -225,6 +242,12 @@ func (s *Session) Close() error {
 
 	s.closeAllActiveConns()
 	s.dnsCache.clear()
+	s.dnsSchedulerMu.Lock()
+	scheduler := s.dnsScheduler
+	s.dnsSchedulerMu.Unlock()
+	if scheduler != nil {
+		scheduler.close()
+	}
 
 	if c == nil {
 		log(LogLevelInfo, srcTunnel, "Session closed")
@@ -264,6 +287,12 @@ func (s *Session) ResetConnectionsKeepingDNSCache() {
 	s.resetUpstream()
 }
 
+// SetDNSCacheEnabled changes only response reuse. It does not replace the TUN,
+// upstream transports, or active connections.
+func (s *Session) SetDNSCacheEnabled(enabled bool) {
+	s.dnsCache.setEnabled(enabled)
+}
+
 func (s *Session) resetUpstream() {
 	s.closeAllActiveConns()
 	if c := s.currentClient(); c != nil {
@@ -293,6 +322,15 @@ func (s *Session) currentClient() *reconnectClient {
 	return s.client
 }
 
+func (s *Session) dnsWorkScheduler() *dnsScheduler {
+	s.dnsSchedulerMu.Lock()
+	defer s.dnsSchedulerMu.Unlock()
+	if s.dnsScheduler == nil {
+		s.dnsScheduler = newDNSScheduler(dnsMaxExecuting, dnsMaxQueued)
+	}
+	return s.dnsScheduler
+}
+
 func (s *Session) protectPacketConn(conn net.PacketConn) error {
 	p := s.protector
 	if p == nil {
@@ -314,6 +352,31 @@ func (s *Session) protectPacketConn(conn net.PacketConn) error {
 	})
 	if !protected {
 		return fmt.Errorf("VpnService.protect(fd=%d) returned false", seenFd)
+	}
+	return nil
+}
+
+func (s *Session) bindAndProtectPacketConn(conn net.PacketConn) error {
+	udpConn, ok := conn.(*net.UDPConn)
+	if !ok {
+		return fmt.Errorf("Direct socket must be a UDP socket")
+	}
+	rawConn, err := udpConn.SyscallConn()
+	if err != nil {
+		return fmt.Errorf("access raw socket for binding/protection: %w", err)
+	}
+	var boundAndProtected bool
+	var seenFD int32
+	if err := rawConn.Control(func(fd uintptr) {
+		seenFD = int32(fd)
+		if s.protector != nil {
+			boundAndProtected = s.protector.BindAndProtect(seenFD)
+		}
+	}); err != nil {
+		return err
+	}
+	if !boundAndProtected {
+		return fmt.Errorf("bind/protect UDP socket fd=%d failed", seenFD)
 	}
 	return nil
 }

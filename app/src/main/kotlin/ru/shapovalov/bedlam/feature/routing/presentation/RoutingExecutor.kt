@@ -46,6 +46,22 @@ internal class RoutingExecutor(
                 routingRepository.setCustomDns(intent.servers)
             }
 
+            is RoutingStore.Intent.SetDirectDnsMode -> scope.launch {
+                routingRepository.setDirectDnsMode(intent.mode)
+            }
+
+            is RoutingStore.Intent.SetDirectDnsTransport -> scope.launch {
+                routingRepository.setDirectDnsTransport(intent.transport)
+            }
+
+            is RoutingStore.Intent.SetDirectCustomDns -> scope.launch {
+                routingRepository.setDirectCustomDns(intent.servers)
+            }
+
+            is RoutingStore.Intent.SetDnsCacheEnabled -> scope.launch {
+                routingRepository.setDnsCacheEnabled(intent.enabled)
+            }
+
             is RoutingStore.Intent.AddSource -> scope.launch {
                 addSource(intent.source)
             }

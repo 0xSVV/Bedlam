@@ -80,6 +80,19 @@ class RoutePlannerTest {
         )
     }
 
+    @Test
+    fun `domain snapshots are policy only and do not become route exclusions`() {
+        val domain = ResolvedSource(
+            source = DirectRouteSource.Domain("domain-id", "example.com", "", true, 0),
+            cidrs = listOf(Cidr.parse("203.0.113.7/32")),
+            lastResolvedMillis = 1L,
+            lastError = null,
+        )
+        val plan = planner().plan(RoutingConfig(sources = listOf(domain)), AppFilter())
+        assertFalse(plan.excludedV4.any { it.asString() == "203.0.113.7/32" })
+        assertEquals(listOf("domain-id"), plan.directDnsDomains.map { it.id })
+    }
+
     private fun customDnsConfig(transport: DnsTransport, vararg entries: String): RoutingConfig =
         RoutingConfig(dnsMode = DnsMode.Custom, dnsTransport = transport, customDns = entries.toList())
 
@@ -127,6 +140,8 @@ class RoutePlannerTest {
             val plan = planner().plan(RoutingConfig(ipv6Mode = Ipv6Mode.Disabled), AppFilter())
             assertEquals(listOf(RoutePlanner.IPV6_DEFAULT), plan.claimedV6)
             assertFalse(plan.ipv6Enabled)
+            assertEquals(Ipv6Mode.Disabled, plan.ipv6Mode)
+            assertFalse(plan.excludedV6.any { CidrMath.contains(it, Cidr.parse("fc00::1/128")) })
         }
 
         @Test
@@ -134,6 +149,7 @@ class RoutePlannerTest {
             val plan = planner().plan(RoutingConfig(ipv6Mode = Ipv6Mode.BypassOnly), AppFilter())
             assertTrue(plan.claimedV6.isEmpty())
             assertFalse(plan.ipv6Enabled)
+            assertEquals(Ipv6Mode.BypassOnly, plan.ipv6Mode)
         }
 
         @Test

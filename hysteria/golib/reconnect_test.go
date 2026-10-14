@@ -18,16 +18,16 @@ import (
 
 type noopClient struct{}
 
-func (noopClient) TCP(addr string) (net.Conn, error)  { return nil, nil }
-func (noopClient) UDP() (client.HyUDPConn, error)      { return nil, nil }
-func (noopClient) Close() error                        { return nil }
+func (noopClient) TCP(addr string) (net.Conn, error) { return nil, nil }
+func (noopClient) UDP() (client.HyUDPConn, error)    { return nil, nil }
+func (noopClient) Close() error                      { return nil }
 
 type recordingHandler struct {
 	mu     sync.Mutex
 	events []string
 }
 
-func (h *recordingHandler) OnConnected(udpEnabled bool, attempt int32) { h.add("connected") }
+func (h *recordingHandler) OnConnected(udpEnabled bool, attempt int32)  { h.add("connected") }
 func (h *recordingHandler) OnReconnecting(attempt int32, reason string) { h.add("reconnecting") }
 func (h *recordingHandler) OnDisconnected(reason string)                { h.add("disconnected") }
 
@@ -271,6 +271,40 @@ func TestMarkDead_emitsWhenLive(t *testing.T) {
 		t.Errorf("expected one reconnecting emit, got %v", got)
 	}
 }
+
+func TestMarkDeadIfCurrent_ignoresRetiredClientFailure(t *testing.T) {
+	old := &closeCountingClient{}
+	current := &closeCountingClient{}
+	rec := &recordingHandler{}
+	rc := &reconnectClient{handler: rec, inner: old, clientToken: 1}
+
+	// Model A being retired and B being published before A's delayed failure.
+	rc.mu.Lock()
+	rc.inner = current
+	rc.clientToken = 2
+	rc.mu.Unlock()
+	if rc.markDeadIfCurrent(1, errors.New("late A failure"), "tcp") {
+		t.Fatal("a stale failure must not retire the current client")
+	}
+	if rc.inner != current || current.closed != 0 {
+		t.Fatalf("current client was affected: inner=%v closes=%d", rc.inner, current.closed)
+	}
+	if len(rec.snapshot()) != 0 {
+		t.Fatalf("stale error emitted a reconnect transition: %v", rec.snapshot())
+	}
+	if !rc.markDeadIfCurrent(2, errors.New("B failure"), "udp") {
+		t.Fatal("current client's failure should retire it")
+	}
+	if current.closed != 1 {
+		t.Fatalf("current client close count = %d, want 1", current.closed)
+	}
+}
+
+type closeCountingClient struct{ closed int }
+
+func (*closeCountingClient) TCP(string) (net.Conn, error)   { return nil, nil }
+func (*closeCountingClient) UDP() (client.HyUDPConn, error) { return nil, nil }
+func (c *closeCountingClient) Close() error                 { c.closed++; return nil }
 
 func TestIsTerminal_echRejection(t *testing.T) {
 	err := coreErrs.ConnectError{Err: &tls.ECHRejectionError{}}

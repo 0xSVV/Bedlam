@@ -118,7 +118,7 @@ private fun AboutPreview() {
     SettingsPreview {
         AboutPage(
             appVersion = "1.6.0",
-            hysteriaVersion = "2.12.3",
+            hysteriaVersion = "2.13.0",
             readme = MarkdownParser().parse(PreviewReadme),
             onBack = {},
             onOpenUrl = {},

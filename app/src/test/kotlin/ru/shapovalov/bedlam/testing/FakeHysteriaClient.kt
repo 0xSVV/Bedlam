@@ -45,6 +45,7 @@ class FakeHysteriaClient(
     ) = Unit
 
     override suspend fun updateTun(tunConfig: TunConfig, tun: HysteriaClient.TunFactory) = Unit
+    override suspend fun setDnsCacheEnabled(enabled: Boolean) = Unit
     override suspend fun stop(reason: DisconnectReason) = Unit
     override fun shutdown(reason: DisconnectReason) = Unit
     override suspend fun closeSession() = Unit

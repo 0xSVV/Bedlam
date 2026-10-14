@@ -184,11 +184,17 @@ func TestCacheableTTL_happyPath(t *testing.T) {
 	}
 }
 
-func TestCacheableTTL_clampedToMin(t *testing.T) {
+func TestCacheableTTL_preservesShortTTL(t *testing.T) {
 	resp := dnsResponse("example.com", 1, [4]byte{1, 2, 3, 4})
 	d := cacheableTTL(resp)
-	if d != dnsCacheMinTTL {
-		t.Errorf("ttl = %v, want clamp to %v", d, dnsCacheMinTTL)
+	if d != time.Second {
+		t.Errorf("ttl = %v, want %v", d, time.Second)
+	}
+}
+
+func TestCacheableTTL_doesNotCacheZeroTTL(t *testing.T) {
+	if got := cacheableTTL(dnsResponse("example.com", 0, [4]byte{1, 2, 3, 4})); got != 0 {
+		t.Fatalf("TTL zero response cache lifetime = %v, want 0", got)
 	}
 }
 
@@ -905,7 +911,7 @@ func TestDNSCache_lookupCountsDownNegativeAnswers(t *testing.T) {
 		{"NXDOMAIN from the SOA TTL", negativeResponse("nope.example.com", 3, 300, 900), 100 * time.Second, 200, 900},
 		{"NXDOMAIN from the SOA MINIMUM", negativeResponse("nope.example.com", 3, 900, 300), 100 * time.Second, 200, 300},
 		{"NODATA from the SOA MINIMUM", negativeResponse("example.com", 0, 3600, 250), 50 * time.Second, 200, 250},
-		{"an expired countdown floors at one", negativeResponse("nope.example.com", 3, 900, 60), 100 * time.Second, 1, 60},
+		{"an expired countdown saturates at zero", negativeResponse("nope.example.com", 3, 900, 60), 100 * time.Second, 0, 60},
 		{"a fresh hit takes the SOA MINIMUM", negativeResponse("nope.example.com", 3, 86400, 60), 0, 60, 60},
 	}
 	for _, tc := range cases {
@@ -927,7 +933,114 @@ func TestDNSCache_lookupCountsDownNegativeAnswers(t *testing.T) {
 	}
 }
 
-func TestDNSCache_lookupFloorsTTLAtOne(t *testing.T) {
+func TestDNSCacheDisabledAlwaysExchangesAndReenableStartsEmpty(t *testing.T) {
+	c := newDNSCache()
+	r := &stubResolver{name: "test", reply: echoAnswer([4]byte{1, 2, 3, 4})}
+	q := dnsQuery("example.com")
+	c.setEnabled(false)
+	for range 2 {
+		if _, err := c.resolve(context.Background(), r, q, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := r.calls.Load(); got != 2 {
+		t.Fatalf("cache off exchanges = %d, want 2", got)
+	}
+	if c.tryCached(r, q) != nil {
+		t.Fatal("cache-off query should not be reusable")
+	}
+	c.setEnabled(true)
+	if _, err := c.resolve(context.Background(), r, q, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.resolve(context.Background(), r, q, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.calls.Load(); got != 3 {
+		t.Fatalf("re-enabled cache exchanges = %d, want 3 (fresh then hit)", got)
+	}
+}
+
+func TestDNSCacheOffDoesNotCoalesceConcurrentQueries(t *testing.T) {
+	c := newDNSCache()
+	c.setEnabled(false)
+	release := make(chan struct{})
+	started := make(chan struct{}, 2)
+	r := &stubResolver{name: "test", reply: func(q []byte) ([]byte, error) {
+		started <- struct{}{}
+		<-release
+		return dnsResponseFor(q, 60, [4]byte{1, 2, 3, 4}), nil
+	}}
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := c.resolve(context.Background(), r, dnsQuery("example.com"), nil); err != nil {
+				t.Errorf("resolve: %v", err)
+			}
+		}()
+	}
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatal("concurrent queries were coalesced")
+		}
+	}
+	close(release)
+	wg.Wait()
+	if got := r.calls.Load(); got != 2 {
+		t.Fatalf("upstream calls = %d, want 2", got)
+	}
+}
+
+func TestDNSCachePolicyChangeRetiresInflightStore(t *testing.T) {
+	c := newDNSCache()
+	entered, release := make(chan struct{}), make(chan struct{})
+	r := &stubResolver{name: "test", reply: func(q []byte) ([]byte, error) {
+		close(entered)
+		<-release
+		return dnsResponseFor(q, 60, [4]byte{1, 2, 3, 4}), nil
+	}}
+	query := dnsQuery("example.com")
+	done := make(chan error, 1)
+	go func() { _, err := c.resolve(context.Background(), r, query, nil); done <- err }()
+	<-entered
+	c.setEnabled(false)
+	c.setEnabled(true)
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if c.tryCached(r, query) != nil {
+		t.Fatal("an old-generation answer repopulated the cache")
+	}
+}
+
+func TestDNSCacheBypassesRequestSpecificEDNSOptions(t *testing.T) {
+	c := newDNSCache()
+	r := &stubResolver{name: "test", reply: func(q []byte) ([]byte, error) {
+		return dnsResponseFor(q, 60, [4]byte{1, 2, 3, 4}), nil
+	}}
+	q1 := withEDNS(dnsQuery("example.com"), 1232, false)
+	q2 := append([]byte(nil), q1...)
+	q1 = append(q1, 0, 8, 0, 4, 0, 0, 0, 1)
+	q2 = append(q2, 0, 8, 0, 4, 0, 0, 0, 2)
+	for i, q := range [][]byte{q1, q2} {
+		binary.BigEndian.PutUint16(q[10:12], 1)
+		binary.BigEndian.PutUint16(q[len(q)-10:len(q)-8], 8)
+		if _, err := c.resolve(context.Background(), r, q, nil); err != nil {
+			t.Fatalf("query %d: %v", i, err)
+		}
+	}
+	if got := r.calls.Load(); got != 2 {
+		t.Fatalf("request-specific EDNS calls = %d, want 2", got)
+	}
+}
+
+func TestDNSCache_lookupDoesNotRaiseExpiredTTL(t *testing.T) {
 	c := newDNSCache()
 	c.store("k", dnsResponse("example.com", 300, [4]byte{1, 1, 1, 1}), 3600*time.Second)
 	c.entries["k"].storedAt = time.Now().Add(-400 * time.Second)
@@ -936,8 +1049,8 @@ func TestDNSCache_lookupFloorsTTLAtOne(t *testing.T) {
 	if resp == nil {
 		t.Fatal("expected a cache hit")
 	}
-	if ttl := firstAnswerTTL(t, resp); ttl != 1 {
-		t.Errorf("ttl = %d, want 1", ttl)
+	if ttl := firstAnswerTTL(t, resp); ttl != 0 {
+		t.Errorf("ttl = %d, want 0", ttl)
 	}
 }
 
