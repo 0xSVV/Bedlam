@@ -69,9 +69,9 @@ private fun AppSelectionTopBarSearchPreview() {
 }
 
 @Composable
-private fun ModeChipsPreview(selected: AppFilterMode?) {
+private fun ModeChoicesPreview(selected: AppFilterMode?) {
     AppSelectionPreview {
-        ModeChips(
+        ModeChoices(
             selected = selected,
             onSelect = {},
             modifier = Modifier
@@ -86,14 +86,14 @@ private fun ModeChipsPreview(selected: AppFilterMode?) {
 
 @AppSelectionPartPreviews
 @Composable
-private fun ModeChipsLoadingPreview() {
-    ModeChipsPreview(selected = null)
+private fun ModeChoicesLoadingPreview() {
+    ModeChoicesPreview(selected = null)
 }
 
 @AppSelectionPartPreviews
 @Composable
-private fun ModeChipsAllowlistPreview() {
-    ModeChipsPreview(selected = AppFilterMode.Allowlist)
+private fun ModeChoicesAllowlistPreview() {
+    ModeChoicesPreview(selected = AppFilterMode.Allowlist)
 }
 
 @AppSelectionBodyPreviews

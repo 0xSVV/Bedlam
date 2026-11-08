@@ -326,9 +326,9 @@
     <string name="app_selection_search_cd">Search</string>
     <string name="app_selection_clear_search_cd">Clear search</string>
 
-    <string name="app_filter_mode_all">All</string>
-    <string name="app_filter_mode_allowlist">Selected</string>
-    <string name="app_filter_mode_blocklist">All except selected</string>
+    <string name="app_filter_mode_all">All apps</string>
+    <string name="app_filter_mode_allowlist">Only selected apps</string>
+    <string name="app_filter_mode_blocklist">Exclude selected apps</string>
 
     <string name="dashboard_open_session_cd">Open session details</string>
 
@@ -490,4 +490,8 @@
     <string name="routing_source_state_disabled">Disabled</string>
     <string name="dashboard_empty_title">Add your first profile</string>
     <string name="dashboard_connected_for">Connected for %1$s</string>
+    <string name="app_filter_all_description">Route every app through the VPN.</string>
+    <string name="app_filter_allowlist_description">Only selected apps use the VPN. Other apps connect directly.</string>
+    <string name="app_filter_blocklist_description">Selected apps connect directly. All other apps use the VPN.</string>
+    <string name="app_selection_no_results">No apps match “%1$s”. Try another name or package.</string>
 </resources>
