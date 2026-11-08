@@ -100,6 +100,16 @@ class RoutingRepositoryImpl(
         dao.deleteSource(id)
     }
 
+    override suspend fun restoreSource(source: ResolvedSource) {
+        dao.restoreDeletedSource(
+            source.source.toEntity().copy(
+                lastResolvedMillis = source.lastResolvedMillis,
+                lastError = source.lastError,
+            ),
+            source.cidrs.map { it.asString() },
+        )
+    }
+
     override suspend fun setSourceEnabled(id: String, enabled: Boolean) {
         dao.setSourceEnabled(id, enabled)
     }

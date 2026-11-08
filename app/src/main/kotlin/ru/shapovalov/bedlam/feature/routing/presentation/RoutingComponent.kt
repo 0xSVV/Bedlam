@@ -39,6 +39,8 @@ class RoutingComponent(
 
     fun onAddSource(source: DirectRouteSource) = store.accept(RoutingStore.Intent.AddSource(source))
     fun onRemoveSource(id: String) = store.accept(RoutingStore.Intent.RemoveSource(id))
+    fun onUndoRemoveSource(id: String) = store.accept(RoutingStore.Intent.UndoRemoveSource(id))
+    fun onDismissRemoval(id: String) = store.accept(RoutingStore.Intent.DismissRemoval(id))
     fun onSetSourceEnabled(id: String, enabled: Boolean) =
         store.accept(RoutingStore.Intent.SetSourceEnabled(id, enabled))
 

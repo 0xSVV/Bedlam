@@ -24,9 +24,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +53,22 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
+    val snackbarHostState = remember { SnackbarHostState() }
+    val removedMessage = stringResource(R.string.routing_source_removed)
+    val undoLabel = stringResource(R.string.action_undo)
+    LaunchedEffect(state.removedSource) {
+        val removed = state.removedSource ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = removedMessage,
+            actionLabel = undoLabel,
+            withDismissAction = true,
+            duration = SnackbarDuration.Long,
+        )
+        when (result) {
+            SnackbarResult.ActionPerformed -> component.onUndoRemoveSource(removed.source.id)
+            SnackbarResult.Dismissed -> component.onDismissRemoval(removed.source.id)
+        }
+    }
     var showAddSource by rememberSaveable { mutableStateOf(false) }
     var showPresets by rememberSaveable { mutableStateOf(false) }
 
@@ -63,6 +84,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
         topBar = {
             TopAppBar(
@@ -139,13 +161,14 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
             }
 
             if (state.config.sources.isEmpty()) {
-                item(key = "sources-empty") {
+                item(key = "sources-empty", contentType = "sources-empty") {
                     EmptySourcesRow(modifier = Modifier.animateItem())
                 }
             } else {
                 items(
                     items = state.config.sources,
                     key = { it.source.id },
+                    contentType = { "route-source" },
                 ) { resolved ->
                     SwipeableSourceCard(
                         modifier = Modifier.animateItem(
@@ -161,7 +184,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                 }
             }
 
-            item(key = "reconnect-hint") {
+            item(key = "reconnect-hint", contentType = "reconnect-hint") {
                 Text(
                     text = stringResource(R.string.routing_reconnect_hint),
                     style = MaterialTheme.typography.bodySmall,
@@ -172,7 +195,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                 )
             }
 
-            item(key = "trailing-space") { Spacer(Modifier.height(spacing.large)) }
+            item(key = "trailing-space", contentType = "trailing-space") { Spacer(Modifier.height(spacing.large)) }
         }
     }
 

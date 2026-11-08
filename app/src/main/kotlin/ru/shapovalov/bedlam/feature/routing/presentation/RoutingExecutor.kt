@@ -66,9 +66,21 @@ internal class RoutingExecutor(
                 addSource(intent.source)
             }
 
-            is RoutingStore.Intent.RemoveSource -> scope.launch {
-                routingRepository.removeSource(intent.id)
+            is RoutingStore.Intent.RemoveSource -> {
+                val source = state().config.sources.firstOrNull { it.source.id == intent.id } ?: return
+                scope.launch {
+                    routingRepository.removeSource(intent.id)
+                    dispatch(Msg.SourceRemoved(source))
+                }
             }
+
+            is RoutingStore.Intent.UndoRemoveSource -> {
+                val source = state().removedSource?.takeIf { it.source.id == intent.id } ?: return
+                dispatch(Msg.RemovalDismissed(intent.id))
+                scope.launch { routingRepository.restoreSource(source) }
+            }
+
+            is RoutingStore.Intent.DismissRemoval -> dispatch(Msg.RemovalDismissed(intent.id))
 
             is RoutingStore.Intent.SetSourceEnabled -> scope.launch {
                 routingRepository.setSourceEnabled(intent.id, intent.enabled)

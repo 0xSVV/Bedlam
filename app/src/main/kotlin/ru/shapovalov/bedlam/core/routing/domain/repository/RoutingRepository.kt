@@ -5,6 +5,7 @@ import ru.shapovalov.bedlam.core.routing.domain.model.Cidr
 import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
+import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.hysteria.api.DnsTransport
 
@@ -25,6 +26,7 @@ interface RoutingRepository {
 
     suspend fun upsertSource(source: DirectRouteSource)
     suspend fun removeSource(id: String)
+    suspend fun restoreSource(source: ResolvedSource)
     suspend fun setSourceEnabled(id: String, enabled: Boolean)
 
     suspend fun hasEquivalent(source: DirectRouteSource): Boolean
