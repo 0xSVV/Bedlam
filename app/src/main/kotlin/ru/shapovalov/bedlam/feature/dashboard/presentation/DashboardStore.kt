@@ -30,6 +30,7 @@ interface DashboardStore :
 
     data class State(
         val profiles: List<Profile> = emptyList(),
+        val profilesLoaded: Boolean = false,
         val activeProfileId: String? = null,
         val pendingSwitchProfileId: String? = null,
         val connectionState: ConnectionState = ConnectionState.Disconnected(),

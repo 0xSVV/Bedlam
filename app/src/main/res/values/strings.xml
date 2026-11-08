@@ -49,7 +49,6 @@
     <string name="nav_tab_logs">Logs</string>
 
     <string name="dashboard_action_import_cd">Import profile</string>
-    <string name="dashboard_connection_time">Connection Time</string>
     <string name="dashboard_confirm_switch_title">Confirm profile switch?</string>
     <string name="dashboard_confirm_switch_cd">Switch to %1$s</string>
     <string name="dashboard_cancel_switch_cd">Cancel profile switch</string>
@@ -489,4 +488,6 @@
         <item quantity="other">%1$d d ago</item>
     </plurals>
     <string name="routing_source_state_disabled">Disabled</string>
+    <string name="dashboard_empty_title">Add your first profile</string>
+    <string name="dashboard_connected_for">Connected for %1$s</string>
 </resources>

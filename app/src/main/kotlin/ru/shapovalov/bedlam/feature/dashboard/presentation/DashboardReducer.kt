@@ -31,6 +31,7 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             val ids = msg.profiles.mapTo(HashSet()) { it.id }
             copy(
                 profiles = msg.profiles,
+                profilesLoaded = true,
                 activeProfileId = msg.activeId,
                 pendingSwitchProfileId = pendingSwitchProfileId?.takeIf { pending ->
                     pending in ids && pending != msg.activeId
