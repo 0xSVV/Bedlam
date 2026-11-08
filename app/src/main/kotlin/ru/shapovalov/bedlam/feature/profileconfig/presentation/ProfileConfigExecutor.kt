@@ -30,6 +30,8 @@ internal class ProfileConfigExecutor(
             ProfileConfigStore.Intent.DiscardChanges -> dispatch(Msg.ChangesDiscarded)
             is ProfileConfigStore.Intent.UpdateDraft -> dispatch(Msg.DraftUpdated(intent.config))
             is ProfileConfigStore.Intent.UpdateDraftName -> dispatch(Msg.DraftNameUpdated(intent.name))
+            is ProfileConfigStore.Intent.SetNumericFieldValidity ->
+                dispatch(Msg.NumericFieldValidityChanged(intent.field, intent.valid))
             ProfileConfigStore.Intent.Save -> save()
             ProfileConfigStore.Intent.RequestDelete -> dispatch(Msg.DeleteRequested)
             ProfileConfigStore.Intent.CancelDelete -> dispatch(Msg.DeleteCancelled)
@@ -50,7 +52,7 @@ internal class ProfileConfigExecutor(
         val s = state()
         val draft = s.draft ?: return
         val original = s.original ?: return
-        if (s.isSaving) return
+        if (s.isSaving || s.invalidNumericFields.isNotEmpty()) return
         val name = s.draftName?.trim()
         if (name.isNullOrEmpty()) {
             dispatch(Msg.SaveFailed("name must not be empty"))

@@ -488,6 +488,9 @@
         <item quantity="other">%1$d d ago</item>
     </plurals>
     <string name="routing_source_state_disabled">Disabled</string>
+    <string name="profile_config_number_error">Enter a whole number within the supported range.</string>
+    <string name="profile_config_show_advanced">Show advanced settings</string>
+    <string name="profile_config_hide_advanced">Hide advanced settings</string>
     <string name="dashboard_empty_title">Add your first profile</string>
     <string name="dashboard_connected_for">Connected for %1$s</string>
     <string name="app_filter_all_description">Route every app through the VPN.</string>

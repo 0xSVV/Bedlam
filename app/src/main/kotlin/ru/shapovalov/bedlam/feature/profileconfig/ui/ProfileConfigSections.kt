@@ -127,23 +127,25 @@ internal fun ObfuscationSection(
     draft: HysteriaConfig,
     editMode: Boolean,
     onDraftChanged: (HysteriaConfig) -> Unit,
+    onNumericValidityChanged: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val obfs = draft.obfuscation ?: ObfuscationOptions("", "")
     val caution = stringResource(R.string.profile_config_caution_obfs)
     val isGecko = obfs.obfuscationType.equals("gecko", ignoreCase = true)
-    SectionCard(title = stringResource(R.string.profile_config_section_obfuscation)) {
+    SectionCard(
+        title = stringResource(R.string.profile_config_section_obfuscation),
+        caution = caution.takeIf { editMode },
+    ) {
         TextFieldRow(
             label = "obfuscationType",
             value = obfs.obfuscationType,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(obfuscation = obfs.copy(obfuscationType = it))) },
         )
         TextFieldRow(
             label = "obfuscationPassword",
             value = obfs.obfuscationPassword,
             editMode = editMode,
-            caution = caution,
             showDivider = isGecko,
             secret = true,
             onChange = { onDraftChanged(draft.copy(obfuscation = obfs.copy(obfuscationPassword = it))) },
@@ -154,20 +156,20 @@ internal fun ObfuscationSection(
                     label = "geckoMinPacketSize",
                     value = obfs.geckoMinPacketSize,
                     editMode = editMode,
-                    caution = caution,
                     onChange = {
                         onDraftChanged(draft.copy(obfuscation = obfs.copy(geckoMinPacketSize = it)))
                     },
+                    onValidityChanged = onNumericValidityChanged,
                 )
                 IntFieldRow(
                     label = "geckoMaxPacketSize",
                     value = obfs.geckoMaxPacketSize,
                     editMode = editMode,
-                    caution = caution,
                     showDivider = false,
                     onChange = {
                         onDraftChanged(draft.copy(obfuscation = obfs.copy(geckoMaxPacketSize = it)))
                     },
+                    onValidityChanged = onNumericValidityChanged,
                 )
             }
         }
@@ -179,15 +181,18 @@ internal fun RealmSection(
     draft: HysteriaConfig,
     editMode: Boolean,
     onDraftChanged: (HysteriaConfig) -> Unit,
+    onNumericValidityChanged: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val realm = draft.realm ?: RealmOptions()
     val caution = stringResource(R.string.profile_config_caution_realm)
-    SectionCard(title = stringResource(R.string.profile_config_section_realm)) {
+    SectionCard(
+        title = stringResource(R.string.profile_config_section_realm),
+        caution = caution.takeIf { editMode },
+    ) {
         ListFieldRow(
             label = "stunServers",
             values = realm.stunServers,
             editMode = editMode,
-            caution = caution,
             onChange = { servers ->
                 onDraftChanged(draft.copy(realm = realm.copy(stunServers = servers)))
             },
@@ -196,21 +201,20 @@ internal fun RealmSection(
             label = "stunTimeoutMs",
             value = realm.stunTimeoutMs,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(realm = realm.copy(stunTimeoutMs = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         IntFieldRow(
             label = "punchTimeoutMs",
             value = realm.punchTimeoutMs,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(realm = realm.copy(punchTimeoutMs = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         SwitchRow(
             label = "insecure",
             value = realm.insecure,
             editMode = editMode,
-            caution = caution,
             showDivider = false,
             onChange = { onDraftChanged(draft.copy(realm = realm.copy(insecure = it))) },
         )
@@ -222,37 +226,41 @@ internal fun QuicSection(
     draft: HysteriaConfig,
     editMode: Boolean,
     onDraftChanged: (HysteriaConfig) -> Unit,
+    onNumericValidityChanged: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val quic = draft.quic ?: defaultQuicOptions
     val caution = stringResource(R.string.profile_config_caution_quic)
-    SectionCard(title = stringResource(R.string.profile_config_section_quic)) {
+    SectionCard(
+        title = stringResource(R.string.profile_config_section_quic),
+        caution = caution.takeIf { editMode },
+    ) {
         LongFieldRow(
             label = "initStreamReceiveWindow",
             value = quic.initStreamReceiveWindow,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(initStreamReceiveWindow = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         LongFieldRow(
             label = "maxStreamReceiveWindow",
             value = quic.maxStreamReceiveWindow,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(maxStreamReceiveWindow = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         LongFieldRow(
             label = "initConnReceiveWindow",
             value = quic.initConnReceiveWindow,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(initConnReceiveWindow = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         LongFieldRow(
             label = "maxConnReceiveWindow",
             value = quic.maxConnReceiveWindow,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(maxConnReceiveWindow = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         IntFieldRow(
             label = "maxIdleTimeoutSec",
@@ -267,6 +275,7 @@ internal fun QuicSection(
                 QuicTimerDefaults.MAX_IDLE_TIMEOUT_SEC,
             ),
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(maxIdleTimeoutSec = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         IntFieldRow(
             label = "keepAlivePeriodSec",
@@ -281,26 +290,24 @@ internal fun QuicSection(
                 QuicTimerDefaults.KEEP_ALIVE_PERIOD_SEC,
             ),
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(keepAlivePeriodSec = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         SwitchRow(
             label = "disablePathMTUDiscovery",
             value = quic.disablePathMTUDiscovery,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(disablePathMTUDiscovery = it))) },
         )
         SwitchRow(
             label = "disableChromeParrot",
             value = quic.disableChromeParrot,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(disableChromeParrot = it))) },
         )
         SwitchRow(
             label = "disableGso",
             value = quic.disableGso,
             editMode = editMode,
-            caution = caution,
             showDivider = false,
             onChange = { onDraftChanged(draft.copy(quic = quic.copy(disableGso = it))) },
         )
@@ -315,19 +322,20 @@ internal fun CongestionSection(
 ) {
     val congestion = draft.congestion ?: defaultCongestionOptions
     val caution = stringResource(R.string.profile_config_caution_congestion)
-    SectionCard(title = stringResource(R.string.profile_config_section_congestion)) {
+    SectionCard(
+        title = stringResource(R.string.profile_config_section_congestion),
+        caution = caution.takeIf { editMode },
+    ) {
         TextFieldRow(
             label = "congestionType",
             value = congestion.congestionType,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(congestion = congestion.copy(congestionType = it))) },
         )
         TextFieldRow(
             label = "bbrProfile",
             value = congestion.bbrProfile,
             editMode = editMode,
-            caution = caution,
             showDivider = false,
             onChange = { onDraftChanged(draft.copy(congestion = congestion.copy(bbrProfile = it))) },
         )
@@ -339,23 +347,27 @@ internal fun BandwidthSection(
     draft: HysteriaConfig,
     editMode: Boolean,
     onDraftChanged: (HysteriaConfig) -> Unit,
+    onNumericValidityChanged: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val bandwidth = draft.bandwidth ?: defaultBandwidthOptions
     val caution = stringResource(R.string.profile_config_caution_bandwidth)
-    SectionCard(title = stringResource(R.string.profile_config_section_bandwidth)) {
+    SectionCard(
+        title = stringResource(R.string.profile_config_section_bandwidth),
+        caution = caution.takeIf { editMode },
+    ) {
         IntFieldRow(
             label = "maxTxMbps",
             value = bandwidth.maxTxMbps,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(bandwidth = bandwidth.copy(maxTxMbps = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         IntFieldRow(
             label = "maxRxMbps",
             value = bandwidth.maxRxMbps,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(bandwidth = bandwidth.copy(maxRxMbps = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         SwitchRow(
             label = "disableLossCompensation",
@@ -374,31 +386,35 @@ internal fun TransportSection(
     draft: HysteriaConfig,
     editMode: Boolean,
     onDraftChanged: (HysteriaConfig) -> Unit,
+    onNumericValidityChanged: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val transport = draft.transport ?: defaultTransportOptions
     val caution = stringResource(R.string.profile_config_caution_hop)
-    SectionCard(title = stringResource(R.string.profile_config_section_transport)) {
+    SectionCard(
+        title = stringResource(R.string.profile_config_section_transport),
+        caution = caution.takeIf { editMode },
+    ) {
         IntFieldRow(
             label = "hopIntervalSec",
             value = transport.hopIntervalSec,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(transport = transport.copy(hopIntervalSec = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         IntFieldRow(
             label = "minHopIntervalSec",
             value = transport.minHopIntervalSec,
             editMode = editMode,
-            caution = caution,
             onChange = { onDraftChanged(draft.copy(transport = transport.copy(minHopIntervalSec = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
         IntFieldRow(
             label = "maxHopIntervalSec",
             value = transport.maxHopIntervalSec,
             editMode = editMode,
-            caution = caution,
             showDivider = false,
             onChange = { onDraftChanged(draft.copy(transport = transport.copy(maxHopIntervalSec = it))) },
+            onValidityChanged = onNumericValidityChanged,
         )
     }
 }

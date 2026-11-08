@@ -23,6 +23,7 @@ import ru.shapovalov.bedlam.testing.MainDispatcherExtension
 import ru.shapovalov.bedlam.testing.disposeAfter
 import ru.shapovalov.bedlam.testing.testConfig
 import ru.shapovalov.bedlam.testing.testProfile
+import ru.shapovalov.hysteria.config.ObfuscationOptions
 import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -63,6 +64,49 @@ class ProfileConfigExecutorTest {
             },
             reducer = ProfileConfigReducer,
         )
+
+    @Test
+    fun `invalid visible numeric input blocks persistence until corrected`() = runTest {
+        val repository = FakeProfileRepository(listOf(profile))
+        store(edited, repository).disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.SetNumericFieldValidity("maxTxMbps", false))
+            assertFalse(store.state.canSave)
+            store.accept(ProfileConfigStore.Intent.Save)
+            assertEquals(profile, repository.profiles.value.single())
+            assertTrue(store.state.editMode)
+
+            store.accept(ProfileConfigStore.Intent.SetNumericFieldValidity("maxTxMbps", true))
+            assertTrue(store.state.canSave)
+            store.accept(ProfileConfigStore.Intent.Save)
+            assertEquals(otherConfig, repository.profiles.value.single().config)
+            assertFalse(store.state.editMode)
+        }
+    }
+
+    @Test
+    fun `invalid numeric text alone requires discard and clears validation on discard`() = runTest {
+        store(loaded.copy(editMode = true), FakeProfileRepository(listOf(profile))).disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.SetNumericFieldValidity("maxTxMbps", false))
+            store.accept(ProfileConfigStore.Intent.LeaveEditMode)
+            assertTrue(store.state.pendingDiscardConfirmation)
+            store.accept(ProfileConfigStore.Intent.DiscardChanges)
+            assertEquals(loaded, store.state)
+        }
+    }
+
+    @Test
+    fun `changing obfuscation type clears errors for hidden fields and ignores their late reports`() = runTest {
+        val gecko = otherConfig.copy(obfuscation = ObfuscationOptions("gecko", "secret"))
+        store(edited.copy(draft = gecko), FakeProfileRepository(listOf(profile))).disposeAfter { store ->
+            store.accept(ProfileConfigStore.Intent.SetNumericFieldValidity("geckoMinPacketSize", false))
+            assertFalse(store.state.canSave)
+
+            store.accept(ProfileConfigStore.Intent.UpdateDraft(gecko.copy(obfuscation = null)))
+            assertTrue(store.state.canSave)
+            store.accept(ProfileConfigStore.Intent.SetNumericFieldValidity("geckoMinPacketSize", false))
+            assertTrue(store.state.canSave)
+        }
+    }
 
     @Test
     fun `leaving edit mode with unsaved changes asks before discarding`() = runTest {

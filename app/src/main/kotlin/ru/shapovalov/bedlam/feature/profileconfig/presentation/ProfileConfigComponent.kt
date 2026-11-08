@@ -29,6 +29,9 @@ class ProfileConfigComponent(
     fun onDraftNameChanged(name: String) =
         store.accept(ProfileConfigStore.Intent.UpdateDraftName(name))
 
+    fun onNumericFieldValidityChanged(field: String, valid: Boolean) =
+        store.accept(ProfileConfigStore.Intent.SetNumericFieldValidity(field, valid))
+
     fun onSave() = store.accept(ProfileConfigStore.Intent.Save)
     fun onRequestDelete() = store.accept(ProfileConfigStore.Intent.RequestDelete)
     fun onCancelDelete() = store.accept(ProfileConfigStore.Intent.CancelDelete)
