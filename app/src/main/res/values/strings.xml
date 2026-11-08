@@ -252,7 +252,8 @@
     <string name="routing_mtu_auto_hint" tools:ignore="PluralsCandidate">Auto uses %1$d bytes</string>
     <string name="routing_mtu_hint">The largest packet that the tunnel interface accepts</string>
     <string name="routing_mtu_range_error" tools:ignore="PluralsCandidate">The MTU must be from %1$d to %2$d bytes</string>
-    <string name="routing_dns_title">DNS</string>
+    <string name="routing_remote_dns_title">Remote DNS</string>
+    <string name="routing_dns_provider_title">Provider</string>
     <string name="routing_dns_system">System</string>
     <string name="routing_dns_cloudflare">Cloudflare</string>
     <string name="routing_dns_google">Google</string>
@@ -278,8 +279,8 @@
     <string name="routing_dns_transport_http3">DNS over HTTP/3</string>
     <string name="routing_dns_transport_system_hint">System resolvers speak plain DNS — UDP or TCP only</string>
     <string name="routing_direct_dns_title">Direct DNS</string>
-    <string name="routing_direct_dns_hint">Used for server bootstrap and explicitly bypassed domains. Other captured DNS stays on Remote DNS.</string>
-    <string name="routing_direct_dns_unavailable">Bootstrap and enabled domain bypass rules use this network’s system DNS over protected UDP. Other Direct DNS providers and transports are not available yet.</string>
+    <string name="routing_direct_dns_system_udp">System DNS over UDP</string>
+    <string name="routing_direct_dns_unavailable">Used to reach the server and for domains in direct routes. Other providers and transports are not available yet.</string>
     <string name="routing_dns_cache_title">Cache DNS responses</string>
     <string name="routing_dns_cache_hint">Reuse Bedlam DNS answers when enabled. Does not control Android, browser, or resolver caches.</string>
 

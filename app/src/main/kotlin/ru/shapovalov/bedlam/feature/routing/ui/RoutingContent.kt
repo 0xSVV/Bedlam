@@ -126,33 +126,50 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
             ),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
-            item(key = "basics") {
-                BasicsCard(
-                    modifier = Modifier.animateItem(),
+            item(key = "bypass-lan", contentType = "bypass-lan") {
+                BypassLanCard(
                     bypassLan = state.config.bypassLan,
+                    onSetBypassLan = component::onSetBypassLan,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            item(key = "ipv6", contentType = "ipv6") {
+                Ipv6Card(
                     ipv6Mode = state.config.ipv6Mode,
+                    onSetIpv6Mode = component::onSetIpv6Mode,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            item(key = "mtu", contentType = "mtu") {
+                MtuCard(
+                    mtu = state.config.mtu,
+                    onSetMtu = component::onSetMtu,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            item(key = "direct-dns", contentType = "direct-dns") {
+                DirectDnsCard(modifier = Modifier.animateItem())
+            }
+            item(key = "remote-dns", contentType = "remote-dns") {
+                RemoteDnsCard(
                     dnsMode = state.config.dnsMode,
                     dnsTransport = state.config.dnsTransport,
                     customDns = state.config.customDns,
-                    directDnsMode = state.config.directDnsMode,
-                    directDnsTransport = state.config.directDnsTransport,
-                    directCustomDns = state.config.directCustomDns,
-                    dnsCacheEnabled = state.config.dnsCacheEnabled,
-                    mtu = state.config.mtu,
-                    onSetBypassLan = component::onSetBypassLan,
-                    onSetIpv6Mode = component::onSetIpv6Mode,
                     onSetDnsMode = component::onSetDnsMode,
                     onSetDnsTransport = component::onSetDnsTransport,
                     onSetCustomDns = component::onSetCustomDns,
-                    onSetDirectDnsMode = component::onSetDirectDnsMode,
-                    onSetDirectDnsTransport = component::onSetDirectDnsTransport,
-                    onSetDirectCustomDns = component::onSetDirectCustomDns,
-                    onSetDnsCacheEnabled = component::onSetDnsCacheEnabled,
-                    onSetMtu = component::onSetMtu,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            item(key = "dns-cache", contentType = "dns-cache") {
+                DnsCacheCard(
+                    enabled = state.config.dnsCacheEnabled,
+                    onSetEnabled = component::onSetDnsCacheEnabled,
+                    modifier = Modifier.animateItem(),
                 )
             }
 
-            item(key = "sources-header") {
+            item(key = "sources-header", contentType = "sources-header") {
                 SourcesHeaderCard(
                     modifier = Modifier.animateItem(),
                     onAdd = { showAddSource = true },

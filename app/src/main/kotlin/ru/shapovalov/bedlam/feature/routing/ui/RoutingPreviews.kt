@@ -1,6 +1,8 @@
 package ru.shapovalov.bedlam.feature.routing.ui
 
 import android.content.res.Configuration
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -12,6 +14,7 @@ import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
 import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.bedlam.ui.theme.BedlamTheme
+import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.api.DnsTransport
 
 @Preview(name = "Light", showBackground = true, widthDp = 360)
@@ -60,64 +63,45 @@ private fun RoutingPreview(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun BasicsCardPreview(
-    bypassLan: Boolean,
-    ipv6Mode: Ipv6Mode,
-    dnsMode: DnsMode,
-    dnsTransport: DnsTransport,
-    customDns: List<String>,
-    mtu: Int,
-) {
+private fun SettingsCardsPreview(config: RoutingConfig) {
     RoutingPreview {
-        BasicsCard(
-            bypassLan = bypassLan,
-            ipv6Mode = ipv6Mode,
-            dnsMode = dnsMode,
-            dnsTransport = dnsTransport,
-            customDns = customDns,
-            directDnsMode = DnsMode.System,
-            directDnsTransport = DnsTransport.Udp,
-            directCustomDns = emptyList(),
-            dnsCacheEnabled = true,
-            mtu = mtu,
-            onSetBypassLan = {},
-            onSetIpv6Mode = {},
-            onSetDnsMode = {},
-            onSetDnsTransport = {},
-            onSetCustomDns = {},
-            onSetDirectDnsMode = {},
-            onSetDirectDnsTransport = {},
-            onSetDirectCustomDns = {},
-            onSetDnsCacheEnabled = {},
-            onSetMtu = {},
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium)) {
+            BypassLanCard(bypassLan = config.bypassLan, onSetBypassLan = {})
+            Ipv6Card(ipv6Mode = config.ipv6Mode, onSetIpv6Mode = {})
+            MtuCard(mtu = config.mtu, onSetMtu = {})
+            DirectDnsCard()
+            RemoteDnsCard(
+                dnsMode = config.dnsMode,
+                dnsTransport = config.dnsTransport,
+                customDns = config.customDns,
+                onSetDnsMode = {},
+                onSetDnsTransport = {},
+                onSetCustomDns = {},
+            )
+            DnsCacheCard(enabled = config.dnsCacheEnabled, onSetEnabled = {})
+        }
     }
 }
 
 @RoutingPreviews
 @Composable
-private fun BasicsCardDefaultsPreview() {
-    val defaults = RoutingConfig()
-    BasicsCardPreview(
-        bypassLan = defaults.bypassLan,
-        ipv6Mode = defaults.ipv6Mode,
-        dnsMode = defaults.dnsMode,
-        dnsTransport = defaults.dnsTransport,
-        customDns = defaults.customDns,
-        mtu = defaults.mtu,
-    )
+private fun SettingsCardsDefaultsPreview() {
+    SettingsCardsPreview(RoutingConfig())
 }
 
 @RoutingPreviews
 @Composable
-private fun BasicsCardCustomDnsPreview() {
-    BasicsCardPreview(
-        bypassLan = false,
-        ipv6Mode = Ipv6Mode.BypassOnly,
-        dnsMode = DnsMode.Custom,
-        dnsTransport = DnsTransport.Https,
-        customDns = listOf("https://dns.example/dns-query"),
-        mtu = 1400,
+private fun SettingsCardsCustomDnsPreview() {
+    SettingsCardsPreview(
+        RoutingConfig(
+            bypassLan = false,
+            ipv6Mode = Ipv6Mode.BypassOnly,
+            dnsMode = DnsMode.Custom,
+            dnsTransport = DnsTransport.Https,
+            customDns = listOf("https://dns.example/dns-query"),
+            dnsCacheEnabled = false,
+            mtu = 1400,
+        )
     )
 }
 
