@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.nativePaint
 import androidx.compose.ui.graphics.withSaveLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -380,7 +381,7 @@ private fun ConnectionFab(
     val shadowPaint = remember(density) {
         Paint().apply {
             color = ConnectionFabShadowColor
-            asFrameworkPaint().maskFilter = BlurMaskFilter(
+            nativePaint.maskFilter = BlurMaskFilter(
                 with(density) { ConnectionFabShadowBlur.toPx() },
                 BlurMaskFilter.Blur.NORMAL,
             )

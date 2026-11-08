@@ -13,7 +13,11 @@ val buildingBundle = gradle.startParameter.taskNames.any { it.contains("bundle",
 
 android {
     namespace = "ru.shapovalov.bedlam"
-    compileSdk = libs.versions.targetSdk.get().toInt()
+    compileSdk {
+        version = release(libs.versions.targetSdk.get().toInt()) {
+            minorApiLevel = libs.versions.compileSdkMinor.get().toInt()
+        }
+    }
 
     defaultConfig {
         applicationId = "ru.shapovalov.bedlam"
