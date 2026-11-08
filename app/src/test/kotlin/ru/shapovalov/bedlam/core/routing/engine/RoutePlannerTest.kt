@@ -796,11 +796,10 @@ class RoutePlannerTest {
     }
 
     @Test
-    fun `auto mtu is the ipv6 minimum in every ipv6 mode`() {
-        // The TUN always carries an IPv6 address, so establish() rejects less.
+    fun `auto mtu is 1500 in every ipv6 mode`() {
         for (mode in Ipv6Mode.entries) {
             val plan = planner().plan(RoutingConfig(ipv6Mode = mode), AppFilter())
-            assertEquals(RoutingConfig.MIN_TUN_MTU, plan.mtu, "$mode")
+            assertEquals(1500, plan.mtu, "$mode")
         }
     }
 

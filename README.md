@@ -27,7 +27,7 @@ Remote DNS goes through the tunnel to Cloudflare, Google, your own servers, or y
 
 The 1.6.6 response cache is enabled by default. Turn it off in Routing settings to disable response reuse and storage while keeping active tunnel connections and routing state.
 
-You can set the tunnel MTU from 1280 to 9000 bytes. Auto uses 1280. 1280 is the minimum link MTU of IPv6. The interface always holds an IPv6 address, so `VpnService.Builder.establish` refuses a smaller value.
+You can set the tunnel MTU from 1280 to 9000 bytes. Auto uses 1500. 1280 is the minimum link MTU of IPv6. The interface always holds an IPv6 address, so `VpnService.Builder.establish` refuses a smaller value.
 
 GeoIP is deliberately out of scope. Bedlam bundles no `geoip.dat` or `.mmdb`, and matches no country or category. That kind of routing belongs to a general-purpose engine like sing-box, which has a rule-matching layer and bundled geo databases. Bedlam is a focused tunnel, and keeps its routing explicit by design.
 

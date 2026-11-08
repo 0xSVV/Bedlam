@@ -23,7 +23,7 @@ data class TunConfig(
     }
 
     companion object {
-        const val DEFAULT_MTU: Int = 1280
+        const val DEFAULT_MTU: Int = 1500
         const val MIN_MTU: Int = 576
         const val MAX_MTU: Int = 9000
 

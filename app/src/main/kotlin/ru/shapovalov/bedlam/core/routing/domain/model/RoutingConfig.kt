@@ -18,6 +18,7 @@ data class RoutingConfig(
 ) {
     companion object {
         const val AUTO_MTU: Int = 0
+        const val AUTO_TUN_MTU: Int = TunConfig.DEFAULT_MTU
 
         /**
          * The TUN always carries an IPv6 address, even when IPv6 mode is
@@ -30,6 +31,6 @@ data class RoutingConfig(
         const val MAX_TUN_MTU: Int = TunConfig.MAX_MTU
 
         fun resolveMtu(mtu: Int): Int =
-            if (mtu == AUTO_MTU) MIN_TUN_MTU else mtu.coerceIn(MIN_TUN_MTU, MAX_TUN_MTU)
+            if (mtu == AUTO_MTU) AUTO_TUN_MTU else mtu.coerceIn(MIN_TUN_MTU, MAX_TUN_MTU)
     }
 }

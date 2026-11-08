@@ -335,7 +335,7 @@ private fun MtuEditor(
 
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
-            value = if (showingAuto) RoutingConfig.MIN_TUN_MTU.toString() else text,
+            value = if (showingAuto) RoutingConfig.AUTO_TUN_MTU.toString() else text,
             onValueChange = { input ->
                 text = input
                 val parsed = input.trim().toIntOrNull()
@@ -352,7 +352,7 @@ private fun MtuEditor(
                 null
             },
             placeholder = {
-                Text(stringResource(R.string.routing_mtu_auto_placeholder, RoutingConfig.MIN_TUN_MTU))
+                Text(stringResource(R.string.routing_mtu_auto_placeholder, RoutingConfig.AUTO_TUN_MTU))
             },
             isError = outOfRange,
             keyboardOptions = KeyboardOptions(
@@ -374,7 +374,7 @@ private fun MtuEditor(
 
                 blank -> stringResource(
                     R.string.routing_mtu_auto_hint,
-                    RoutingConfig.MIN_TUN_MTU,
+                    RoutingConfig.AUTO_TUN_MTU,
                 )
 
                 else -> stringResource(R.string.routing_mtu_hint)
