@@ -94,7 +94,7 @@ fun BatteryReliabilityContent(
         ) {
             if (snapshot == null) return@LazyColumn
 
-            item(key = "hero") {
+            item(key = "hero", contentType = "hero") {
                 ReliabilityHero(
                     snapshot = snapshot,
                     confirmed = confirmed,
@@ -102,7 +102,7 @@ fun BatteryReliabilityContent(
                 )
             }
 
-            item(key = "checklist") {
+            item(key = "checklist", contentType = "checklist") {
                 ChecklistCard(
                     snapshot = snapshot,
                     confirmed = confirmed,
@@ -118,7 +118,7 @@ fun BatteryReliabilityContent(
                 )
             }
 
-            item(key = "vendor") {
+            item(key = "vendor", contentType = "vendor") {
                 VendorGuideCard(
                     snapshot = snapshot,
                     confirmed = confirmed,
@@ -133,11 +133,11 @@ fun BatteryReliabilityContent(
                 )
             }
 
-            item(key = "explain") {
+            item(key = "explain", contentType = "explain") {
                 ExplanationCard(modifier = Modifier.animateItem())
             }
 
-            item(key = "trailing-space") {
+            item(key = "trailing-space", contentType = "trailing-space") {
                 Spacer(Modifier.height(spacing.large))
             }
         }

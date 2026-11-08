@@ -26,7 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -323,7 +323,7 @@ private fun MtuEditor(
 
     // The store loads the saved config after first composition, and later
     // writes echo back through Room; sync only while the user is not typing.
-    LaunchedEffect(mtu, focused, outOfRange) {
+    SideEffect(mtu, focused, outOfRange) {
         if (!focused && !outOfRange &&
             mtu != (text.trim().toIntOrNull() ?: RoutingConfig.AUTO_MTU)
         ) {
@@ -405,7 +405,7 @@ private fun CustomDnsEditor(
         entries.filter { DnsServer.parse(it, transport) is DnsServerParse.Invalid }
     }
 
-    LaunchedEffect(initial, focused) {
+    SideEffect(initial, focused) {
         if (!focused && initial != entries) {
             text = initial.joinToString(", ")
         }
