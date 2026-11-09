@@ -51,12 +51,19 @@ class ReconnectProfileUseCase internal constructor(
 
     suspend fun switchTo(profileId: String) {
         withContext(NonCancellable) {
-            if (clientState.value.isActiveTunnel) restartWith(profileId)
+            if (clientState.value.isActiveTunnel && restartWith(profileId)) awaitTunnelStarting()
         }
     }
 
-    private suspend fun restartWith(profileId: String) {
-        if (consentRequired()) return
+    private suspend fun awaitTunnelStarting() {
+        withTimeoutOrNull(START_TIMEOUT_MS) {
+            combine(clientState, runtimeState) { state, runtime -> state.effectiveWith(runtime) }
+                .first { it !is ConnectionState.Disconnected }
+        }
+    }
+
+    private suspend fun restartWith(profileId: String): Boolean {
+        if (consentRequired()) return false
         val stopRequestId = UUID.randomUUID().toString()
         stopTunnel(stopRequestId)
         val stopped = withTimeoutOrNull(STOP_TIMEOUT_MS) {
@@ -68,18 +75,20 @@ class ReconnectProfileUseCase internal constructor(
         }
         if (stopped == null) {
             Log.w(TAG, "Tunnel did not stop within $STOP_TIMEOUT_MS ms, not restarting")
-            return
+            return false
         }
         if (stopped.stopRequestId != stopRequestId) {
             Log.i(TAG, "Another stop request followed the reconnect, not restarting")
-            return
+            return false
         }
-        val profile = loadProfile(profileId) ?: return
+        val profile = loadProfile(profileId) ?: return false
         startTunnel(profile)
+        return true
     }
 
     private companion object {
         const val TAG = "ReconnectProfile"
         const val STOP_TIMEOUT_MS = 30_000L
+        const val START_TIMEOUT_MS = 10_000L
     }
 }

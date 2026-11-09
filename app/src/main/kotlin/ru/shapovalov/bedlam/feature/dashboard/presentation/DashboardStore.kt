@@ -33,6 +33,7 @@ interface DashboardStore :
         val profilesLoaded: Boolean = false,
         val activeProfileId: String? = null,
         val pendingSwitchProfileId: String? = null,
+        val isSwitching: Boolean = false,
         val connectionState: ConnectionState = ConnectionState.Disconnected(),
         val connectedSinceMillis: Long? = null,
         val importSheet: ImportSheetSeed? = null,
@@ -46,6 +47,12 @@ interface DashboardStore :
         val activeProfile: Profile? get() = profiles.firstOrNull { it.id == activeProfileId }
         val pendingSwitchProfile: Profile?
             get() = profiles.firstOrNull { it.id == pendingSwitchProfileId }
+        val displayedConnectionState: ConnectionState
+            get() = if (isSwitching && connectionState is ConnectionState.Disconnected) {
+                ConnectionState.Connecting
+            } else {
+                connectionState
+            }
     }
 
     data class ImportSheetSeed(val text: String, val format: ProfileImportFormat)

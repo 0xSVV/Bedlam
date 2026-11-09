@@ -194,6 +194,25 @@ class ReconnectProfileUseCaseTest {
         runCurrent()
 
         assertEquals(listOf("stop", "start other.example:443"), events)
+        assertFalse(switch.isCompleted)
+
+        clientState.value = ConnectionState.Connecting
+        runCurrent()
+
+        assertTrue(switch.isCompleted)
+    }
+
+    @Test
+    fun `switching gives up waiting for a tunnel that never starts`() = runTest {
+        val switch = launch { useCase().switchTo("p2") }
+        runCurrent()
+        clientStopped()
+        markStopping()
+        markStopped()
+
+        advanceTimeBy(10_001)
+
+        assertEquals(listOf("stop", "start other.example:443"), events)
         assertTrue(switch.isCompleted)
     }
 

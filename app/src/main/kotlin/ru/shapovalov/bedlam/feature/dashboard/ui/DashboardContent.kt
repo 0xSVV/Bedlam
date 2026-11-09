@@ -102,7 +102,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     val expanded = windowWidth() >= 840.dp
     val hero: @Composable () -> Unit = {
         ConnectionHero(
-            connectionState = state.connectionState,
+            connectionState = state.displayedConnectionState,
             connectedSinceMillis = state.connectedSinceMillis,
             hasActiveProfile = state.activeProfile != null,
             activeProfileName = state.activeProfile?.name,
