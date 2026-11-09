@@ -4,6 +4,7 @@ import com.arkivanov.mvikotlin.core.store.Store
 import ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource
 import ru.shapovalov.bedlam.core.routing.domain.model.DnsMode
 import ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode
+import ru.shapovalov.bedlam.core.routing.domain.model.ResolvedSource
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.hysteria.api.DnsTransport
 
@@ -22,6 +23,8 @@ interface RoutingStore : Store<RoutingStore.Intent, RoutingStore.State, Nothing>
         data class SetMtu(val mtu: Int) : Intent
         data class AddSource(val source: DirectRouteSource) : Intent
         data class RemoveSource(val id: String) : Intent
+        data class UndoRemoveSource(val id: String) : Intent
+        data class DismissRemoval(val id: String) : Intent
         data class SetSourceEnabled(val id: String, val enabled: Boolean) : Intent
         data class AddPreset(val presetId: String) : Intent
         data object RefreshAll : Intent
@@ -30,5 +33,6 @@ interface RoutingStore : Store<RoutingStore.Intent, RoutingStore.State, Nothing>
     data class State(
         val config: RoutingConfig = RoutingConfig(),
         val isRefreshing: Boolean = false,
+        val removedSource: ResolvedSource? = null,
     )
 }

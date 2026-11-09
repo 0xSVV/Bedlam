@@ -4,7 +4,6 @@ import android.graphics.BlurMaskFilter
 import android.os.SystemClock
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
@@ -26,7 +25,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.GenericShape
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ElevatedAssistChip
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -38,7 +36,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
-import androidx.compose.material3.toPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,14 +45,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.center
 import androidx.compose.ui.geometry.toRect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.ColorProducer
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.nativePaint
 import androidx.compose.ui.graphics.withSaveLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -71,7 +68,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.graphics.shapes.Morph
 import androidx.lifecycle.Lifecycle
@@ -90,6 +86,7 @@ internal fun ConnectionHero(
     connectionState: ConnectionState,
     connectedSinceMillis: Long?,
     hasActiveProfile: Boolean,
+    activeProfileName: String? = null,
     pendingSwitchName: String?,
     onToggle: () -> Unit,
     onConfirmSwitch: () -> Unit,
@@ -161,6 +158,7 @@ internal fun ConnectionHero(
             }
         }
     }
+    val stateText = connectionState.displayText()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -168,47 +166,42 @@ internal fun ConnectionHero(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         AnimatedContent(
-            targetState = isConfirming,
-            transitionSpec = { heroTextTransition(motionScheme, forward = targetState) },
-            contentAlignment = Alignment.Center,
-            label = "hero-caption",
-        ) { confirming ->
-            Text(
-                text = stringResource(
-                    if (confirming) {
-                        R.string.dashboard_confirm_switch_title
-                    } else {
-                        R.string.dashboard_connection_time
-                    }
-                ),
-                style = MaterialTheme.typography.titleSmallEmphasized,
-                color = colorScheme.onSurface,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
-        }
-        Spacer(Modifier.height(spacing.xSmall))
-        AnimatedContent(
-            targetState = pendingSwitchName,
-            transitionSpec = { heroTextTransition(motionScheme, forward = targetState != null) },
+            targetState = HeroHeadline(
+                text = if (isConfirming) stringResource(R.string.dashboard_confirm_switch_title) else stateText,
+                confirming = isConfirming,
+            ),
+            transitionSpec = {
+                heroTextTransition(
+                    motionScheme,
+                    slide = initialState.confirming != targetState.confirming,
+                    forward = targetState.confirming,
+                )
+            },
             contentAlignment = Alignment.Center,
             label = "hero-headline",
-        ) { name ->
-            val style = MaterialTheme.typography.displayMediumEmphasized.copy(
+        ) { headline ->
+            val style = MaterialTheme.typography.headlineLargeEmphasized.copy(
                 fontFeatureSettings = "tnum",
             )
             Text(
-                text = name ?: formatDuration(elapsedSeconds.longValue),
+                text = headline.text,
                 style = style,
                 color = colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                autoSize = name?.let {
-                    TextAutoSize.StepBased(
-                        minFontSize = HeroNameMinFontSize,
-                        maxFontSize = style.fontSize,
-                    )
-                },
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+        val profileName = pendingSwitchName ?: activeProfileName
+        if (profileName != null) {
+            Spacer(Modifier.height(spacing.small))
+            Text(profileName, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        }
+        if (isConnected && !isConfirming) {
+            Spacer(Modifier.height(spacing.small))
+            Text(
+                stringResource(R.string.dashboard_connected_for, formatDuration(elapsedSeconds.longValue)),
+                style = MaterialTheme.typography.bodyLarge,
+                color = colorScheme.onSurfaceVariant,
             )
         }
         Spacer(Modifier.height(spacing.large))
@@ -222,7 +215,6 @@ internal fun ConnectionHero(
         )
         val confirmCd = pendingSwitchName?.let { stringResource(R.string.dashboard_confirm_switch_cd, it) }
         val cancelCd = stringResource(R.string.dashboard_cancel_switch_cd)
-        val stateText = connectionState.displayText()
         val iconRes = when {
             isConfirming -> R.drawable.ic_check
             isConnected -> R.drawable.ic_pause
@@ -238,8 +230,10 @@ internal fun ConnectionHero(
             if (buttonMorph.isSplit) {
                 ConnectionFab(
                     shape = buttonMorph.cancelButton,
-                    containerColor = { lerp(connectionButtonColor, cancelButtonColor, buttonMorph.split) },
-                    alpha = { (buttonMorph.split * CancelButtonFadeSpeed).coerceAtMost(1f) },
+                    containerColor = {
+                        lerp(connectionButtonColor, cancelButtonColor, buttonMorph.split.coerceIn(0f, 1f))
+                    },
+                    alpha = { (buttonMorph.split * CancelButtonFadeSpeed).coerceIn(0f, 1f) },
                     onClick = onCancelSwitch,
                     modifier = Modifier
                         .offset { IntOffset(-(ConnectionFabSplitOffset.toPx() * buttonMorph.split).roundToInt(), 0) }
@@ -271,7 +265,7 @@ internal fun ConnectionHero(
                 ConnectionButtonIcon(
                     visible = buttonMorph.showIcon,
                     iconRes = iconRes,
-                    tint = connectionButtonContentColor,
+                    tint = { connectionButtonContentColor },
                     motionScheme = motionScheme,
                 )
             }
@@ -287,7 +281,7 @@ internal fun ConnectionHero(
             onClick = onOpenSession,
             label = {
                 Text(
-                    text = stateText,
+                    text = stringResource(R.string.session_title),
                     style = MaterialTheme.typography.labelLargeEmphasized,
                 )
             },
@@ -339,44 +333,47 @@ private enum class ConnectionButtonMode { Resting, Loading, ConfirmSwitch }
 private fun ConnectionButtonIcon(
     visible: Boolean,
     @DrawableRes iconRes: Int,
-    tint: Color,
+    tint: () -> Color,
     motionScheme: MotionScheme,
 ) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut(),
-    ) {
-        AnimatedContent(
-            targetState = iconRes,
-            transitionSpec = {
-                val enter = fadeIn(motionScheme.defaultEffectsSpec()) +
-                        scaleIn(motionScheme.defaultSpatialSpec(), initialScale = 0.6f)
-                val exit = fadeOut(motionScheme.fastEffectsSpec()) +
-                        scaleOut(motionScheme.defaultSpatialSpec(), targetScale = 0.6f)
-                enter.togetherWith(exit)
-            },
-            label = "connection-icon",
-        ) { icon ->
+    AnimatedContent(
+        targetState = iconRes.takeIf { visible },
+        transitionSpec = {
+            val enter = fadeIn(motionScheme.defaultEffectsSpec()) +
+                    scaleIn(motionScheme.defaultSpatialSpec(), initialScale = 0.6f)
+            val exit = fadeOut(motionScheme.fastEffectsSpec()) +
+                    scaleOut(motionScheme.defaultSpatialSpec(), targetScale = 0.6f)
+            enter.togetherWith(exit)
+        },
+        label = "connection-icon",
+    ) { icon ->
+        if (icon != null) {
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
                 modifier = Modifier.size(FloatingActionButtonDefaults.LargeIconSize),
-                tint = tint,
+                tint = ColorProducer { tint() },
             )
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private fun heroTextTransition(motionScheme: MotionScheme, forward: Boolean): ContentTransform {
+private fun heroTextTransition(
+    motionScheme: MotionScheme,
+    slide: Boolean,
+    forward: Boolean,
+): ContentTransform {
+    val fadeIn = fadeIn(motionScheme.defaultEffectsSpec())
+    val fadeOut = fadeOut(motionScheme.fastEffectsSpec())
+    if (!slide) return ContentTransform(fadeIn, fadeOut, sizeTransform = SizeTransform(clip = false))
     val direction = if (forward) 1 else -1
-    val enter = fadeIn(motionScheme.defaultEffectsSpec()) +
-            slideInVertically(motionScheme.defaultSpatialSpec()) { direction * it / 2 }
-    val exit = fadeOut(motionScheme.fastEffectsSpec()) +
-            slideOutVertically(motionScheme.defaultSpatialSpec()) { -direction * it / 2 }
+    val enter = fadeIn + slideInVertically(motionScheme.defaultSpatialSpec()) { direction * it / 2 }
+    val exit = fadeOut + slideOutVertically(motionScheme.defaultSpatialSpec()) { -direction * it / 2 }
     return ContentTransform(enter, exit, sizeTransform = SizeTransform(clip = false))
 }
+
+private data class HeroHeadline(val text: String, val confirming: Boolean)
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -389,19 +386,15 @@ private fun ConnectionFab(
     content: @Composable () -> Unit,
 ) {
     val morph = remember(shape.fromShape, shape.toShape) { Morph(shape.fromShape, shape.toShape) }
-    val morphClip = remember(morph) {
-        GenericShape { size, _ ->
-            val p = morph.toPath(progress = shape.progress)
-            p.transform(Matrix().apply { scale(x = size.width, y = size.height) })
-            p.translate(size.center - p.getBounds().center)
-            addPath(p)
-        }
+    val geometry = remember { MorphGeometry() }
+    val morphClip = remember(morph, shape, geometry) {
+        GenericShape { size, _ -> addPath(geometry.path(morph, shape.progress, size)) }
     }
     val density = LocalDensity.current
     val shadowPaint = remember(density) {
         Paint().apply {
             color = ConnectionFabShadowColor
-            asFrameworkPaint().maskFilter = BlurMaskFilter(
+            nativePaint.maskFilter = BlurMaskFilter(
                 with(density) { ConnectionFabShadowBlur.toPx() },
                 BlurMaskFilter.Blur.NORMAL,
             )
@@ -412,9 +405,7 @@ private fun ConnectionFab(
         modifier = modifier
             .drawWithContent {
                 val opacity = alpha()
-                val path = morph.toPath(progress = shape.progress)
-                path.transform(Matrix().apply { scale(x = size.width, y = size.height) })
-                path.translate(size.center - path.getBounds().center)
+                val path = geometry.path(morph, shape.progress, size)
                 shadowPaint.alpha = ConnectionFabShadowColor.alpha * opacity
                 translate(top = ConnectionFabShadowOffset.toPx()) {
                     drawIntoCanvas { it.drawPath(path, shadowPaint) }
@@ -458,7 +449,6 @@ private fun ConnectionState.displayText(): String = when (this) {
 private fun secondsSince(elapsedRealtimeMillis: Long): Long =
     (SystemClock.elapsedRealtime() - elapsedRealtimeMillis) / 1000
 
-private val HeroNameMinFontSize = 24.sp
 private const val CancelButtonFadeSpeed = 3f
 private val ConnectionFabContainerSize = 96.dp
 private val ConnectionFabSplitGap = 16.dp

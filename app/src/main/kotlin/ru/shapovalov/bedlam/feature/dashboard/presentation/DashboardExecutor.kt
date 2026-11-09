@@ -68,7 +68,7 @@ internal class DashboardExecutor(
 
     private fun toggleConnection() {
         val s = state()
-        when (s.connectionState) {
+        when (s.displayedConnectionState) {
             is ConnectionState.Connected,
             is ConnectionState.Connecting,
             is ConnectionState.Reconnecting -> publish(DashboardStore.Label.RequestStopVpn)
@@ -95,10 +95,11 @@ internal class DashboardExecutor(
 
     private fun confirmSwitch() {
         val target = state().pendingSwitchProfile ?: return
-        dispatch(Msg.SwitchCleared)
+        dispatch(Msg.SwitchConfirmed)
         scope.launch {
             setActiveProfile(target.id)
             runCatching { switchProfile(target.id) }
+            dispatch(Msg.SwitchFinished)
         }
     }
 

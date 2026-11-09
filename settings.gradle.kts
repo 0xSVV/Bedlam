@@ -25,3 +25,5 @@ dependencyResolutionManagement {
 rootProject.name = "Bedlam"
 include(":app")
 include(":hysteria")
+
+include(":benchmark")

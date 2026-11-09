@@ -1,7 +1,9 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.ProfileImportFormat
@@ -24,7 +26,20 @@ class DashboardReducerTest {
             Msg.ProfilesLoaded(listOf(home, work), "b"),
         )
 
-        assertEquals(DashboardStore.State(profiles = listOf(home, work), activeProfileId = "b"), state)
+        assertEquals(
+            DashboardStore.State(profiles = listOf(home, work), profilesLoaded = true, activeProfileId = "b"),
+            state,
+        )
+    }
+
+    @Test
+    fun `an empty list counts as loaded only after the profile stream emits`() {
+        assertFalse(DashboardStore.State().profilesLoaded)
+
+        val state = DashboardReducer.reduceAll(DashboardStore.State(), Msg.ProfilesLoaded(emptyList(), null))
+
+        assertTrue(state.profilesLoaded)
+        assertEquals(emptyList<Any>(), state.profiles)
     }
 
     @Test

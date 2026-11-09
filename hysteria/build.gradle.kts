@@ -128,7 +128,7 @@ fun findGoPath(): String {
         ?: "${System.getProperty("user.home")}/go"
 }
 
-val syncHysteriaSubmodule by tasks.registering(Exec::class) {
+val syncHysteriaSubmodule = tasks.register<Exec>("syncHysteriaSubmodule") {
     description = "Initialize the hysteria upstream submodule at its pinned commit"
     group = "build"
 
@@ -137,7 +137,7 @@ val syncHysteriaSubmodule by tasks.registering(Exec::class) {
     isIgnoreExitValue = false
 }
 
-val updateHysteriaCore by tasks.registering(Exec::class) {
+val updateHysteriaCore = tasks.register<Exec>("updateHysteriaCore") {
     description = "Fetch the latest commit from hysteria upstream and update the working tree"
     group = "build"
 
@@ -150,7 +150,7 @@ val updateHysteriaCore by tasks.registering(Exec::class) {
     isIgnoreExitValue = false
 }
 
-val buildGolib by tasks.registering(Exec::class) {
+val buildGolib = tasks.register<Exec>("buildGolib") {
     description = "Build Go mobile bindings (.aar) via gomobile bind"
     group = "build"
 
@@ -215,7 +215,7 @@ tasks.named<Delete>("clean") {
     delete("libs/golib.aar", "libs/golib-sources.jar")
 }
 
-val goTest by tasks.registering(Exec::class) {
+val goTest = tasks.register<Exec>("goTest") {
     description = "Run Go unit tests in golib/"
     group = "verification"
 

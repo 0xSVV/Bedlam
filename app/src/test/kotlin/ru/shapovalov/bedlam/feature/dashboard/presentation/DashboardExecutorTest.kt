@@ -168,6 +168,32 @@ class DashboardExecutorTest {
     }
 
     @Test
+    fun `a confirmed switch shows connecting while the old tunnel is down`() = runTest {
+        val repository = FakeProfileRepository(listOf(home, work, cafe), activeId = "a")
+        val bootstrapper = TestBootstrapper<Action>()
+        val restarted = CompletableDeferred<Unit>()
+        store(
+            pendingSwitchState(),
+            repository,
+            bootstrapper = bootstrapper,
+            switchProfile = { restarted.await() },
+        ).disposeAfter { store ->
+            val labels = store.recordLabels()
+            store.accept(DashboardStore.Intent.ConfirmSwitch)
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Disconnected(), null))
+
+            assertEquals(ConnectionState.Connecting, store.state.displayedConnectionState)
+            store.accept(DashboardStore.Intent.ToggleConnection)
+            assertEquals(listOf(DashboardStore.Label.RequestStopVpn), labels)
+
+            restarted.complete(Unit)
+
+            assertFalse(store.state.isSwitching)
+            assertEquals(ConnectionState.Disconnected(), store.state.displayedConnectionState)
+        }
+    }
+
+    @Test
     fun `cancelling the switch keeps the current profile`() = runTest {
         val repository = FakeProfileRepository(listOf(home, work, cafe), activeId = "a")
         val switches = mutableListOf<String>()

@@ -12,6 +12,8 @@ internal sealed interface Msg {
     data class ConnectionChanged(val state: ConnectionState, val connectedSinceMillis: Long?) : Msg
     data class SwitchRequested(val id: String) : Msg
     data object SwitchCleared : Msg
+    data object SwitchConfirmed : Msg
+    data object SwitchFinished : Msg
     data class ImportSheetOpened(val seed: DashboardStore.ImportSheetSeed) : Msg
     data object ImportSheetClosed : Msg
     data object ImportStarted : Msg
@@ -31,6 +33,7 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
             val ids = msg.profiles.mapTo(HashSet()) { it.id }
             copy(
                 profiles = msg.profiles,
+                profilesLoaded = true,
                 activeProfileId = msg.activeId,
                 pendingSwitchProfileId = pendingSwitchProfileId?.takeIf { pending ->
                     pending in ids && pending != msg.activeId
@@ -47,6 +50,8 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
 
         is Msg.SwitchRequested -> copy(pendingSwitchProfileId = msg.id)
         Msg.SwitchCleared -> copy(pendingSwitchProfileId = null)
+        Msg.SwitchConfirmed -> copy(pendingSwitchProfileId = null, isSwitching = true)
+        Msg.SwitchFinished -> copy(isSwitching = false)
 
         is Msg.ImportSheetOpened -> copy(
             importSheet = msg.seed,

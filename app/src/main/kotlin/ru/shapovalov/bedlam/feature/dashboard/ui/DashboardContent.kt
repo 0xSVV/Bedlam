@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,6 +29,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -42,12 +44,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.R
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardComponent
 import ru.shapovalov.bedlam.feature.dashboard.presentation.DashboardStore
+import ru.shapovalov.bedlam.ui.layout.windowWidth
 import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.ConnectionState
 
@@ -87,12 +91,45 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
     }
     BackHandler(enabled = state.pendingSwitchProfileId != null) { component.onCancelSwitch() }
 
+    val onImport: () -> Unit = {
+        scope.launch {
+            val pasted = clipboard.getClipEntry()?.clipData
+                ?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+                ?.coerceToText(context)?.toString().orEmpty()
+            component.onOpenImport(pasted)
+        }
+    }
+    val expanded = windowWidth() >= 840.dp
+    val hero: @Composable () -> Unit = {
+        ConnectionHero(
+            connectionState = state.displayedConnectionState,
+            connectedSinceMillis = state.connectedSinceMillis,
+            hasActiveProfile = state.activeProfile != null,
+            activeProfileName = state.activeProfile?.name,
+            pendingSwitchName = state.pendingSwitchProfile?.name,
+            onToggle = component::onToggleConnection,
+            onConfirmSwitch = component::onConfirmSwitch,
+            onCancelSwitch = component::onCancelSwitch,
+            onOpenSession = component::onOpenSession,
+        )
+    }
+    val profiles: @Composable (Modifier) -> Unit = { cardModifier ->
+        ProfilesCard(
+            profiles = state.profiles,
+            activeProfileId = state.activeProfileId,
+            latencies = state.latencies,
+            onSelect = component::onSelectProfile,
+            onOpenConfig = component::onOpenProfileConfig,
+            onPingAll = component::onPingAllProfiles,
+            modifier = cardModifier,
+        )
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
             .windowInsetsPadding(
                 WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
-            )
+            ),
     ) {
         Column(
             modifier = Modifier
@@ -101,43 +138,32 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
                 .padding(bottom = spacing.large),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            DashboardTopBar(
-                onImport = {
-                    scope.launch {
-                        val pasted = clipboard.getClipEntry()
-                            ?.clipData
-                            ?.takeIf { it.itemCount > 0 }
-                            ?.getItemAt(0)
-                            ?.coerceToText(context)
-                            ?.toString()
-                            .orEmpty()
-                        component.onOpenImport(pasted)
-                    }
-                },
-                isImporting = state.isImporting,
-            )
-            ConnectionHero(
-                connectionState = state.connectionState,
-                connectedSinceMillis = state.connectedSinceMillis,
-                hasActiveProfile = state.activeProfile != null,
-                pendingSwitchName = state.pendingSwitchProfile?.name,
-                onToggle = component::onToggleConnection,
-                onConfirmSwitch = component::onConfirmSwitch,
-                onCancelSwitch = component::onCancelSwitch,
-                onOpenSession = component::onOpenSession,
-            )
-            Spacer(Modifier.height(spacing.xLarge))
-            ProfilesCard(
-                profiles = state.profiles,
-                activeProfileId = state.activeProfileId,
-                latencies = state.latencies,
-                onSelect = component::onSelectProfile,
-                onOpenConfig = component::onOpenProfileConfig,
-                onPingAll = component::onPingAllProfiles,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = spacing.large),
-            )
+            DashboardTopBar(onImport = onImport, isImporting = state.isImporting)
+            when {
+                !state.profilesLoaded -> Unit
+                state.profiles.isEmpty() -> DashboardEmptyState(
+                    isImporting = state.isImporting,
+                    onImport = onImport,
+                )
+                expanded -> Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(spacing.large),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xLarge),
+                ) {
+                    Column(Modifier.weight(1f)) { hero() }
+                    profiles(Modifier.weight(1f))
+                }
+                else -> {
+                    hero()
+                    Spacer(Modifier.height(spacing.xLarge))
+                    profiles(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = spacing.large)
+                    )
+                }
+            }
         }
         SnackbarHost(
             hostState = snackbarHostState,
@@ -159,6 +185,37 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
 }
 
 @Composable
+private fun DashboardEmptyState(
+    isImporting: Boolean,
+    onImport: () -> Unit,
+) {
+    val spacing = MaterialTheme.spacing
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(spacing.xxLarge),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(spacing.large),
+    ) {
+        Text(
+            text = stringResource(R.string.dashboard_empty_title),
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = stringResource(R.string.dashboard_empty_hint),
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+        )
+        Button(onClick = onImport, enabled = !isImporting) {
+            Icon(painterResource(R.drawable.ic_add), contentDescription = null)
+            Spacer(Modifier.size(spacing.small))
+            Text(stringResource(R.string.dashboard_action_import_cd))
+        }
+    }
+}
+
+@Composable
 private fun DashboardTopBar(
     onImport: () -> Unit,
     isImporting: Boolean,
@@ -168,9 +225,10 @@ private fun DashboardTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.large, vertical = spacing.medium),
-        horizontalArrangement = Arrangement.End,
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
         IconButton(
             onClick = onImport,
             enabled = !isImporting,

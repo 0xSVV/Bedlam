@@ -62,6 +62,10 @@ class FakeRoutingRepository(
         sources.filterNot { it.source.id == id }
     }
 
+    override suspend fun restoreSource(source: ResolvedSource) = updateSources { sources ->
+        sources.filterNot { it.source.id == source.source.id } + source
+    }
+
     override suspend fun setSourceEnabled(id: String, enabled: Boolean) = updateSource(id) {
         it.copy(source = it.source.withEnabled(enabled))
     }

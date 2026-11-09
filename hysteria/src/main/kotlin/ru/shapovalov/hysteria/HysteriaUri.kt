@@ -43,7 +43,7 @@ fun parseHysteriaJson(input: String): ParsedHysteriaUri {
     val server = obj["server"]
     require(server !is JsonPrimitive || !server.isString) {
         "This looks like a Hysteria client config, not a Bedlam profile. " +
-            "Import the hysteria2:// link instead, or paste a config copied from Bedlam."
+            "Import the hysteria2:// link instead, or paste a config copied from Bedlam"
     }
     val config = try {
         importJson.decodeFromJsonElement(HysteriaConfig.serializer(), obj)

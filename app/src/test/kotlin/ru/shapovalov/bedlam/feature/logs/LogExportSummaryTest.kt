@@ -30,7 +30,7 @@ class LogExportSummaryTest {
     @Test
     fun `the default routing reads as one line`() {
         assertEquals(
-            "Remote DNS Cloudflare over TCP · Direct DNS System over UDP · DNS cache on · IPv6 on · MTU auto (1280) · all apps · LAN bypass on · 0 direct-route sources",
+            "Remote DNS Cloudflare over TCP · Direct DNS System over UDP · DNS cache on · IPv6 on · MTU auto (1500) · all apps · LAN bypass on · 0 direct-route sources",
             routingSummary(RoutingConfig(), AppFilter()),
         )
     }
@@ -64,7 +64,7 @@ class LogExportSummaryTest {
         val apps = AppFilter(AppFilterMode.Blocklist, setOf("a"))
 
         assertEquals(
-            "Remote DNS Google over TLS · Direct DNS System over UDP · DNS cache on · IPv6 off · MTU auto (1280) · blocklist of 1 app · LAN bypass on · 0 direct-route sources",
+            "Remote DNS Google over TLS · Direct DNS System over UDP · DNS cache on · IPv6 off · MTU auto (1500) · blocklist of 1 app · LAN bypass on · 0 direct-route sources",
             routingSummary(routing, apps),
         )
     }

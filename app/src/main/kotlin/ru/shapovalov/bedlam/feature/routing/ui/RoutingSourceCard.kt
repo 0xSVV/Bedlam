@@ -17,15 +17,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -42,13 +48,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -83,8 +90,12 @@ internal fun SwipeableSourceCard(
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.EndToStart -> {
-                    latestOnDelete(latestResolved.source.id)
-                    true
+                    if (armed) {
+                        armed = false
+                        latestOnDelete(latestResolved.source.id)
+                    }
+                    // The repository removes the row; a dismissed swipe state would survive Undo.
+                    false
                 }
 
                 SwipeToDismissBoxValue.StartToEnd -> {
@@ -196,6 +207,7 @@ internal fun SourceRowContent(
     onDelete: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
+    var actionsExpanded by remember { mutableStateOf(false) }
     val dimmed = !resolved.source.enabled
     val toggleActionLabel = stringResource(
         if (dimmed) R.string.routing_swipe_enable else R.string.routing_swipe_disable
@@ -275,6 +287,27 @@ internal fun SourceRowContent(
                 )
             }
             Spacer(Modifier.width(spacing.small))
+            Box {
+                IconButton(onClick = { actionsExpanded = true }) {
+                    Icon(painterResource(R.drawable.ic_more_vert), stringResource(R.string.routing_source_actions))
+                }
+                DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(toggleActionLabel) },
+                        onClick = {
+                            actionsExpanded = false
+                            onToggleEnabled()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(deleteActionLabel) },
+                        onClick = {
+                            actionsExpanded = false
+                            onDelete()
+                        },
+                    )
+                }
+            }
             Icon(
                 painter = painterResource(R.drawable.ic_keyboard_arrow_down),
                 contentDescription = stringResource(
@@ -282,7 +315,7 @@ internal fun SourceRowContent(
                     else R.string.routing_source_details_expand_cd
                 ),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.rotate(chevronRotation),
+                modifier = Modifier.graphicsLayer { rotationZ = chevronRotation },
             )
         }
         AnimatedVisibility(
@@ -298,6 +331,7 @@ internal fun SourceRowContent(
 @Composable
 private fun SourceDetails(resolved: ResolvedSource) {
     val spacing = MaterialTheme.spacing
+    val networks = remember(resolved.cidrs) { summarizeNetworks(resolved.cidrs) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -323,8 +357,8 @@ private fun SourceDetails(resolved: ResolvedSource) {
                 modifier = Modifier.weight(1f),
             )
             if (resolved.cidrs.isNotEmpty()) {
-                val v4 = resolved.cidrs.count { it is Cidr.V4 }
-                val v6 = resolved.cidrs.count { it is Cidr.V6 }
+                val v4 = networks.ipv4Count
+                val v6 = networks.ipv6Count
                 Text(
                     text = stringResource(
                         R.string.routing_source_details_networks_breakdown,
@@ -344,14 +378,21 @@ private fun SourceDetails(resolved: ResolvedSource) {
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.xSmall)) {
-                resolved.cidrs.take(MaxVisibleCidrs).forEach { cidr ->
-                    Text(
-                        text = cidr.asString(),
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
+                val networksLabel = stringResource(R.string.routing_source_details_networks_header)
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)
+                        .semantics { contentDescription = networksLabel },
+                    verticalArrangement = Arrangement.spacedBy(spacing.xSmall),
+                ) {
+                    items(networks.visibleCidrs, contentType = { "cidr" }) { cidr ->
+                        Text(
+                            text = cidr,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 }
-                val overflow = resolved.cidrs.size - MaxVisibleCidrs
+                val overflow = networks.overflowCount
                 if (overflow > 0) {
                     Text(
                         text = if (overflow == 1) {
@@ -443,8 +484,6 @@ private fun formatRelative(millis: Long): String =
         is RelativeAge.Days ->
             pluralStringResource(R.plurals.routing_source_updated_days, age.value, age.value)
     }
-
-private const val MaxVisibleCidrs = 200
 
 private val SourceCardShape = RoundedCornerShape(20.dp)
 private val DetailLabelWidth = 96.dp

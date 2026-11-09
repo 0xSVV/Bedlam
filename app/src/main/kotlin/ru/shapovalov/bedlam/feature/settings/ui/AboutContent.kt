@@ -54,6 +54,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
@@ -126,14 +127,14 @@ internal fun AboutPage(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = bottomInset.calculateBottomPadding() + spacing.xLarge),
         ) {
-            item(key = "header") {
+            item(key = "header", contentType = "header") {
                 AboutHeader(
                     appVersion = appVersion,
                     hysteriaVersion = hysteriaVersion,
                     onCopyVersions = onCopyVersions,
                 )
             }
-            item(key = "links") {
+            item(key = "links", contentType = "links") {
                 Column(
                     modifier = Modifier.windowInsetsPadding(
                         WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
@@ -187,7 +188,16 @@ private fun AboutHeader(
     val appLabel = stringResource(R.string.settings_about_version_app, appVersion)
     val hysteriaLabel = stringResource(R.string.settings_about_version_hysteria, hysteriaVersion)
     val labelStyle = MaterialTheme.typography.labelLarge.copy(shadow = AboutHeaderTextShadow)
-    val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+    val density = LocalDensity.current
+    val windowSize = LocalWindowInfo.current.containerSize
+    val windowHeight = with(density) { windowSize.height.toDp() }
+    val maxHeight = minOf(AboutHeaderMaxHeight, windowHeight * ABOUT_HEADER_MAX_WINDOW_FRACTION)
+    val headerImageWidth = with(density) { (maxHeight * ABOUT_HEADER_ASPECT_RATIO).roundToPx() }
+    val targetWidth = minOf(windowSize.width, headerImageWidth).coerceAtLeast(1)
+    val resources = LocalResources.current
+    val bitmap by produceState(AboutHeaderImage.cached(targetWidth), resources, targetWidth) {
+        value = AboutHeaderImage.load(resources, targetWidth)
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -198,18 +208,20 @@ private fun AboutHeader(
     ) {
         Box(
             modifier = Modifier.headerSize(
-                maxHeight = minOf(AboutHeaderMaxHeight, windowHeight * ABOUT_HEADER_MAX_WINDOW_FRACTION),
+                maxHeight = maxHeight,
             ),
         ) {
-            Image(
-                painter = painterResource(R.drawable.about_header),
-                contentDescription = null,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .aspectRatio(ABOUT_HEADER_ASPECT_RATIO, matchHeightConstraintsFirst = true),
-                contentScale = ContentScale.Crop,
-            )
+            bitmap?.let { image ->
+                Image(
+                    bitmap = image,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .aspectRatio(ABOUT_HEADER_ASPECT_RATIO, matchHeightConstraintsFirst = true),
+                    contentScale = ContentScale.Crop,
+                )
+            }
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)

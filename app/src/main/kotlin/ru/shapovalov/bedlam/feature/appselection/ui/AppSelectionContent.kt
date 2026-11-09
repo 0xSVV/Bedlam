@@ -11,19 +11,24 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,12 +37,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,8 +61,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,13 +79,14 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val isAllMode = state.mode == AppFilterMode.All
+    val iconSizePx = with(LocalDensity.current) { AppIconSize.roundToPx() }
 
     fun hideSearch() {
         searchVisible = false
         component.onQueryChanged("")
     }
 
-    LaunchedEffect(isAllMode) {
+    SideEffect(isAllMode) {
         if (isAllMode) hideSearch()
     }
     LaunchedEffect(searchVisible) {
@@ -108,30 +113,53 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
             )
         },
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .consumeWindowInsets(padding)
+                .imePadding(),
         ) {
-            ModeChips(
-                selected = state.mode.takeIf { state.isFilterLoaded },
-                onSelect = component::onModeSelected,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        horizontal = MaterialTheme.spacing.large,
-                        vertical = MaterialTheme.spacing.small,
-                    ),
-            )
+            if (!searchVisible) {
+                item(key = "mode", contentType = "mode") {
+                    ModeChoices(
+                        selected = state.mode.takeIf { state.isFilterLoaded },
+                        onSelect = component::onModeSelected,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = MaterialTheme.spacing.large,
+                                vertical = MaterialTheme.spacing.small,
+                            ),
+                    )
+                }
+            }
             when {
-                state.isFilterLoaded && isAllMode -> AllModeHint()
-                state.isLoading -> LoadingBox()
-                else -> AppsList(
-                    apps = state.filteredApps,
-                    selected = state.selectedPackages,
-                    iconCache = component.iconCache,
-                    onToggle = component::onTogglePackage,
-                )
+                state.isFilterLoaded && isAllMode -> Unit
+                state.isLoading -> item(key = "loading", contentType = "loading") {
+                    LoadingBox(Modifier.fillParentMaxWidth().heightIn(min = 160.dp))
+                }
+                state.filteredApps.isEmpty() -> item(key = "no-results", contentType = "no-results") {
+                    Box(
+                        modifier = Modifier.fillParentMaxWidth().padding(MaterialTheme.spacing.large),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.app_selection_no_results, state.query),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+                else -> items(state.filteredApps, key = InstalledApp::packageName, contentType = { "app" }) { app ->
+                    AppRow(
+                        app = app,
+                        isSelected = app.packageName in state.selectedPackages,
+                        iconCache = component.iconCache,
+                        iconSizePx = iconSizePx,
+                        onToggle = { component.onTogglePackage(app.packageName) },
+                        modifier = Modifier.animateItem(),
+                    )
+                }
             }
         }
     }
@@ -234,35 +262,30 @@ internal fun AppSelectionTopBar(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun ModeChips(
+internal fun ModeChoices(
     selected: AppFilterMode?,
     onSelect: (AppFilterMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val modes = AppFilterMode.entries
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
-    ) {
-        modes.forEachIndexed { index, mode ->
-            ToggleButton(
-                checked = selected == mode,
-                onCheckedChange = { if (it) onSelect(mode) },
+    Column(modifier = modifier.selectableGroup()) {
+        AppFilterMode.entries.forEach { mode ->
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .semantics { role = Role.RadioButton },
-                shapes = when (index) {
-                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                    modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                },
+                    .fillMaxWidth()
+                    .selectable(selected = selected == mode, role = Role.RadioButton, onClick = { onSelect(mode) })
+                    .padding(horizontal = MaterialTheme.spacing.small, vertical = MaterialTheme.spacing.small),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = stringResource(mode.labelRes()),
-                    style = MaterialTheme.typography.labelLargeEmphasized,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                RadioButton(selected = selected == mode, onClick = null)
+                Spacer(Modifier.width(MaterialTheme.spacing.medium))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(mode.labelRes()), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        stringResource(mode.descriptionRes()),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -270,46 +293,9 @@ internal fun ModeChips(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun LoadingBox() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+internal fun LoadingBox(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularWavyProgressIndicator()
-    }
-}
-
-@Composable
-internal fun AllModeHint() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(MaterialTheme.spacing.large),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(R.string.app_selection_all_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-    }
-}
-
-@Composable
-private fun AppsList(
-    apps: List<InstalledApp>,
-    selected: Set<String>,
-    iconCache: AppIconCache,
-    onToggle: (String) -> Unit,
-) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(apps, key = InstalledApp::packageName) { app ->
-            AppRow(
-                app = app,
-                isSelected = app.packageName in selected,
-                iconCache = iconCache,
-                onToggle = { onToggle(app.packageName) },
-                modifier = Modifier.animateItem(),
-            )
-        }
     }
 }
 
@@ -319,10 +305,10 @@ private fun AppRow(
     app: InstalledApp,
     isSelected: Boolean,
     iconCache: AppIconCache,
+    iconSizePx: Int,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val iconSizePx = with(LocalDensity.current) { AppIconSize.roundToPx() }
     val icon by produceState(
         initialValue = iconCache.cached(app.packageName, iconSizePx),
         app.packageName,
@@ -382,4 +368,10 @@ private fun AppFilterMode.labelRes(): Int = when (this) {
     AppFilterMode.All -> R.string.app_filter_mode_all
     AppFilterMode.Allowlist -> R.string.app_filter_mode_allowlist
     AppFilterMode.Blocklist -> R.string.app_filter_mode_blocklist
+}
+
+private fun AppFilterMode.descriptionRes(): Int = when (this) {
+    AppFilterMode.All -> R.string.app_filter_all_description
+    AppFilterMode.Allowlist -> R.string.app_filter_allowlist_description
+    AppFilterMode.Blocklist -> R.string.app_filter_blocklist_description
 }

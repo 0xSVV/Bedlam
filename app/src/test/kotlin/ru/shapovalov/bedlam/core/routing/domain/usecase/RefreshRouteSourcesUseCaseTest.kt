@@ -49,6 +49,9 @@ class RefreshRouteSourcesUseCaseTest {
         override suspend fun removeSource(id: String) {
             current = current.copy(sources = current.sources.filterNot { it.source.id == id })
         }
+        override suspend fun restoreSource(source: ResolvedSource) {
+            current = current.copy(sources = current.sources + source)
+        }
         override suspend fun setSourceEnabled(id: String, enabled: Boolean) = Unit
         override suspend fun hasEquivalent(source: DirectRouteSource): Boolean = false
 

@@ -24,9 +24,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +53,22 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
     val spacing = MaterialTheme.spacing
+    val snackbarHostState = remember { SnackbarHostState() }
+    val removedMessage = stringResource(R.string.routing_source_removed)
+    val undoLabel = stringResource(R.string.action_undo)
+    LaunchedEffect(state.removedSource) {
+        val removed = state.removedSource ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = removedMessage,
+            actionLabel = undoLabel,
+            withDismissAction = true,
+            duration = SnackbarDuration.Long,
+        )
+        when (result) {
+            SnackbarResult.ActionPerformed -> component.onUndoRemoveSource(removed.source.id)
+            SnackbarResult.Dismissed -> component.onDismissRemoval(removed.source.id)
+        }
+    }
     var showAddSource by rememberSaveable { mutableStateOf(false) }
     var showPresets by rememberSaveable { mutableStateOf(false) }
 
@@ -63,6 +84,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
         topBar = {
             TopAppBar(
@@ -104,33 +126,50 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
             ),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
-            item(key = "basics") {
-                BasicsCard(
-                    modifier = Modifier.animateItem(),
+            item(key = "bypass-lan", contentType = "bypass-lan") {
+                BypassLanCard(
                     bypassLan = state.config.bypassLan,
+                    onSetBypassLan = component::onSetBypassLan,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            item(key = "ipv6", contentType = "ipv6") {
+                Ipv6Card(
                     ipv6Mode = state.config.ipv6Mode,
+                    onSetIpv6Mode = component::onSetIpv6Mode,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            item(key = "mtu", contentType = "mtu") {
+                MtuCard(
+                    mtu = state.config.mtu,
+                    onSetMtu = component::onSetMtu,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            item(key = "direct-dns", contentType = "direct-dns") {
+                DirectDnsCard(modifier = Modifier.animateItem())
+            }
+            item(key = "remote-dns", contentType = "remote-dns") {
+                RemoteDnsCard(
                     dnsMode = state.config.dnsMode,
                     dnsTransport = state.config.dnsTransport,
                     customDns = state.config.customDns,
-                    directDnsMode = state.config.directDnsMode,
-                    directDnsTransport = state.config.directDnsTransport,
-                    directCustomDns = state.config.directCustomDns,
-                    dnsCacheEnabled = state.config.dnsCacheEnabled,
-                    mtu = state.config.mtu,
-                    onSetBypassLan = component::onSetBypassLan,
-                    onSetIpv6Mode = component::onSetIpv6Mode,
                     onSetDnsMode = component::onSetDnsMode,
                     onSetDnsTransport = component::onSetDnsTransport,
                     onSetCustomDns = component::onSetCustomDns,
-                    onSetDirectDnsMode = component::onSetDirectDnsMode,
-                    onSetDirectDnsTransport = component::onSetDirectDnsTransport,
-                    onSetDirectCustomDns = component::onSetDirectCustomDns,
-                    onSetDnsCacheEnabled = component::onSetDnsCacheEnabled,
-                    onSetMtu = component::onSetMtu,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            item(key = "dns-cache", contentType = "dns-cache") {
+                DnsCacheCard(
+                    enabled = state.config.dnsCacheEnabled,
+                    onSetEnabled = component::onSetDnsCacheEnabled,
+                    modifier = Modifier.animateItem(),
                 )
             }
 
-            item(key = "sources-header") {
+            item(key = "sources-header", contentType = "sources-header") {
                 SourcesHeaderCard(
                     modifier = Modifier.animateItem(),
                     onAdd = { showAddSource = true },
@@ -139,13 +178,14 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
             }
 
             if (state.config.sources.isEmpty()) {
-                item(key = "sources-empty") {
+                item(key = "sources-empty", contentType = "sources-empty") {
                     EmptySourcesRow(modifier = Modifier.animateItem())
                 }
             } else {
                 items(
                     items = state.config.sources,
                     key = { it.source.id },
+                    contentType = { "route-source" },
                 ) { resolved ->
                     SwipeableSourceCard(
                         modifier = Modifier.animateItem(
@@ -161,18 +201,7 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                 }
             }
 
-            item(key = "reconnect-hint") {
-                Text(
-                    text = stringResource(R.string.routing_reconnect_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .animateItem()
-                        .padding(horizontal = spacing.small),
-                )
-            }
-
-            item(key = "trailing-space") { Spacer(Modifier.height(spacing.large)) }
+            item(key = "trailing-space", contentType = "trailing-space") { Spacer(Modifier.height(spacing.large)) }
         }
     }
 

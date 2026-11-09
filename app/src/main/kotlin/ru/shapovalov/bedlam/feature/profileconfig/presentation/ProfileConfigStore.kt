@@ -13,6 +13,7 @@ interface ProfileConfigStore : Store<ProfileConfigStore.Intent, ProfileConfigSto
         data object DiscardChanges : Intent
         data class UpdateDraft(val config: HysteriaConfig) : Intent
         data class UpdateDraftName(val name: String) : Intent
+        data class SetNumericFieldValidity(val field: String, val valid: Boolean) : Intent
         data object Save : Intent
         data object RequestDelete : Intent
         data object CancelDelete : Intent
@@ -36,12 +37,15 @@ interface ProfileConfigStore : Store<ProfileConfigStore.Intent, ProfileConfigSto
         val pendingDiscardConfirmation: Boolean = false,
         val offerReconnect: Boolean = false,
         val saveError: String? = null,
+        val invalidNumericFields: Set<String> = emptySet(),
     ) {
         val isDirty: Boolean
             get() = draft != null && original != null &&
-                    (draft != original.config || (draftName != null && draftName != original.name))
+                    (draft != original.config ||
+                        (draftName != null && draftName != original.name) ||
+                        invalidNumericFields.isNotEmpty())
 
         val canSave: Boolean
-            get() = isDirty && !draftName.isNullOrBlank()
+            get() = isDirty && !draftName.isNullOrBlank() && invalidNumericFields.isEmpty()
     }
 }

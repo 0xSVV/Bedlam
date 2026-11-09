@@ -15,7 +15,7 @@ class TunConfigTest {
     @Test
     fun `defaults construct without error`() {
         val c = TunConfig.Default
-        assertEquals(1280, c.mtu)
+        assertEquals(1500, c.mtu)
         assertEquals(Ipv6Mode.Enabled, c.ipv6Mode)
         assertEquals("enabled", c.ipv6Mode.wire)
     }

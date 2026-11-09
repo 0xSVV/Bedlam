@@ -29,7 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,7 +53,7 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun SectionCard(title: String, caution: String? = null, content: @Composable ColumnScope.() -> Unit) {
     val spacing = MaterialTheme.spacing
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -69,6 +69,14 @@ internal fun SectionCard(title: String, content: @Composable ColumnScope.() -> U
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small),
             )
+            if (caution != null) {
+                Text(
+                    text = caution,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small),
+                )
+            }
             Column(content = content)
         }
     }
@@ -152,6 +160,7 @@ internal fun IntFieldRow(
     caution: String? = null,
     showDivider: Boolean = true,
     zeroLabel: String? = null,
+    onValidityChanged: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     NumericFieldRow(
         label = label,
@@ -162,6 +171,7 @@ internal fun IntFieldRow(
         showDivider = showDivider,
         parse = { it.toIntOrNull() },
         onChange = onChange,
+        onValidityChanged = onValidityChanged,
     )
 }
 
@@ -174,6 +184,7 @@ internal fun LongFieldRow(
     caution: String? = null,
     showDivider: Boolean = true,
     zeroLabel: String? = null,
+    onValidityChanged: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     NumericFieldRow(
         label = label,
@@ -184,6 +195,7 @@ internal fun LongFieldRow(
         showDivider = showDivider,
         parse = { it.toLongOrNull() },
         onChange = onChange,
+        onValidityChanged = onValidityChanged,
     )
 }
 
@@ -197,6 +209,7 @@ private fun <T> NumericFieldRow(
     showDivider: Boolean,
     parse: (String) -> T?,
     onChange: (T) -> Unit,
+    onValidityChanged: (String, Boolean) -> Unit,
 ) {
     FieldRowFrame(
         label = label,
@@ -209,7 +222,9 @@ private fun <T> NumericFieldRow(
             if (isEditing) {
                 var local by rememberSaveable { mutableStateOf(text) }
                 var focused by remember { mutableStateOf(false) }
-                LaunchedEffect(text, focused) {
+                val isValid = parse(local.ifEmpty { "0" }) != null
+                SideEffect(label, isValid) { onValidityChanged(label, isValid) }
+                SideEffect(text, focused) {
                     local = numericFieldText(local, text, focused, parse)
                 }
                 ConfigTextField(
@@ -217,8 +232,12 @@ private fun <T> NumericFieldRow(
                     value = local,
                     onValueChange = { entry ->
                         local = entry
-                        parse(entry.ifEmpty { "0" })?.let(onChange)
+                        val parsed = parse(entry.ifEmpty { "0" })
+                        onValidityChanged(label, parsed != null)
+                        parsed?.let(onChange)
                     },
+                    isError = !isValid,
+                    errorMessage = if (isValid) null else stringResource(R.string.profile_config_number_error),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.onFocusChanged { focused = it.isFocused },
                 )
@@ -237,7 +256,10 @@ internal fun <T> numericFieldText(
     stored: String,
     focused: Boolean,
     parse: (String) -> T?,
-): String = if (focused || parse(local.ifEmpty { "0" }) == parse(stored)) local else stored
+): String {
+    val parsed = parse(local.ifEmpty { "0" })
+    return if (focused || parsed == null || parsed == parse(stored)) local else stored
+}
 
 @Composable
 internal fun ListFieldRow(
@@ -259,7 +281,7 @@ internal fun ListFieldRow(
             if (isEditing) {
                 var local by rememberSaveable { mutableStateOf(formatListField(values)) }
                 var focused by remember { mutableStateOf(false) }
-                LaunchedEffect(values, focused) {
+                SideEffect(values, focused) {
                     local = listFieldText(local, values, focused)
                 }
                 ConfigTextField(
@@ -347,6 +369,8 @@ private fun ConfigTextField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
+    isError: Boolean = false,
+    errorMessage: String? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     trailingIcon: (@Composable () -> Unit)? = null,
@@ -357,6 +381,8 @@ private fun ConfigTextField(
         label = { Text(text = label, fontFamily = FontFamily.Monospace) },
         trailingIcon = trailingIcon,
         singleLine = singleLine,
+        isError = isError,
+        supportingText = errorMessage?.let { message -> { Text(message) } },
         visualTransformation = visualTransformation,
         minLines = if (singleLine) 1 else 3,
         maxLines = if (singleLine) 1 else 6,
@@ -371,7 +397,7 @@ private fun ConfigTextField(
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontFamily = FontFamily.Monospace,
                 ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.66f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
         colors = OutlinedTextFieldDefaults.colors(

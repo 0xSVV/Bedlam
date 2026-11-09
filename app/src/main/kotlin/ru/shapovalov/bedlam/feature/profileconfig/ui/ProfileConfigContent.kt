@@ -56,11 +56,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -171,7 +173,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
         }
     }
 
-    LaunchedEffect(state.notFound) {
+    SideEffect(state.notFound) {
         if (state.notFound) component.onClose()
     }
 
@@ -228,6 +230,8 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                     editMode = state.editMode,
                     onDraftChanged = component::onDraftChanged,
                     onNameChanged = component::onDraftNameChanged,
+                    onNumericValidityChanged = component::onNumericFieldValidityChanged,
+                    hasNumericErrors = state.invalidNumericFields.isNotEmpty(),
                 )
             }
             ProfileActionsToolbar(
@@ -520,8 +524,11 @@ internal fun ConfigBody(
     editMode: Boolean,
     onDraftChanged: (HysteriaConfig) -> Unit,
     onNameChanged: (String) -> Unit,
+    onNumericValidityChanged: (String, Boolean) -> Unit = { _, _ -> },
+    hasNumericErrors: Boolean = false,
 ) {
     val spacing = MaterialTheme.spacing
+    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -532,19 +539,53 @@ internal fun ConfigBody(
         ),
         verticalArrangement = Arrangement.spacedBy(spacing.medium),
     ) {
-        item(key = "profile") { ProfileSection(name, editMode, onNameChanged) }
-        item(key = "server") { ServerSection(draft, editMode, onDraftChanged) }
+        item(key = "profile", contentType = "profile") { ProfileSection(name, editMode, onNameChanged) }
+        item(key = "server", contentType = "server") { ServerSection(draft, editMode, onDraftChanged) }
         if (isRealmAddress(draft.server.address) || draft.realm != null) {
-            item(key = "realm") { RealmSection(draft, editMode, onDraftChanged) }
+            item(key = "realm", contentType = "realm") {
+                RealmSection(draft, editMode, onDraftChanged, onNumericValidityChanged)
+            }
         }
-        item(key = "tls") { TlsSection(draft, editMode, onDraftChanged) }
-        item(key = "obfuscation") { ObfuscationSection(draft, editMode, onDraftChanged) }
-        item(key = "quic") { QuicSection(draft, editMode, onDraftChanged) }
-        item(key = "congestion") { CongestionSection(draft, editMode, onDraftChanged) }
-        item(key = "bandwidth") { BandwidthSection(draft, editMode, onDraftChanged) }
-        item(key = "transport") { TransportSection(draft, editMode, onDraftChanged) }
-        item(key = "behavior") { BehaviorSection(draft, editMode, onDraftChanged) }
-        item(key = "docs") { DocsFooter() }
+        item(key = "tls", contentType = "tls") { TlsSection(draft, editMode, onDraftChanged) }
+        val showAdvanced = advancedExpanded || hasNumericErrors
+        item(key = "advanced-toggle", contentType = "advanced-toggle") {
+            TextButton(
+                onClick = { advancedExpanded = !advancedExpanded },
+                enabled = !hasNumericErrors,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    stringResource(
+                        if (showAdvanced) {
+                            R.string.profile_config_hide_advanced
+                        } else {
+                            R.string.profile_config_show_advanced
+                        },
+                    ),
+                )
+            }
+        }
+        if (showAdvanced) {
+            item(key = "obfuscation", contentType = "obfuscation") {
+                ObfuscationSection(draft, editMode, onDraftChanged, onNumericValidityChanged)
+            }
+            item(key = "quic", contentType = "quic") {
+                QuicSection(draft, editMode, onDraftChanged, onNumericValidityChanged)
+            }
+            item(key = "congestion", contentType = "congestion") {
+                CongestionSection(draft, editMode, onDraftChanged)
+            }
+            item(key = "bandwidth", contentType = "bandwidth") {
+                BandwidthSection(draft, editMode, onDraftChanged, onNumericValidityChanged)
+            }
+            item(key = "transport", contentType = "transport") {
+                TransportSection(draft, editMode, onDraftChanged, onNumericValidityChanged)
+            }
+            item(key = "behavior", contentType = "behavior") {
+                BehaviorSection(draft, editMode, onDraftChanged)
+            }
+        }
+        item(key = "docs", contentType = "docs") { DocsFooter() }
     }
 }
 

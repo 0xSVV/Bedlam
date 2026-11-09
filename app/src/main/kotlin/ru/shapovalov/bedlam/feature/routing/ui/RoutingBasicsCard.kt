@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,7 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,134 +51,166 @@ import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.api.DnsTransport
 
+@Composable
+private fun RoutingCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
+        Column(
+            modifier = Modifier.padding(vertical = MaterialTheme.spacing.small),
+            content = content,
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun BasicsCard(
-    modifier: Modifier = Modifier,
-    bypassLan: Boolean,
-    ipv6Mode: Ipv6Mode,
-    dnsMode: DnsMode,
-    dnsTransport: DnsTransport,
-    customDns: List<String>,
-    directDnsMode: DnsMode,
-    directDnsTransport: DnsTransport,
-    directCustomDns: List<String>,
-    dnsCacheEnabled: Boolean,
-    mtu: Int,
-    onSetBypassLan: (Boolean) -> Unit,
-    onSetIpv6Mode: (Ipv6Mode) -> Unit,
-    onSetDnsMode: (DnsMode) -> Unit,
-    onSetDnsTransport: (DnsTransport) -> Unit,
-    onSetCustomDns: (List<String>) -> Unit,
-    onSetDirectDnsMode: (DnsMode) -> Unit,
-    onSetDirectDnsTransport: (DnsTransport) -> Unit,
-    onSetDirectCustomDns: (List<String>) -> Unit,
-    onSetDnsCacheEnabled: (Boolean) -> Unit,
-    onSetMtu: (Int) -> Unit,
-) {
-    val ipv6Options = remember { Ipv6Mode.entries.toList() }
-    val dnsOptions = remember { DnsMode.entries.toList() }
-    val transportOptions = remember(dnsMode) { DnsPresets.supportedTransports(dnsMode) }
-    val effectiveTransport = DnsPresets.effectiveTransport(dnsMode, dnsTransport)
-    val directTransportOptions = remember(directDnsMode) { DnsPresets.supportedTransports(directDnsMode) }
-    val effectiveDirectTransport = DnsPresets.effectiveTransport(directDnsMode, directDnsTransport)
+private fun CardTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMediumEmphasized,
+        modifier = Modifier.padding(
+            start = MaterialTheme.spacing.large,
+            end = MaterialTheme.spacing.large,
+            top = MaterialTheme.spacing.medium,
+        ),
+    )
+}
 
-    ElevatedCard(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
-        Column(modifier = Modifier.padding(vertical = MaterialTheme.spacing.small)) {
-            ToggleRow(
-                title = stringResource(R.string.routing_bypass_lan_title),
-                subtitle = stringResource(R.string.routing_bypass_lan_subtitle),
-                checked = bypassLan,
-                onCheckedChange = onSetBypassLan,
-            )
-            ToggleGroupRow(
-                title = stringResource(R.string.routing_ipv6_title),
-                selected = ipv6Mode,
-                options = ipv6Options,
-                onPick = onSetIpv6Mode,
-            ) { mode ->
-                Text(
-                    text = mode.label(),
-                    style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            MtuEditor(
-                mtu = mtu,
-                onChange = onSetMtu,
-            )
-            DropdownRow(
-                title = stringResource(R.string.routing_dns_title),
-                value = dnsMode.label(),
-                subtitle = if (dnsMode == DnsMode.System) stringResource(R.string.routing_dns_system_warning) else null,
-                options = dnsOptions,
-                renderLabel = { it.label() },
-                onPick = onSetDnsMode,
-            )
-            DropdownRow(
-                title = stringResource(R.string.routing_dns_transport_title),
-                value = effectiveTransport.label(),
-                subtitle = if (dnsMode == DnsMode.System) {
-                    stringResource(R.string.routing_dns_transport_system_hint)
-                } else {
-                    null
-                },
-                options = transportOptions,
-                renderLabel = { it.label() },
-                onPick = onSetDnsTransport,
-            )
-            if (dnsMode == DnsMode.Custom) {
-                CustomDnsEditor(
-                    initial = customDns,
-                    transport = effectiveTransport,
-                    onChange = onSetCustomDns,
-                )
-            }
-            HorizontalDivider(modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large))
+@Composable
+internal fun BypassLanCard(
+    bypassLan: Boolean,
+    onSetBypassLan: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    RoutingCard(modifier) {
+        ToggleRow(
+            title = stringResource(R.string.routing_bypass_lan_title),
+            subtitle = stringResource(R.string.routing_bypass_lan_subtitle),
+            checked = bypassLan,
+            onCheckedChange = onSetBypassLan,
+        )
+    }
+}
+
+@Composable
+internal fun Ipv6Card(
+    ipv6Mode: Ipv6Mode,
+    onSetIpv6Mode: (Ipv6Mode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val options = remember { Ipv6Mode.entries.toList() }
+    RoutingCard(modifier) {
+        ToggleGroupRow(
+            title = stringResource(R.string.routing_ipv6_title),
+            selected = ipv6Mode,
+            options = options,
+            onPick = onSetIpv6Mode,
+        ) { mode ->
             Text(
-                text = stringResource(R.string.routing_direct_dns_title),
-                modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large, vertical = MaterialTheme.spacing.small),
-                style = MaterialTheme.typography.titleMediumEmphasized,
+                text = mode.label(),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun MtuCard(
+    mtu: Int,
+    onSetMtu: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    RoutingCard(modifier) {
+        MtuEditor(mtu = mtu, onChange = onSetMtu)
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun DirectDnsCard(modifier: Modifier = Modifier) {
+    val spacing = MaterialTheme.spacing
+    RoutingCard(modifier) {
+        CardTitle(stringResource(R.string.routing_direct_dns_title))
+        Column(
+            modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(spacing.xSmall),
+        ) {
+            Text(
+                text = stringResource(R.string.routing_direct_dns_system_udp),
+                style = MaterialTheme.typography.labelLargeEmphasized,
+                color = MaterialTheme.colorScheme.primary,
             )
             Text(
                 text = stringResource(R.string.routing_direct_dns_unavailable),
-                modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            DropdownRow(
-                title = stringResource(R.string.routing_dns_title),
-                value = directDnsMode.label(),
-                options = dnsOptions,
-                renderLabel = { it.label() },
-                onPick = onSetDirectDnsMode,
-                enabled = false,
-            )
-            DropdownRow(
-                title = stringResource(R.string.routing_dns_transport_title),
-                value = effectiveDirectTransport.label(),
-                subtitle = if (directDnsMode == DnsMode.System) stringResource(R.string.routing_dns_transport_system_hint) else null,
-                options = directTransportOptions,
-                renderLabel = { it.label() },
-                onPick = onSetDirectDnsTransport,
-                enabled = false,
-            )
-            if (directDnsMode == DnsMode.Custom) {
-                CustomDnsEditor(
-                    initial = directCustomDns,
-                    transport = effectiveDirectTransport,
-                    onChange = onSetDirectCustomDns,
-                    enabled = false,
-                )
-            }
-            ToggleRow(
-                title = stringResource(R.string.routing_dns_cache_title),
-                subtitle = stringResource(R.string.routing_dns_cache_hint),
-                checked = dnsCacheEnabled,
-                onCheckedChange = onSetDnsCacheEnabled,
+        }
+    }
+}
+
+@Composable
+internal fun RemoteDnsCard(
+    dnsMode: DnsMode,
+    dnsTransport: DnsTransport,
+    customDns: List<String>,
+    onSetDnsMode: (DnsMode) -> Unit,
+    onSetDnsTransport: (DnsTransport) -> Unit,
+    onSetCustomDns: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val dnsOptions = remember { DnsMode.entries.toList() }
+    val transportOptions = remember(dnsMode) { DnsPresets.supportedTransports(dnsMode) }
+    val effectiveTransport = DnsPresets.effectiveTransport(dnsMode, dnsTransport)
+    RoutingCard(modifier) {
+        CardTitle(stringResource(R.string.routing_remote_dns_title))
+        DropdownRow(
+            title = stringResource(R.string.routing_dns_provider_title),
+            value = dnsMode.label(),
+            subtitle = if (dnsMode == DnsMode.System) stringResource(R.string.routing_dns_system_warning) else null,
+            options = dnsOptions,
+            renderLabel = { it.label() },
+            onPick = onSetDnsMode,
+        )
+        DropdownRow(
+            title = stringResource(R.string.routing_dns_transport_title),
+            value = effectiveTransport.label(),
+            subtitle = if (dnsMode == DnsMode.System) {
+                stringResource(R.string.routing_dns_transport_system_hint)
+            } else {
+                null
+            },
+            options = transportOptions,
+            renderLabel = { it.label() },
+            onPick = onSetDnsTransport,
+        )
+        if (dnsMode == DnsMode.Custom) {
+            CustomDnsEditor(
+                initial = customDns,
+                transport = effectiveTransport,
+                onChange = onSetCustomDns,
             )
         }
+    }
+}
+
+@Composable
+internal fun DnsCacheCard(
+    enabled: Boolean,
+    onSetEnabled: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    RoutingCard(modifier) {
+        ToggleRow(
+            title = stringResource(R.string.routing_dns_cache_title),
+            subtitle = stringResource(R.string.routing_dns_cache_hint),
+            checked = enabled,
+            onCheckedChange = onSetEnabled,
+        )
     }
 }
 
@@ -268,14 +301,13 @@ private fun <T> DropdownRow(
     renderLabel: @Composable (T) -> String,
     onPick: (T) -> Unit,
     subtitle: String? = null,
-    enabled: Boolean = true,
 ) {
     val spacing = MaterialTheme.spacing
     var expanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled) { expanded = true }
+            .clickable { expanded = true }
             .padding(horizontal = spacing.large, vertical = spacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -294,7 +326,7 @@ private fun <T> DropdownRow(
             Text(
                 text = value,
                 style = MaterialTheme.typography.labelLargeEmphasized,
-                color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.primary,
             )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->
@@ -323,7 +355,7 @@ private fun MtuEditor(
 
     // The store loads the saved config after first composition, and later
     // writes echo back through Room; sync only while the user is not typing.
-    LaunchedEffect(mtu, focused, outOfRange) {
+    SideEffect(mtu, focused, outOfRange) {
         if (!focused && !outOfRange &&
             mtu != (text.trim().toIntOrNull() ?: RoutingConfig.AUTO_MTU)
         ) {
@@ -335,7 +367,7 @@ private fun MtuEditor(
 
     Column(modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.small)) {
         OutlinedTextField(
-            value = if (showingAuto) RoutingConfig.MIN_TUN_MTU.toString() else text,
+            value = if (showingAuto) RoutingConfig.AUTO_TUN_MTU.toString() else text,
             onValueChange = { input ->
                 text = input
                 val parsed = input.trim().toIntOrNull()
@@ -352,7 +384,7 @@ private fun MtuEditor(
                 null
             },
             placeholder = {
-                Text(stringResource(R.string.routing_mtu_auto_placeholder, RoutingConfig.MIN_TUN_MTU))
+                Text(stringResource(R.string.routing_mtu_auto_placeholder, RoutingConfig.AUTO_TUN_MTU))
             },
             isError = outOfRange,
             keyboardOptions = KeyboardOptions(
@@ -374,7 +406,7 @@ private fun MtuEditor(
 
                 blank -> stringResource(
                     R.string.routing_mtu_auto_hint,
-                    RoutingConfig.MIN_TUN_MTU,
+                    RoutingConfig.AUTO_TUN_MTU,
                 )
 
                 else -> stringResource(R.string.routing_mtu_hint)
@@ -395,7 +427,6 @@ private fun CustomDnsEditor(
     initial: List<String>,
     transport: DnsTransport,
     onChange: (List<String>) -> Unit,
-    enabled: Boolean = true,
 ) {
     val spacing = MaterialTheme.spacing
     var text by remember { mutableStateOf(initial.joinToString(", ")) }
@@ -405,7 +436,7 @@ private fun CustomDnsEditor(
         entries.filter { DnsServer.parse(it, transport) is DnsServerParse.Invalid }
     }
 
-    LaunchedEffect(initial, focused) {
+    SideEffect(initial, focused) {
         if (!focused && initial != entries) {
             text = initial.joinToString(", ")
         }
@@ -420,7 +451,6 @@ private fun CustomDnsEditor(
             label = { Text(stringResource(R.string.routing_dns_custom_label)) },
             placeholder = { Text(transport.placeholder()) },
             isError = invalid.isNotEmpty(),
-            enabled = enabled,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
                 autoCorrectEnabled = false,

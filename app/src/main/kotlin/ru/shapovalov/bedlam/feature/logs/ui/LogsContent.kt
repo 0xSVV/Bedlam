@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
@@ -314,19 +315,23 @@ internal fun LogList(entries: List<LogEntry>, droppedCount: Long) {
     )
 
     LaunchedEffect(listState) {
-        listState.interactionSource.interactions
-            .filterIsInstance<DragInteraction.Start>()
-            .collect { followTail = false }
-    }
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.isScrollInProgress }
-            .filter { inProgress -> !inProgress }
-            .collect {
-                if (!followTail) {
-                    followTail = !listState.canScrollForward ||
-                            listState.layoutInfo.isAtTail(currentTailIndex, tailSlopPx)
-                }
+        coroutineScope {
+            launch {
+                listState.interactionSource.interactions
+                    .filterIsInstance<DragInteraction.Start>()
+                    .collect { followTail = false }
             }
+            launch {
+                snapshotFlow { listState.isScrollInProgress }
+                    .filter { inProgress -> !inProgress }
+                    .collect {
+                        if (!followTail) {
+                            followTail = !listState.canScrollForward ||
+                                    listState.layoutInfo.isAtTail(currentTailIndex, tailSlopPx)
+                        }
+                    }
+            }
+        }
     }
     LaunchedEffect(tailSeq, tailIndex, followTail) {
         if (!followTail || tailIndex < 0) return@LaunchedEffect
@@ -349,9 +354,9 @@ internal fun LogList(entries: List<LogEntry>, droppedCount: Long) {
         verticalArrangement = Arrangement.spacedBy(LogRowSpacing),
     ) {
         if (droppedCount > 0L) {
-            item(key = DroppedNoticeKey) { DroppedNotice(droppedCount) }
+            item(key = DroppedNoticeKey, contentType = "dropped-notice") { DroppedNotice(droppedCount) }
         }
-        items(entries, key = { it.seq }) { entry ->
+        items(entries, key = { it.seq }, contentType = { "log" }) { entry ->
             LogRow(entry)
         }
     }
@@ -392,7 +397,7 @@ private fun LogRow(entry: LogEntry) {
                 Text(
                     text = timestamp,
                     style = monoSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(spacing.small))
                 LevelChip(level = entry.level)

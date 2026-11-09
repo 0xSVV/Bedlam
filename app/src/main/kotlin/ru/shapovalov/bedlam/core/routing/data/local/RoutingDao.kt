@@ -56,6 +56,13 @@ interface RoutingDao {
     suspend fun insertResolved(entries: List<ResolvedCidrEntity>)
 
     @Transaction
+    suspend fun restoreDeletedSource(source: RouteSourceEntity, cidrs: List<String>) {
+        if (getSource(source.id) != null) return
+        upsertSource(source)
+        replaceResolved(source.id, cidrs)
+    }
+
+    @Transaction
     suspend fun replaceResolved(sourceId: String, cidrs: List<String>) {
         deleteResolvedFor(sourceId)
         if (cidrs.isNotEmpty()) {

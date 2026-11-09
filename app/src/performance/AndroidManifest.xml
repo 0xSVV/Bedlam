@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="ru.shapovalov.bedlam.benchmark.BenchmarkRenderingActivity" android:exported="true" android:theme="@style/Theme.Bedlam" />
+        <profileable android:shell="true" />
+        <activity
+            android:name="ru.shapovalov.bedlam.benchmark.BenchmarkSetupActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Bedlam" />
+    </application>
+</manifest>

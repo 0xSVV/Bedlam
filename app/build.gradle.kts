@@ -2,6 +2,7 @@ import com.android.build.api.variant.FilterConfiguration
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.androidx.baselineprofile)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
@@ -12,7 +13,11 @@ val buildingBundle = gradle.startParameter.taskNames.any { it.contains("bundle",
 
 android {
     namespace = "ru.shapovalov.bedlam"
-    compileSdk = libs.versions.targetSdk.get().toInt()
+    compileSdk {
+        version = release(libs.versions.targetSdk.get().toInt()) {
+            minorApiLevel = libs.versions.compileSdkMinor.get().toInt()
+        }
+    }
 
     defaultConfig {
         applicationId = "ru.shapovalov.bedlam"
@@ -45,6 +50,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+    buildTypes {
+        create("benchmarkRelease") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".benchmark"
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        create("nonMinifiedRelease") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".benchmark"
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     splits {
@@ -94,6 +111,14 @@ abstract class BundleReadme : DefaultTask() {
 }
 
 androidComponents {
+    finalizeDsl { extension ->
+        listOf("benchmarkRelease", "nonMinifiedRelease").forEach { buildType ->
+            extension.sourceSets.getByName(buildType) {
+                kotlin.directories.add("src/performance/kotlin")
+                manifest.srcFile("src/performance/AndroidManifest.xml")
+            }
+        }
+    }
     onVariants { variant ->
         val bundleReadme = tasks.register<BundleReadme>(
             "bundle${variant.name.replaceFirstChar { it.uppercase() }}Readme",
@@ -131,6 +156,8 @@ afterEvaluate {
 }
 
 dependencies {
+    baselineProfile(project(":benchmark"))
+    implementation(libs.androidx.profileinstaller)
     implementation(project(":hysteria"))
     implementation(fileTree("${rootProject.projectDir}/hysteria/libs") { include("*.aar") })
     implementation(libs.androidx.core.ktx)
@@ -188,4 +215,14 @@ tasks.withType<Test>().configureEach {
     inputs.dir(rootProject.layout.projectDirectory.dir("release-notes"))
         .withPropertyName("releaseNotes")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
+baselineProfile {
+    mergeIntoMain = true
+    automaticGenerationDuringBuild = false
+    filter {
+        include("ru.shapovalov.bedlam.**")
+        include("ru.shapovalov.hysteria.**")
+        exclude("ru.shapovalov.bedlam.benchmark.**")
+    }
 }
