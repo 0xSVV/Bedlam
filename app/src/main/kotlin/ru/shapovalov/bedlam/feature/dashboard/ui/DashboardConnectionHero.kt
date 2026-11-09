@@ -4,7 +4,6 @@ import android.graphics.BlurMaskFilter
 import android.os.SystemClock
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
@@ -328,22 +327,18 @@ private fun ConnectionButtonIcon(
     tint: () -> Color,
     motionScheme: MotionScheme,
 ) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut(),
-    ) {
-        AnimatedContent(
-            targetState = iconRes,
-            transitionSpec = {
-                val enter = fadeIn(motionScheme.defaultEffectsSpec()) +
-                        scaleIn(motionScheme.defaultSpatialSpec(), initialScale = 0.6f)
-                val exit = fadeOut(motionScheme.fastEffectsSpec()) +
-                        scaleOut(motionScheme.defaultSpatialSpec(), targetScale = 0.6f)
-                enter.togetherWith(exit)
-            },
-            label = "connection-icon",
-        ) { icon ->
+    AnimatedContent(
+        targetState = iconRes.takeIf { visible },
+        transitionSpec = {
+            val enter = fadeIn(motionScheme.defaultEffectsSpec()) +
+                    scaleIn(motionScheme.defaultSpatialSpec(), initialScale = 0.6f)
+            val exit = fadeOut(motionScheme.fastEffectsSpec()) +
+                    scaleOut(motionScheme.defaultSpatialSpec(), targetScale = 0.6f)
+            enter.togetherWith(exit)
+        },
+        label = "connection-icon",
+    ) { icon ->
+        if (icon != null) {
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
