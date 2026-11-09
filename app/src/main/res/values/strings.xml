@@ -14,7 +14,7 @@
     <string name="notification_state_disconnected">Disconnected</string>
     <string name="notification_reconnect_timeout">Still trying to reconnect — will restore protection when the network returns</string>
     <string name="notification_stopped_title">Bedlam VPN stopped</string>
-    <string name="notification_revoked">Android turned off Bedlam\'s VPN. Another VPN app started, or the VPN was turned off in system settings.</string>
+    <string name="notification_revoked">Android turned off Bedlam\'s VPN. Another VPN app started, or the VPN was turned off in system settings</string>
     <string name="notification_state_error">Error: %1$s</string>
     <string name="notification_traffic_rate">↑ %1$s · ↓ %2$s</string>
     <string name="notification_detail_session">Session: ↑ %1$s · ↓ %2$s</string>
@@ -25,7 +25,7 @@
     <string name="crash_notification_text">Tap to share the crash report</string>
     <string name="crash_notification_share">Share crash report</string>
     <string name="native_load_error_title">Bedlam cannot start on this device</string>
-    <string name="native_load_error_body">The installed build has no native library this phone can load. Install the %1$s build from GitHub Releases.</string>
+    <string name="native_load_error_body">The installed build has no native library this phone can load. Install the %1$s build from GitHub Releases</string>
     <string name="native_load_error_abis">Device ABIs: %1$s</string>
     <string name="native_load_error_open_releases">Open releases</string>
     <string name="rate_per_second">%1$s/s</string>
@@ -64,7 +64,7 @@
 
     <string name="dashboard_error_no_profile">Select a profile first</string>
     <string name="dashboard_error_duplicate_profile">Already saved as \"%1$s\"</string>
-    <string name="local_network_permission_denied">Bedlam needs local network access to use your network DNS and reach local VPN servers.</string>
+    <string name="local_network_permission_denied">Bedlam needs local network access to use your network DNS and reach local VPN servers</string>
 
     <string name="import_title">Import profile</string>
     <string name="import_format_link">Link</string>
@@ -279,13 +279,13 @@
     <string name="routing_dns_transport_system_hint">System resolvers speak plain DNS — UDP or TCP only</string>
     <string name="routing_direct_dns_title">Direct DNS</string>
     <string name="routing_direct_dns_system_udp">System DNS over UDP</string>
-    <string name="routing_direct_dns_unavailable">Used to reach the server and for domains in direct routes. Other providers and transports are not available yet.</string>
+    <string name="routing_direct_dns_unavailable">Used to reach the server and for domains in direct routes. Other providers and transports are not available yet</string>
     <string name="routing_dns_cache_title">Cache DNS responses</string>
-    <string name="routing_dns_cache_hint">Reuse Bedlam DNS answers when enabled. Does not control Android, browser, or resolver caches.</string>
+    <string name="routing_dns_cache_hint">Reuse Bedlam DNS answers when enabled. Does not control Android, browser, or resolver caches</string>
 
     <string name="routing_sources_title">Direct routes</string>
-    <string name="routing_sources_hint">CIDRs, ASNs, or domains that skip the tunnel. ASNs and domains are re-resolved daily.</string>
-    <string name="routing_sources_empty">No direct routes yet. Add an IP/ASN/domain or pick a preset.</string>
+    <string name="routing_sources_hint">CIDRs, ASNs, or domains that skip the tunnel. ASNs and domains are re-resolved daily</string>
+    <string name="routing_sources_empty">No direct routes yet. Add an IP/ASN/domain or pick a preset</string>
     <string name="routing_sources_add_cd">Add source</string>
     <string name="routing_sources_delete_cd">Delete source</string>
     <string name="routing_sources_add_title">Add direct route</string>
@@ -316,7 +316,7 @@
     <string name="routing_source_details_error_label">Last error</string>
     <string name="routing_source_details_networks_header">Resolved networks</string>
     <string name="routing_source_details_networks_breakdown">%1$d IPv4 · %2$d IPv6</string>
-    <string name="routing_source_details_no_networks">No networks resolved yet.</string>
+    <string name="routing_source_details_no_networks">No networks resolved yet</string>
     <string name="routing_source_details_more_networks" tools:ignore="PluralsCandidate">+%1$d more networks</string>
     <string name="routing_source_details_more_networks_one">+1 more network</string>
 
@@ -334,13 +334,13 @@
     <string name="session_title">Session</string>
     <string name="session_action_refresh_cd">Refresh</string>
     <string name="session_action_retry">Retry</string>
-    <string name="session_speed_test_error">The speed test could not load. Check that the tunnel is connected, then try again.</string>
+    <string name="session_speed_test_error">The speed test could not load. Check that the tunnel is connected, then try again</string>
     <string name="session_error_title">Could not load session</string>
-    <string name="session_error_unknown">Session lookup failed. Check the tunnel and try again.</string>
+    <string name="session_error_unknown">Session lookup failed. Check the tunnel and try again</string>
     <string name="session_disconnected_title">No tunnel</string>
-    <string name="session_disconnected_body">Connect first. These addresses are looked up through the tunnel, so there is nothing to report while it is down.</string>
-    <string name="session_stale_explainer">Last reading through the tunnel. The tunnel is reconnecting, so this may be out of date.</string>
-    <string name="session_ip_explainer">Reported by public lookup services through the active tunnel. IPv6 appears only when this route supports it.</string>
+    <string name="session_disconnected_body">Connect first. These addresses are looked up through the tunnel, so there is nothing to report while it is down</string>
+    <string name="session_stale_explainer">Last reading through the tunnel. The tunnel is reconnecting, so this may be out of date</string>
+    <string name="session_ip_explainer">Reported by public lookup services through the active tunnel. IPv6 appears only when this route supports it</string>
     <string name="session_value_unavailable">Unavailable</string>
     <string name="session_value_unknown">Unknown</string>
 
@@ -355,7 +355,7 @@
     <string name="session_field_longitude">Longitude</string>
 
     <string name="session_speed_test_title">Speed Test</string>
-    <string name="session_speed_test_subtitle">Test your Internet connection.</string>
+    <string name="session_speed_test_subtitle">Test your Internet connection</string>
 
     <string name="logs_action_menu_open_cd">Open log actions</string>
     <string name="logs_action_menu_close_cd">Close log actions</string>
@@ -364,12 +364,12 @@
     <string name="logs_dropped_notice" tools:ignore="PluralsCandidate">%1$d earlier lines dropped</string>
     <string name="logs_dropped_notice_one">1 earlier line dropped</string>
     <string name="logs_action_share_cd">Share log</string>
-    <string name="logs_share_message">Hiding addresses swaps public IP addresses, your server hosts and custom DNS servers for numbered placeholders. Ports, local addresses and site names stay.</string>
+    <string name="logs_share_message">Hiding addresses swaps public IP addresses, your server hosts and custom DNS servers for numbered placeholders. Ports, local addresses and site names stay</string>
     <string name="logs_share_hide_addresses">Hide addresses</string>
     <string name="logs_share_as_is">Share as is</string>
     <string name="logs_action_clear_cd">Delete logs</string>
     <string name="logs_empty_idle">Waiting for log output…</string>
-    <string name="logs_empty_paused">Paused. New entries are suppressed.</string>
+    <string name="logs_empty_paused">Paused. New entries are suppressed</string>
     <string name="logs_level_debug">DEBUG</string>
     <string name="logs_level_info">INFO</string>
     <string name="logs_level_warn">WARN</string>
@@ -387,7 +387,7 @@
     <string name="profile_config_link_unavailable">A realm profile can\'t be shared as a link</string>
     <string name="profile_config_link_warning_title">Before you share the link</string>
     <string name="profile_config_link_warning_intro">The link doesn\'t carry:</string>
-    <string name="profile_config_link_warning_insecure_pin">Hiddify and NekoBox ignore the certificate pin, so in those apps this profile won\'t check the server certificate.</string>
+    <string name="profile_config_link_warning_insecure_pin">Hiddify and NekoBox ignore the certificate pin, so in those apps this profile won\'t check the server certificate</string>
     <string name="profile_config_link_gap_ca">Custom CA certificate</string>
     <string name="profile_config_link_gap_client_certificate">Client certificate and key</string>
     <string name="profile_config_link_gap_quic">QUIC settings</string>
@@ -403,7 +403,7 @@
     <string name="profile_config_field_empty">Not specified</string>
     <string name="profile_config_hint_prefix">Note:</string>
     <string name="profile_config_delete_title">Delete profile?</string>
-    <string name="profile_config_delete_message">This will remove the profile and its configuration. This cannot be undone.</string>
+    <string name="profile_config_delete_message">This will remove the profile and its configuration. This cannot be undone</string>
     <string name="profile_config_delete_confirm">Delete</string>
     <string name="profile_config_docs_link">Hysteria full client config</string>
     <string name="profile_config_docs_url" translatable="false">https://v2.hysteria.network/docs/advanced/Full-Client-Config/</string>
@@ -421,7 +421,7 @@
 
     <string name="profile_config_caution_auth">Authentication credential — share carefully</string>
     <string name="profile_config_caution_tls_insecure">Disables certificate verification. Vulnerable to MitM</string>
-    <string name="profile_config_caution_tls_pin">Pinned hash overrides normal certificate validation.</string>
+    <string name="profile_config_caution_tls_pin">Pinned hash overrides normal certificate validation</string>
     <string name="profile_config_caution_tls_ca">Custom CA replaces the system trust store for this profile</string>
     <string name="profile_config_caution_tls_client">mTLS material must match what the server expects</string>
     <string name="profile_config_caution_tls_ech">Base64 config list or ECH CONFIGS PEM block. A stale value makes connections fail until updated</string>
@@ -441,26 +441,26 @@
     <string name="update_title">Update available</string>
     <string name="update_version_change" translatable="false">%1$s → %2$s</string>
     <string name="update_whats_new">What\'s new</string>
-    <string name="update_notes_empty">No release notes for this version.</string>
+    <string name="update_notes_empty">No release notes for this version</string>
     <string name="update_action_install">Download and install</string>
     <string name="update_action_skip">Not now</string>
-    <string name="update_last_reminder">If you tap Not now, Bedlam will not offer this version again. You can still install it from Check for updates in Settings.</string>
+    <string name="update_last_reminder">If you tap Not now, Bedlam will not offer this version again. You can still install it from Check for updates in Settings</string>
     <string name="update_action_retry">Try again</string>
     <string name="update_downloading">Downloading %1$s of %2$s…</string>
     <string name="update_installing">Installing…</string>
     <string name="update_failed">Update failed: %1$s</string>
-    <string name="update_error_signature">This download was not signed with the same key as your installed app. Get the update from the GitHub releases page instead.</string>
-    <string name="update_error_install_permission">Android blocks Bedlam from installing apps. Allow it in settings, then try again.</string>
+    <string name="update_error_signature">This download was not signed with the same key as your installed app. Get the update from the GitHub releases page instead</string>
+    <string name="update_error_install_permission">Android blocks Bedlam from installing apps. Allow it in settings, then try again</string>
     <string name="update_action_allow_installs">Open settings</string>
 
     <string name="profile_config_discard_title">Discard changes?</string>
-    <string name="profile_config_discard_message">Your unsaved edits to this profile will be lost.</string>
+    <string name="profile_config_discard_message">Your unsaved edits to this profile will be lost</string>
     <string name="profile_config_discard_confirm">Discard</string>
     <string name="profile_config_discard_keep">Keep editing</string>
 
     <string name="dashboard_error_import_failed">Import failed: %1$s</string>
 
-    <string name="profile_config_reconnect_hint">Saved. Reconnect to use the new settings.</string>
+    <string name="profile_config_reconnect_hint">Saved. Reconnect to use the new settings</string>
 
     <string name="logs_empty_filtered">The %1$s filter hides every line</string>
 
@@ -487,7 +487,7 @@
         <item quantity="other">%1$d d ago</item>
     </plurals>
     <string name="routing_source_state_disabled">Disabled</string>
-    <string name="profile_config_number_error">Enter a whole number within the supported range.</string>
+    <string name="profile_config_number_error">Enter a whole number within the supported range</string>
     <string name="profile_config_show_advanced">Show advanced settings</string>
     <string name="profile_config_hide_advanced">Hide advanced settings</string>
     <string name="routing_source_removed">Direct route deleted</string>
@@ -495,8 +495,8 @@
     <string name="action_undo">Undo</string>
     <string name="dashboard_empty_title">Add your first profile</string>
     <string name="dashboard_connected_for">Connected for %1$s</string>
-    <string name="app_filter_all_description">Route every app through the VPN.</string>
-    <string name="app_filter_allowlist_description">Only selected apps use the VPN. Other apps connect directly.</string>
-    <string name="app_filter_blocklist_description">Selected apps connect directly. All other apps use the VPN.</string>
-    <string name="app_selection_no_results">No apps match “%1$s”. Try another name or package.</string>
+    <string name="app_filter_all_description">Route every app through the VPN</string>
+    <string name="app_filter_allowlist_description">Only selected apps use the VPN. Other apps connect directly</string>
+    <string name="app_filter_blocklist_description">Selected apps connect directly. All other apps use the VPN</string>
+    <string name="app_selection_no_results">No apps match “%1$s”. Try another name or package</string>
 </resources>

@@ -16,7 +16,7 @@ object RoutePresets {
         RoutePreset(
             id = "google",
             name = "Google",
-            description = "Google services and Google Cloud.",
+            description = "Google services and Google Cloud",
             asns = listOf(
                 RoutePreset.AsnEntry(15169, "Google"),
                 RoutePreset.AsnEntry(396982, "Google Cloud"),
