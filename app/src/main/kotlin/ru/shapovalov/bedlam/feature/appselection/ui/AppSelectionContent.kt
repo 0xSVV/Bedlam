@@ -135,9 +135,7 @@ fun AppSelectionContent(component: AppSelectionComponent, modifier: Modifier = M
                 }
             }
             when {
-                state.isFilterLoaded && isAllMode -> item(key = "all-hint", contentType = "all-hint") {
-                    AllModeHint(Modifier.fillParentMaxWidth().heightIn(min = 160.dp))
-                }
+                state.isFilterLoaded && isAllMode -> Unit
                 state.isLoading -> item(key = "loading", contentType = "loading") {
                     LoadingBox(Modifier.fillParentMaxWidth().heightIn(min = 160.dp))
                 }
@@ -298,22 +296,6 @@ internal fun ModeChoices(
 internal fun LoadingBox(modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularWavyProgressIndicator()
-    }
-}
-
-@Composable
-internal fun AllModeHint(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.fillMaxSize()
-            .padding(MaterialTheme.spacing.large),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(R.string.app_selection_all_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
     }
 }
 

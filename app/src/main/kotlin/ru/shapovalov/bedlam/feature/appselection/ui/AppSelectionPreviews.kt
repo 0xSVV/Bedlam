@@ -101,9 +101,3 @@ private fun ModeChoicesAllowlistPreview() {
 private fun AppSelectionLoadingPreview() {
     AppSelectionPreview { LoadingBox() }
 }
-
-@AppSelectionBodyPreviews
-@Composable
-private fun AppSelectionAllModePreview() {
-    AppSelectionPreview { AllModeHint() }
-}

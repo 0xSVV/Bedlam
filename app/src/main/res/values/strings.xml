@@ -323,7 +323,6 @@
 
     <string name="app_selection_title">Apps to proxy</string>
     <string name="app_selection_search_hint">Search apps</string>
-    <string name="app_selection_all_hint">All apps will route through the tunnel.</string>
     <string name="app_selection_search_cd">Search</string>
     <string name="app_selection_clear_search_cd">Clear search</string>
 
