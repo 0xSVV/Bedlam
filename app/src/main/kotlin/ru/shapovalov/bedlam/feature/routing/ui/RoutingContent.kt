@@ -201,17 +201,6 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                 }
             }
 
-            item(key = "reconnect-hint", contentType = "reconnect-hint") {
-                Text(
-                    text = stringResource(R.string.routing_reconnect_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .animateItem()
-                        .padding(horizontal = spacing.small),
-                )
-            }
-
             item(key = "trailing-space", contentType = "trailing-space") { Spacer(Modifier.height(spacing.large)) }
         }
     }

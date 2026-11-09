@@ -236,7 +236,6 @@
     <string name="action_done">Done</string>
 
     <string name="routing_title">Routing</string>
-    <string name="routing_reconnect_hint">Changes apply immediately — the tunnel briefly reconnects</string>
 
     <string name="routing_bypass_lan_title">Bypass LAN</string>
     <string name="routing_bypass_lan_subtitle">RFC1918, link-local and multicast skip the tunnel</string>
