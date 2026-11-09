@@ -222,8 +222,10 @@ internal fun ConnectionHero(
             if (buttonMorph.isSplit) {
                 ConnectionFab(
                     shape = buttonMorph.cancelButton,
-                    containerColor = { lerp(connectionButtonColor, cancelButtonColor, buttonMorph.split) },
-                    alpha = { (buttonMorph.split * CancelButtonFadeSpeed).coerceAtMost(1f) },
+                    containerColor = {
+                        lerp(connectionButtonColor, cancelButtonColor, buttonMorph.split.coerceIn(0f, 1f))
+                    },
+                    alpha = { (buttonMorph.split * CancelButtonFadeSpeed).coerceIn(0f, 1f) },
                     onClick = onCancelSwitch,
                     modifier = Modifier
                         .offset { IntOffset(-(ConnectionFabSplitOffset.toPx() * buttonMorph.split).roundToInt(), 0) }
