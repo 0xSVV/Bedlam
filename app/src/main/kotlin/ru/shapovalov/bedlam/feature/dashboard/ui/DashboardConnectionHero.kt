@@ -166,16 +166,25 @@ internal fun ConnectionHero(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         AnimatedContent(
-            targetState = if (isConfirming) stringResource(R.string.dashboard_confirm_switch_title) else stateText,
-            transitionSpec = { heroTextTransition(motionScheme, forward = isConfirming) },
+            targetState = HeroHeadline(
+                text = if (isConfirming) stringResource(R.string.dashboard_confirm_switch_title) else stateText,
+                confirming = isConfirming,
+            ),
+            transitionSpec = {
+                heroTextTransition(
+                    motionScheme,
+                    slide = initialState.confirming != targetState.confirming,
+                    forward = targetState.confirming,
+                )
+            },
             contentAlignment = Alignment.Center,
             label = "hero-headline",
-        ) { name ->
+        ) { headline ->
             val style = MaterialTheme.typography.headlineLargeEmphasized.copy(
                 fontFeatureSettings = "tnum",
             )
             Text(
-                text = name,
+                text = headline.text,
                 style = style,
                 color = colorScheme.onSurface,
                 textAlign = TextAlign.Center,
@@ -350,14 +359,21 @@ private fun ConnectionButtonIcon(
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private fun heroTextTransition(motionScheme: MotionScheme, forward: Boolean): ContentTransform {
+private fun heroTextTransition(
+    motionScheme: MotionScheme,
+    slide: Boolean,
+    forward: Boolean,
+): ContentTransform {
+    val fadeIn = fadeIn(motionScheme.defaultEffectsSpec())
+    val fadeOut = fadeOut(motionScheme.fastEffectsSpec())
+    if (!slide) return ContentTransform(fadeIn, fadeOut, sizeTransform = SizeTransform(clip = false))
     val direction = if (forward) 1 else -1
-    val enter = fadeIn(motionScheme.defaultEffectsSpec()) +
-            slideInVertically(motionScheme.defaultSpatialSpec()) { direction * it / 2 }
-    val exit = fadeOut(motionScheme.fastEffectsSpec()) +
-            slideOutVertically(motionScheme.defaultSpatialSpec()) { -direction * it / 2 }
+    val enter = fadeIn + slideInVertically(motionScheme.defaultSpatialSpec()) { direction * it / 2 }
+    val exit = fadeOut + slideOutVertically(motionScheme.defaultSpatialSpec()) { -direction * it / 2 }
     return ContentTransform(enter, exit, sizeTransform = SizeTransform(clip = false))
 }
+
+private data class HeroHeadline(val text: String, val confirming: Boolean)
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
