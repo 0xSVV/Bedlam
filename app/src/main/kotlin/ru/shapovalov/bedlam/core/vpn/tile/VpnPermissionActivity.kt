@@ -22,6 +22,7 @@ class VpnPermissionActivity : ComponentActivity() {
         if (result.resultCode == RESULT_OK) {
             startActiveProfileAndFinish()
         } else {
+            android.widget.Toast.makeText(this, ru.shapovalov.bedlam.R.string.vpn_permission_denied, android.widget.Toast.LENGTH_LONG).show()
             finish()
         }
     }

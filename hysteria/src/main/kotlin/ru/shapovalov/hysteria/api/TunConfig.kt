@@ -1,7 +1,6 @@
 package ru.shapovalov.hysteria.api
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 data class TunConfig(
@@ -19,7 +18,7 @@ data class TunConfig(
 ) {
     val ipv6Enabled: Boolean get() = ipv6Mode == Ipv6Mode.Enabled
     init {
-        require(mtu in MIN_MTU..MAX_MTU) { "MTU out of range: $mtu" }
+        require((mtu in MIN_MTU..MAX_MTU)) { "MTU out of range: $mtu" }
     }
 
     companion object {
@@ -42,16 +41,45 @@ data class TunConfig(
     }
 }
 
-@Serializable
+/**
+ * DNS sent outside the tunnel through sockets protected and bound to the
+ * selected underlying network. Bootstrap IPs are dial targets only; the server
+ * hostname remains the certificate identity and HTTPS authority.
+ */
 data class DirectDnsConfig(
     val servers: List<String> = emptyList(),
     val domains: List<DirectDnsDomain> = emptyList(),
-)
+    val transport: DnsTransport = DnsTransport.Udp,
+    val bootstrap: Map<String, List<String>> = emptyMap(),
+) {
+    init {
+        require(transport in listOf(DnsTransport.Udp, DnsTransport.Tcp, DnsTransport.Tls, DnsTransport.Https)) {
+            "Unsupported Direct DNS transport: $transport"
+        }
+        require(
+            bootstrap.values.all { addresses ->
+                addresses.isNotEmpty() && addresses.all { numericIpFamily(it) != null }
+            },
+        ) {
+            "Direct DNS bootstrap requires numeric IP addresses"
+        }
+    }
+}
 
 @Serializable
 data class DirectDnsDomain(val id: String, val name: String)
 
-internal fun DirectDnsConfig.toWireJson(): String = Json.encodeToString(this)
+@Serializable
+private data class WireDirectDnsConfig(
+    val servers: List<String>,
+    val domains: List<DirectDnsDomain>,
+    val transport: String,
+    val bootstrap: Map<String, List<String>>,
+)
+
+internal fun DirectDnsConfig.toWireJson(): String = Json.encodeToString(
+    WireDirectDnsConfig(servers, domains, transport.wire, bootstrap),
+)
 
 enum class Ipv6Mode(val wire: String) {
     Enabled("enabled"),
@@ -63,13 +91,13 @@ internal enum class IpFamily(val maxPrefix: Int) { V4(32), V6(128) }
 
 internal fun requireCidr(value: String, field: String, expect: IpFamily) {
     val slash = value.indexOf('/')
-    require(slash > 0 && slash == value.lastIndexOf('/')) {
+    require((slash > 0) && (slash == value.lastIndexOf('/'))) {
         "$field is not CIDR: $value"
     }
     val host = value.substring(0, slash)
     val bits = value.substring(slash + 1).toIntOrNull()
         ?: throw IllegalArgumentException("$field has non-numeric prefix length: $value")
-    require(bits in 0..expect.maxPrefix) { "$field prefix length out of range: $value" }
+    require(bits in (0..expect.maxPrefix)) { "$field prefix length out of range: $value" }
     val family = numericIpFamily(host)
         ?: throw IllegalArgumentException("$field is not a numeric address: $value")
     require(family == expect) { "$field address family mismatch: $value" }
@@ -83,8 +111,7 @@ internal fun numericIpFamily(host: String): IpFamily? = when {
 
 internal fun isNumericIpv4(host: String): Boolean {
     val parts = host.split('.')
-    if (parts.size != 4) return false
-    return parts.all { p ->
+    return parts.size == 4 && parts.all { p ->
         p.isNotEmpty() && p.length <= 3 && p.all(Char::isDigit) && p.toInt() in 0..255
     }
 }

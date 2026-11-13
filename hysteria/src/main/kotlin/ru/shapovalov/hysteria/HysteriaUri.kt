@@ -209,7 +209,7 @@ private fun percentDecode(text: String, plusAsSpace: Boolean): String {
         }
         i++
     }
-    return bytes.toString(Charsets.UTF_8)
+    return bytes.toString(Charsets.UTF_8.name())
 }
 
 private fun isIpLiteral(host: String): Boolean {

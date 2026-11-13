@@ -10,7 +10,6 @@ import ru.shapovalov.bedlam.core.routing.domain.model.RoutePlan
 import ru.shapovalov.bedlam.core.routing.domain.model.RoutingConfig
 import ru.shapovalov.hysteria.api.DnsTransport
 import ru.shapovalov.hysteria.api.DnsUpstream
-import ru.shapovalov.hysteria.api.DirectDnsDomain
 
 class RoutePlanner(
     private val supportsExcludeRoute: Boolean,
@@ -22,7 +21,12 @@ class RoutePlanner(
     private val systemDnsServers: () -> List<String> = { emptyList() },
 ) {
 
-    fun plan(config: RoutingConfig, appFilter: AppFilter): RoutePlan {
+    fun plan(
+        config: RoutingConfig,
+        appFilter: AppFilter,
+        directSystemDnsServers: List<String> = emptyList(),
+    ): RoutePlan {
+        val directDns = DirectDnsPlanner.plan(config, directSystemDnsServers)
         val ipv6Enabled = config.ipv6Mode == Ipv6Mode.Enabled
         val baseV4 = listOf(IPV4_DEFAULT)
         // Disabled still claims ::/0 so v6 sinks into the TUN (where the native
@@ -107,10 +111,7 @@ class RoutePlanner(
                 ipv6Enabled = ipv6Enabled,
                 ipv6Mode = config.ipv6Mode,
                 dnsCacheEnabled = config.dnsCacheEnabled,
-                directDnsDomains = config.sources.mapNotNull { resolved ->
-                    val source = resolved.source as? ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource.Domain
-                    if (source != null && source.enabled) DirectDnsDomain(source.id, source.hostname) else null
-                },
+                directDns = directDns,
                 mtu = RoutingConfig.resolveMtu(config.mtu),
             )
         } else {
@@ -131,10 +132,7 @@ class RoutePlanner(
                 ipv6Enabled = ipv6Enabled,
                 ipv6Mode = config.ipv6Mode,
                 dnsCacheEnabled = config.dnsCacheEnabled,
-                directDnsDomains = config.sources.mapNotNull { resolved ->
-                    val source = resolved.source as? ru.shapovalov.bedlam.core.routing.domain.model.DirectRouteSource.Domain
-                    if (source != null && source.enabled) DirectDnsDomain(source.id, source.hostname) else null
-                },
+                directDns = directDns,
                 mtu = RoutingConfig.resolveMtu(config.mtu),
             )
         }
@@ -154,6 +152,14 @@ class RoutePlanner(
 
         DnsMode.Cloudflare -> cloudflareUpstream(transport)
         DnsMode.Google -> googleUpstream(transport)
+        DnsMode.OpenDns -> ResolvedUpstream(
+            dnsUpstream = DnsUpstream(transport, DnsPresets.openDns(transport)),
+            routeAddresses = DnsPresets.openDnsAddresses() + DnsPresets.openDnsHttpsAddresses(),
+        )
+        DnsMode.AdGuard -> ResolvedUpstream(
+            dnsUpstream = DnsUpstream(transport, DnsPresets.adGuard(transport)),
+            routeAddresses = DnsPresets.adGuardAddresses(),
+        )
         DnsMode.Custom -> serverListUpstream(
             transport,
             config.customDns

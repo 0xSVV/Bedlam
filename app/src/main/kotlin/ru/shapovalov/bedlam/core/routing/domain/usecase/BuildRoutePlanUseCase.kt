@@ -12,6 +12,6 @@ class BuildRoutePlanUseCase(
     private val appFilterRepository: AppFilterRepository,
     private val planner: RoutePlanner,
 ) {
-    suspend operator fun invoke(): RoutePlan =
-        planner.plan(routingRepository.get(), appFilterRepository.get())
+    suspend operator fun invoke(directSystemDnsServers: List<String> = emptyList()): RoutePlan =
+        planner.plan(routingRepository.get(), appFilterRepository.get(), directSystemDnsServers)
 }

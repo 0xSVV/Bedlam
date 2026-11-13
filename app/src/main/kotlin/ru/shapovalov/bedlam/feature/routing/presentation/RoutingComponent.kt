@@ -29,11 +29,12 @@ class RoutingComponent(
     fun onSetMtu(mtu: Int) = store.accept(RoutingStore.Intent.SetMtu(mtu))
     fun onSetCustomDns(servers: List<String>) =
         store.accept(RoutingStore.Intent.SetCustomDns(servers))
-    fun onSetDirectDnsMode(mode: DnsMode) = store.accept(RoutingStore.Intent.SetDirectDnsMode(mode))
-    fun onSetDirectDnsTransport(transport: DnsTransport) =
-        store.accept(RoutingStore.Intent.SetDirectDnsTransport(transport))
-    fun onSetDirectCustomDns(servers: List<String>) =
-        store.accept(RoutingStore.Intent.SetDirectCustomDns(servers))
+    fun onSetDirectDns(
+        mode: DnsMode,
+        transport: DnsTransport,
+        servers: List<String>,
+        bootstrap: Map<String, List<String>>,
+    ) = store.accept(RoutingStore.Intent.SetDirectDns(mode, transport, servers, bootstrap))
     fun onSetDnsCacheEnabled(enabled: Boolean) =
         store.accept(RoutingStore.Intent.SetDnsCacheEnabled(enabled))
 

@@ -21,11 +21,12 @@ type Session struct {
 	clientMu sync.Mutex
 	client   *reconnectClient
 
-	tunMu     sync.Mutex
-	tunIface  singtun.Tun
-	tunStack  singtun.Stack
-	tunCancel context.CancelFunc
-	tunDNS    *dnsUpstream
+	tunMu        sync.Mutex
+	tunIface     singtun.Tun
+	tunStack     singtun.Stack
+	tunCancel    context.CancelFunc
+	tunDNS       *dnsUpstream
+	tunDirectDNS *dnsUpstream
 
 	protector   FdProtector
 	directDNSMu sync.RWMutex

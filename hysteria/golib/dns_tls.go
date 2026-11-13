@@ -21,13 +21,19 @@ type tlsResolver struct {
 }
 
 func newTLSResolver(c client.Client, server string, base *tls.Config) *tlsResolver {
+	return newTLSResolverWithDialer(server, base, func(ctx context.Context, addr string) (net.Conn, error) {
+		return dialTunnelTCP(ctx, c, addr)
+	})
+}
+
+func newTLSResolverWithDialer(server string, base *tls.Config, dial dnsStreamDialer) *tlsResolver {
 	host, _, _ := net.SplitHostPort(server)
 	cfg := dnsTLSConfig(base, host, []string{"dot"})
 	return &tlsResolver{
 		server: server,
 		tlsCfg: cfg,
 		pool: newStreamPool("DoT "+server, func(ctx context.Context) (net.Conn, error) {
-			raw, err := dialTunnelTCP(ctx, c, server)
+			raw, err := dial(ctx, server)
 			if err != nil {
 				return nil, fmt.Errorf("dial DoT server %s: %w", server, err)
 			}

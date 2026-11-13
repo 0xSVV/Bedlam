@@ -69,7 +69,7 @@ private fun SettingsCardsPreview(config: RoutingConfig) {
             BypassLanCard(bypassLan = config.bypassLan, onSetBypassLan = {})
             Ipv6Card(ipv6Mode = config.ipv6Mode, onSetIpv6Mode = {})
             MtuCard(mtu = config.mtu, onSetMtu = {})
-            DirectDnsCard()
+            DirectDnsCard(config = config, onSave = { _, _, _, _ -> })
             RemoteDnsCard(
                 dnsMode = config.dnsMode,
                 dnsTransport = config.dnsTransport,

@@ -4,5 +4,7 @@ enum class DnsMode {
     System,
     Cloudflare,
     Google,
+    OpenDns,
+    AdGuard,
     Custom,
 }

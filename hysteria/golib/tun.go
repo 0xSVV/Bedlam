@@ -133,6 +133,7 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 	s.tunStack = stack
 	s.tunCancel = cancel
 	s.tunDNS = upstream
+	s.tunDirectDNS = directUpstream
 
 	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor, ipv6=%v, dns=%s)",
 		fd, mtu, ipv6Mode, upstream.id())
@@ -196,10 +197,12 @@ func (s *Session) StopTUN() error {
 	stack := s.tunStack
 	cancel := s.tunCancel
 	dns := s.tunDNS
+	directDNS := s.tunDirectDNS
 	s.tunIface = nil
 	s.tunStack = nil
 	s.tunCancel = nil
 	s.tunDNS = nil
+	s.tunDirectDNS = nil
 	s.tunMu.Unlock()
 
 	if iface == nil {
@@ -226,6 +229,9 @@ func (s *Session) StopTUN() error {
 	}
 	if dns != nil {
 		dns.close()
+	}
+	if directDNS != nil {
+		directDNS.close()
 	}
 
 	log(LogLevelInfo, srcTun, "TUN stopped")

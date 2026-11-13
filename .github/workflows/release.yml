@@ -75,7 +75,7 @@ jobs:
         run: ./gradlew testDebugUnitTest -x :hysteria:buildGolib --stacktrace
 
       - name: Lint
-        run: ./gradlew :app:lintRelease -x :hysteria:buildGolib --stacktrace
+        run: ./gradlew :app:lintRelease :hysteria:lintRelease -x :hysteria:buildGolib --stacktrace
 
       - name: Build signed APKs
         env:

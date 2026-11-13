@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.Json
 import me.tatarka.inject.annotations.Inject
 import ru.shapovalov.bedlam.core.routing.data.local.ResolvedCidrEntity
 import ru.shapovalov.bedlam.core.routing.data.local.RouteSourceEntity
@@ -38,7 +39,7 @@ class RoutingRepositoryImpl(
     override suspend fun get(): RoutingConfig {
         val cfg = dao.getConfig()
         val sources = dao.getSources()
-        val resolved = sources.flatMap { dao.getResolvedFor(it.id) }
+        val resolved = sources.flatMap { (id) -> dao.getResolvedFor(id) }
         return buildConfig(cfg, sources, resolved)
     }
 
@@ -70,6 +71,23 @@ class RoutingRepositoryImpl(
     override suspend fun setCustomDns(servers: List<String>) = mutex.withLock {
         val current = dao.getConfig() ?: RoutingConfigEntity()
         dao.upsertConfig(current.copy(customDnsCsv = servers.joinToString(",")))
+    }
+
+    override suspend fun setDirectDns(
+        mode: DnsMode,
+        transport: DnsTransport,
+        servers: List<String>,
+        bootstrap: Map<String, List<String>>,
+    ) = mutex.withLock {
+        val current = dao.getConfig() ?: RoutingConfigEntity()
+        dao.upsertConfig(
+            current.copy(
+                directDnsMode = mode.name,
+                directDnsTransport = transport.name,
+                directCustomDnsCsv = servers.joinToString(","),
+                directDnsBootstrapJson = Json.encodeToString(bootstrap),
+            ),
+        )
     }
 
     override suspend fun setDirectDnsMode(mode: DnsMode) = mutex.withLock {
@@ -132,7 +150,7 @@ class RoutingRepositoryImpl(
         sources: List<RouteSourceEntity>,
         resolved: List<ResolvedCidrEntity>,
     ): RoutingConfig {
-        val resolvedBySource = resolved.groupBy { it.sourceId }
+        val resolvedBySource = resolved.groupBy(ResolvedCidrEntity::sourceId)
         val domain = sources.mapNotNull { s ->
             val src = s.toDomainOrNull() ?: return@mapNotNull null
             val cidrs = resolvedBySource[s.id].orEmpty()
@@ -158,6 +176,7 @@ class RoutingRepositoryImpl(
             directDnsTransport = runCatching { DnsTransport.valueOf(configEntity.directDnsTransport) }
                 .getOrDefault(DnsTransport.Udp),
             directCustomDns = configEntity.directCustomDnsCsv.toCsvList(),
+            directDnsBootstrap = Json.decodeFromString(configEntity.directDnsBootstrapJson),
             dnsCacheEnabled = configEntity.dnsCacheEnabled,
             customDns = configEntity.customDnsCsv.toCsvList(),
             mtu = configEntity.mtu,

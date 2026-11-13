@@ -14,7 +14,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -23,7 +22,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,7 +54,7 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 
 private val ImportProgressSize = 18.dp
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ImportProfileSheet(
     seed: DashboardStore.ImportSheetSeed,
@@ -65,26 +65,40 @@ internal fun ImportProfileSheet(
     onDismiss: () -> Unit,
     onImport: (ProfileImportFormat, String, String) -> Unit,
 ) {
-    val spacing = MaterialTheme.spacing
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
     val context = LocalContext.current
 
     var format by rememberSaveable(seed) { mutableStateOf(seed.format) }
-    var text by rememberSaveable(seed) { mutableStateOf(seed.text) }
+    var linkText by rememberSaveable(seed) {
+        mutableStateOf(if (seed.format == ProfileImportFormat.Link) seed.text else "")
+    }
+    var jsonText by rememberSaveable(seed) {
+        mutableStateOf(if (seed.format == ProfileImportFormat.Json) seed.text else "")
+    }
+    val text = if (format == ProfileImportFormat.Link) linkText else jsonText
     var name by rememberSaveable(seed) { mutableStateOf("") }
     var attemptedText by rememberSaveable(seed) { mutableStateOf<String?>(null) }
+    var attemptedFormat by rememberSaveable(seed) { mutableStateOf<ProfileImportFormat?>(null) }
     // Keep following the text — including a system paste, which never reaches
     // the Paste button — until the user picks a format themselves.
-    var formatPinned by rememberSaveable(seed) { mutableStateOf(false) }
+    var formatPinned by rememberSaveable(seed) { mutableStateOf(value = false) }
+    fun updateText(value: String) {
+        val target = if (formatPinned) format else detectProfileImportFormat(value)
+        if (target == ProfileImportFormat.Link) linkText = value else jsonText = value
+        format = target
+    }
     val failuresText = if (failures.isEmpty()) {
         null
     } else {
         stringResource(R.string.import_links_none) + "\n" + importFailuresText(failures)
     }
     val shownError = (failuresText ?: error?.ifEmpty { stringResource(R.string.import_error_failed) })
-        ?.takeIf { attemptedText == text }
+        ?.takeIf { (attemptedFormat == format) && (attemptedText == text) }
     val formats = remember { ProfileImportFormat.entries.toList() }
 
     ModalBottomSheet(
@@ -97,9 +111,9 @@ internal fun ImportProfileSheet(
                 .fillMaxWidth()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = spacing.large)
-                .padding(bottom = spacing.large),
-            verticalArrangement = Arrangement.spacedBy(spacing.medium),
+                .padding(horizontal = MaterialTheme.spacing.large)
+                .padding(bottom = MaterialTheme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
         ) {
             Text(
                 text = stringResource(R.string.import_title),
@@ -135,10 +149,7 @@ internal fun ImportProfileSheet(
             }
             OutlinedTextField(
                 value = text,
-                onValueChange = {
-                    text = it
-                    if (!formatPinned) format = detectProfileImportFormat(it)
-                },
+                onValueChange = ::updateText,
                 label = { Text(format.fieldLabel()) },
                 placeholder = { Text(format.placeholder()) },
                 minLines = if (format == ProfileImportFormat.Json) 4 else 1,
@@ -166,8 +177,7 @@ internal fun ImportProfileSheet(
                                     ?.trim()
                                     .orEmpty()
                                 if (pasted.isNotEmpty()) {
-                                    text = pasted
-                                    if (!formatPinned) format = detectProfileImportFormat(pasted)
+                                    updateText(pasted)
                                 }
                             }
                         },
@@ -189,7 +199,7 @@ internal fun ImportProfileSheet(
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing.small, Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(
@@ -203,6 +213,7 @@ internal fun ImportProfileSheet(
                 Button(
                     onClick = {
                         attemptedText = text
+                        attemptedFormat = format
                         onImport(format, text, name)
                     },
                     enabled = text.isNotBlank() && !isImporting && !closing,
@@ -235,7 +246,12 @@ internal fun ImportProfileSheet(
 
 @Composable
 internal fun importFailuresText(failures: List<ProfileImportFailure>): String =
-    failures.map { it.describe() }.joinToString("\n")
+    buildString {
+        failures.forEachIndexed { index, failure ->
+            if (index > 0) append('\n')
+            append(failure.describe())
+        }
+    }
 
 @Composable
 private fun ProfileImportFailure.describe(): String = when (this) {

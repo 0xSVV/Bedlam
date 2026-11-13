@@ -53,6 +53,7 @@
     <string name="dashboard_confirm_switch_cd">Switch to %1$s</string>
     <string name="dashboard_cancel_switch_cd">Cancel profile switch</string>
     <string name="dashboard_empty_hint">Import a hysteria2:// link or a profile JSON to get started</string>
+    <string name="dashboard_select_profile_hint">Select a profile to connect</string>
     <string name="dashboard_profiles_section">PROFILES</string>
 
     <string name="dashboard_state_disconnected">Disconnected</string>
@@ -64,6 +65,7 @@
 
     <string name="dashboard_error_no_profile">Select a profile first</string>
     <string name="dashboard_error_duplicate_profile">Already saved as \"%1$s\"</string>
+    <string name="vpn_permission_denied">VPN permission was denied. Allow it to connect.</string>
     <string name="local_network_permission_denied">Bedlam needs local network access to use your network DNS and reach local VPN servers</string>
 
     <string name="import_title">Import profile</string>
@@ -244,6 +246,7 @@
     <string name="routing_ipv6_enabled">Enabled</string>
     <string name="routing_ipv6_disabled">Disabled</string>
     <string name="routing_ipv6_bypass_only">Bypass-only</string>
+    <string name="routing_ipv6_direct_dns_hint">IPv6 lookups use Direct DNS outside the tunnel. Choose DNS over TLS or HTTPS there to hide these queries from your network.</string>
 
     <string name="routing_mtu_label">MTU</string>
     <string name="routing_mtu_auto_placeholder">Auto (%1$d)</string>
@@ -256,6 +259,8 @@
     <string name="routing_dns_system">System</string>
     <string name="routing_dns_cloudflare">Cloudflare</string>
     <string name="routing_dns_google">Google</string>
+    <string name="routing_dns_opendns">OpenDNS</string>
+    <string name="routing_dns_adguard">AdGuard (ad and tracker blocking)</string>
     <string name="routing_dns_custom">Custom</string>
     <string name="routing_dns_system_warning">Uses your network\'s resolvers, queried through the tunnel — your carrier or ISP resolver still sees every lookup</string>
     <string name="routing_dns_custom_label">DNS servers</string>
@@ -278,8 +283,10 @@
     <string name="routing_dns_transport_http3">DNS over HTTP/3</string>
     <string name="routing_dns_transport_system_hint">System resolvers speak plain DNS — UDP or TCP only</string>
     <string name="routing_direct_dns_title">Direct DNS</string>
-    <string name="routing_direct_dns_system_udp">System DNS over UDP</string>
-    <string name="routing_direct_dns_unavailable">Used to reach the server and for domains in direct routes. Other providers and transports are not available yet</string>
+    <string name="routing_direct_dns_hint">Used outside the tunnel to reach the server and resolve direct routes. DNS over TLS or HTTPS encrypts these queries. Save to apply changes.</string>
+    <string name="routing_direct_dns_bootstrap_label">Bootstrap IP addresses</string>
+    <string name="routing_direct_dns_bootstrap_hint">One line per hostname: hostname=IP, IP. These addresses reach your DNS server before DNS works; its certificate is still verified.</string>
+    <string name="routing_direct_dns_invalid">Enter valid DNS servers and bootstrap IP addresses for each encrypted server hostname.</string>
     <string name="routing_dns_cache_title">Cache DNS responses</string>
     <string name="routing_dns_cache_hint">Reuse Bedlam DNS answers when enabled. Does not control Android, browser, or resolver caches</string>
 
@@ -434,7 +441,7 @@
     <string name="profile_config_hint_quic_keepalive" tools:ignore="PluralsCandidate">0 uses the default of %1$d seconds</string>
     <string name="profile_config_caution_congestion">Unsupported algorithm or BBR profile may be rejected</string>
     <string name="profile_config_caution_bandwidth">Misreporting causes congestion-control issues</string>
-    <string name="profile_config_caution_hop">Hop intervals must agree with the server</string>
+    <string name="profile_config_caution_hop">Client-side interval for switching between server ports</string>
     <string name="profile_config_action_reveal">Show</string>
     <string name="profile_config_action_hide">Hide</string>
 

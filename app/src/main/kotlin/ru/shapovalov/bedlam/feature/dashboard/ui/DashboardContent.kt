@@ -105,6 +105,7 @@ fun DashboardContent(component: DashboardComponent, modifier: Modifier = Modifie
             connectionState = state.displayedConnectionState,
             connectedSinceMillis = state.connectedSinceMillis,
             hasActiveProfile = state.activeProfile != null,
+            hasProfiles = state.profiles.isNotEmpty(),
             activeProfileName = state.activeProfile?.name,
             pendingSwitchName = state.pendingSwitchProfile?.name,
             onToggle = component::onToggleConnection,

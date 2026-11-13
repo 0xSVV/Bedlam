@@ -86,6 +86,7 @@ internal fun ConnectionHero(
     connectionState: ConnectionState,
     connectedSinceMillis: Long?,
     hasActiveProfile: Boolean,
+    hasProfiles: Boolean = hasActiveProfile,
     activeProfileName: String? = null,
     pendingSwitchName: String?,
     onToggle: () -> Unit,
@@ -307,7 +308,7 @@ internal fun ConnectionHero(
         if (!hasActiveProfile && connectionState is ConnectionState.Disconnected) {
             Spacer(Modifier.height(spacing.small))
             Text(
-                text = stringResource(R.string.dashboard_empty_hint),
+                text = stringResource(if (hasProfiles) R.string.dashboard_select_profile_hint else R.string.dashboard_empty_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = colorScheme.onSurfaceVariant,
             )

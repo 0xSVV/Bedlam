@@ -38,6 +38,20 @@ class FakeRoutingRepository(
     override suspend fun setCustomDns(servers: List<String>) =
         config.update { it.copy(customDns = servers) }
 
+    override suspend fun setDirectDns(
+        mode: DnsMode,
+        transport: DnsTransport,
+        servers: List<String>,
+        bootstrap: Map<String, List<String>>,
+    ) = config.update {
+        it.copy(
+            directDnsMode = mode,
+            directDnsTransport = transport,
+            directCustomDns = servers,
+            directDnsBootstrap = bootstrap,
+        )
+    }
+
     override suspend fun setDirectDnsMode(mode: DnsMode) =
         config.update { it.copy(directDnsMode = mode) }
 

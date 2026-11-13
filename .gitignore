@@ -15,4 +15,5 @@
 .cxx
 local.properties
 hysteria/libs/
+/hysteria/golib/build/
 /.kotlin/

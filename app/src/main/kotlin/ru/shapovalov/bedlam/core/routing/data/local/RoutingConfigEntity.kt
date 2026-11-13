@@ -21,6 +21,8 @@ data class RoutingConfigEntity(
     val directDnsTransport: String = "Udp",
     @ColumnInfo(defaultValue = "")
     val directCustomDnsCsv: String = "",
+    @ColumnInfo(defaultValue = "'{}'")
+    val directDnsBootstrapJson: String = "{}",
     @ColumnInfo(defaultValue = "1")
     val dnsCacheEnabled: Boolean = true,
 ) {

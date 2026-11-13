@@ -21,14 +21,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -37,8 +36,6 @@ import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedButton
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
@@ -86,18 +83,17 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.config.HysteriaConfig
 
 private val SaveProgressSize = 18.dp
-private val BottomToolbarPadding = 96.dp
-private val SnackbarToolbarClearance = 80.dp
 
 private val ProfileConfigStore.State.toolbarVisible: Boolean
-    get() = draft != null && !editMode && !isLoading && !notFound && !isDeleting
+    get() = (draft != null) && !editMode && !isLoading && !notFound && !isDeleting
 
 private val ClipboardJson = Json {
     prettyPrint = true
     encodeDefaults = true
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+// Android's nullable getter/non-null setter cannot be used as a writable Kotlin property.
+@Suppress("UsePropertyAccessSyntax")
 @Composable
 fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier = Modifier) {
     val state by component.state.collectAsState()
@@ -179,7 +175,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
         topBar = {
             TopAppBar(
                 title = {
@@ -205,20 +201,39 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 actions = { TopActions(state, component) },
             )
         },
+        bottomBar = {
+            Box(Modifier.fillMaxWidth().navigationBarsPadding(), contentAlignment = Alignment.Center) {
+                ProfileActionsToolbar(
+                    visible = state.toolbarVisible,
+                    onDelete = component::onRequestDelete,
+                    onShareLink = { exportLink(LinkAction.Share) },
+                    onCopyLink = { exportLink(LinkAction.Copy) },
+                    onCopyConfig = {
+                        val current = state.draft ?: return@ProfileActionsToolbar
+                        val clip = ClipData.newPlainText(
+                            clipboardLabel,
+                            current.toClipboardText(state.original?.name.orEmpty()),
+                        )
+                        clip.description.extras = sensitiveClipExtras()
+                        clipboardManager.setPrimaryClip(clip)
+                        scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
+                    },
+                    onEdit = component::onEnterEditMode,
+                    modifier = Modifier
+                        .padding(vertical = FloatingToolbarDefaults.ScreenOffset),
+                )
+            }
+        },
         snackbarHost = {
-            val toolbarVisible = state.toolbarVisible
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.padding(
-                    bottom = if (toolbarVisible) SnackbarToolbarClearance else 0.dp,
-                ),
-            ) { Snackbar(snackbarData = it) }
+            SnackbarHost(hostState = snackbarHostState) { Snackbar(snackbarData = it) }
         },
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .consumeWindowInsets(padding)
+                .imePadding(),
         ) {
             val draft = state.draft
             when {
@@ -234,26 +249,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                     hasNumericErrors = state.invalidNumericFields.isNotEmpty(),
                 )
             }
-            ProfileActionsToolbar(
-                visible = state.toolbarVisible,
-                onDelete = component::onRequestDelete,
-                onShareLink = { exportLink(LinkAction.Share) },
-                onCopyLink = { exportLink(LinkAction.Copy) },
-                onCopyConfig = {
-                    val current = state.draft ?: return@ProfileActionsToolbar
-                    val clip = ClipData.newPlainText(
-                        clipboardLabel,
-                        current.toClipboardText(state.original?.name.orEmpty()),
-                    )
-                    clip.description.extras = sensitiveClipExtras()
-                    clipboardManager.setPrimaryClip(clip)
-                    scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
-                },
-                onEdit = component::onEnterEditMode,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = -FloatingToolbarDefaults.ScreenOffset),
-            )
+
         }
     }
 
@@ -278,8 +274,7 @@ fun ProfileConfigContent(component: ProfileConfigComponent, modifier: Modifier =
                 pendingLink = null
                 deliverLink(pending.action, pending.export.uri)
             },
-            onDismiss = { pendingLink = null },
-        )
+        ) { pendingLink = null }
     }
 }
 
@@ -357,7 +352,7 @@ private fun TopActions(
     state: ProfileConfigStore.State,
     component: ProfileConfigComponent,
 ) {
-    val ready = state.draft != null && !state.isLoading && !state.notFound
+    val ready = (state.draft != null) && !state.isLoading && !state.notFound
     if (!ready) return
 
     AnimatedContent(
@@ -382,7 +377,7 @@ private fun TopActions(
                     if (state.isSaving) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(SaveProgressSize),
-                            strokeWidth = 2.dp
+                            strokeWidth = 2.dp,
                         )
                     } else {
                         Text(stringResource(R.string.action_save))
@@ -393,7 +388,6 @@ private fun TopActions(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun ProfileActionsToolbar(
     visible: Boolean,
@@ -404,7 +398,7 @@ internal fun ProfileActionsToolbar(
     onEdit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var copyMenuOpen by remember { mutableStateOf(false) }
+    var copyMenuOpen by remember { mutableStateOf(value = false) }
     val motion = MaterialTheme.motionScheme
     AnimatedVisibility(
         visible = visible,
@@ -527,21 +521,20 @@ internal fun ConfigBody(
     onNumericValidityChanged: (String, Boolean) -> Unit = { _, _ -> },
     hasNumericErrors: Boolean = false,
 ) {
-    val spacing = MaterialTheme.spacing
-    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
+    var advancedExpanded by rememberSaveable { mutableStateOf(value = false) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = spacing.large,
-            end = spacing.large,
-            top = spacing.medium,
-            bottom = BottomToolbarPadding,
+            start = MaterialTheme.spacing.large,
+            end = MaterialTheme.spacing.large,
+            top = MaterialTheme.spacing.medium,
+            bottom = MaterialTheme.spacing.medium,
         ),
-        verticalArrangement = Arrangement.spacedBy(spacing.medium),
+        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
     ) {
         item(key = "profile", contentType = "profile") { ProfileSection(name, editMode, onNameChanged) }
         item(key = "server", contentType = "server") { ServerSection(draft, editMode, onDraftChanged) }
-        if (isRealmAddress(draft.server.address) || draft.realm != null) {
+        if (isRealmAddress(draft.server.address) || (draft.realm != null)) {
             item(key = "realm", contentType = "realm") {
                 RealmSection(draft, editMode, onDraftChanged, onNumericValidityChanged)
             }
@@ -589,10 +582,8 @@ internal fun ConfigBody(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun DocsFooter() {
-    val spacing = MaterialTheme.spacing
     val uriHandler = LocalUriHandler.current
     val url = stringResource(R.string.profile_config_docs_url)
     ElevatedButton(
@@ -603,7 +594,7 @@ private fun DocsFooter() {
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             contentColor = MaterialTheme.colorScheme.primary,
         ),
-        contentPadding = PaddingValues(spacing.large),
+        contentPadding = PaddingValues(MaterialTheme.spacing.large),
     ) {
         Text(
             text = stringResource(R.string.profile_config_docs_link),
@@ -619,7 +610,6 @@ private fun DocsFooter() {
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun CenteredSpinner() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -629,11 +619,10 @@ internal fun CenteredSpinner() {
 
 @Composable
 internal fun NotFoundMessage() {
-    val spacing = MaterialTheme.spacing
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(spacing.large),
+            .padding(MaterialTheme.spacing.large),
         contentAlignment = Alignment.Center,
     ) {
         Text(

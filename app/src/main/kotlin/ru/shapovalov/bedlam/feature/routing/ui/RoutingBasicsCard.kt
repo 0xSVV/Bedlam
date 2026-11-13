@@ -52,7 +52,7 @@ import ru.shapovalov.bedlam.ui.theme.spacing
 import ru.shapovalov.hysteria.api.DnsTransport
 
 @Composable
-private fun RoutingCard(
+internal fun RoutingCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -66,7 +66,7 @@ private fun RoutingCard(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun CardTitle(text: String) {
+internal fun CardTitle(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleMediumEmphasized,
@@ -74,6 +74,7 @@ private fun CardTitle(text: String) {
             start = MaterialTheme.spacing.large,
             end = MaterialTheme.spacing.large,
             top = MaterialTheme.spacing.medium,
+            bottom = MaterialTheme.spacing.medium,
         ),
     )
 }
@@ -115,6 +116,17 @@ internal fun Ipv6Card(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        if (ipv6Mode == Ipv6Mode.BypassOnly) {
+            Text(
+                text = stringResource(R.string.routing_ipv6_direct_dns_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(
+                    horizontal = MaterialTheme.spacing.large,
+                    vertical = MaterialTheme.spacing.small,
+                ),
+            )
+        }
     }
 }
 
@@ -126,30 +138,6 @@ internal fun MtuCard(
 ) {
     RoutingCard(modifier) {
         MtuEditor(mtu = mtu, onChange = onSetMtu)
-    }
-}
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-internal fun DirectDnsCard(modifier: Modifier = Modifier) {
-    val spacing = MaterialTheme.spacing
-    RoutingCard(modifier) {
-        CardTitle(stringResource(R.string.routing_direct_dns_title))
-        Column(
-            modifier = Modifier.padding(horizontal = spacing.large, vertical = spacing.medium),
-            verticalArrangement = Arrangement.spacedBy(spacing.xSmall),
-        ) {
-            Text(
-                text = stringResource(R.string.routing_direct_dns_system_udp),
-                style = MaterialTheme.typography.labelLargeEmphasized,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = stringResource(R.string.routing_direct_dns_unavailable),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
@@ -294,7 +282,7 @@ private fun ToggleRow(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun <T> DropdownRow(
+internal fun <T> DropdownRow(
     title: String,
     value: String,
     options: List<T>,
@@ -500,17 +488,19 @@ private fun Ipv6Mode.label(): String = stringResource(
 )
 
 @Composable
-private fun DnsMode.label(): String = stringResource(
+internal fun DnsMode.label(): String = stringResource(
     when (this) {
         DnsMode.System -> R.string.routing_dns_system
         DnsMode.Cloudflare -> R.string.routing_dns_cloudflare
         DnsMode.Google -> R.string.routing_dns_google
+        DnsMode.OpenDns -> R.string.routing_dns_opendns
+        DnsMode.AdGuard -> R.string.routing_dns_adguard
         DnsMode.Custom -> R.string.routing_dns_custom
     }
 )
 
 @Composable
-private fun DnsTransport.label(): String = stringResource(
+internal fun DnsTransport.label(): String = stringResource(
     when (this) {
         DnsTransport.Udp -> R.string.routing_dns_transport_udp
         DnsTransport.Tcp -> R.string.routing_dns_transport_tcp
@@ -522,7 +512,7 @@ private fun DnsTransport.label(): String = stringResource(
 )
 
 @Composable
-private fun DnsTransport.placeholder(): String = stringResource(
+internal fun DnsTransport.placeholder(): String = stringResource(
     when (this) {
         DnsTransport.Udp, DnsTransport.Tcp -> R.string.routing_dns_custom_placeholder_ip
         DnsTransport.Tls -> R.string.routing_dns_custom_placeholder_tls

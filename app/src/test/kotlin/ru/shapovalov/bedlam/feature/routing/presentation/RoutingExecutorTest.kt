@@ -22,7 +22,7 @@ import ru.shapovalov.bedlam.testing.disposeAfter
 @ExtendWith(MainDispatcherExtension::class)
 class RoutingExecutorTest {
     private val source = ResolvedSource(
-        DirectRouteSource.Asn("cloud", 13335, "Cloud network", false, 4),
+        DirectRouteSource.Asn("cloud", 13335, "Cloud network", enabled = false, orderIndex = 4),
         listOf(Cidr.parse("192.0.2.0/24")),
         1234L,
         "Previous refresh failed",
@@ -41,6 +41,24 @@ class RoutingExecutorTest {
             AddPresetUseCase(add),
             RefreshRouteSourcesUseCase(repository, resolver),
         ).create()
+    }
+
+    @Test
+    fun `direct DNS saves provider transport endpoints and bootstrap together`() = runTest {
+        val repository = FakeRoutingRepository()
+        store(repository).disposeAfter { store ->
+            val bootstrap = mapOf("dns.example" to listOf("192.0.2.1"))
+            store.accept(
+                RoutingStore.Intent.SetDirectDns(
+                    ru.shapovalov.bedlam.core.routing.domain.model.DnsMode.Custom,
+                    ru.shapovalov.hysteria.api.DnsTransport.Https,
+                    listOf("https://dns.example/dns-query"), bootstrap,
+                ),
+            )
+            assertEquals(bootstrap, repository.config.value.directDnsBootstrap)
+            assertEquals(ru.shapovalov.hysteria.api.DnsTransport.Https, repository.config.value.directDnsTransport)
+            assertEquals(listOf("https://dns.example/dns-query"), repository.config.value.directCustomDns)
+        }
     }
 
     @Test

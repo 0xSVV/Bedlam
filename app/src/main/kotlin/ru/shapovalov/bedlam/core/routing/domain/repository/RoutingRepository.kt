@@ -18,6 +18,12 @@ interface RoutingRepository {
     suspend fun setDnsMode(mode: DnsMode)
     suspend fun setDnsTransport(transport: DnsTransport)
     suspend fun setCustomDns(servers: List<String>)
+    suspend fun setDirectDns(
+        mode: DnsMode,
+        transport: DnsTransport,
+        servers: List<String>,
+        bootstrap: Map<String, List<String>>,
+    )
     suspend fun setDirectDnsMode(mode: DnsMode)
     suspend fun setDirectDnsTransport(transport: DnsTransport)
     suspend fun setDirectCustomDns(servers: List<String>)

@@ -318,7 +318,7 @@ class BedlamVpnService : VpnService() {
             if (networkReady == null || selectedUnderlyingNetwork == null) {
                 throw IllegalStateException("No usable underlying network is available for protected tunnel sockets")
             }
-            val plan = buildRoutePlan()
+            val plan = buildRoutePlan(selectedNetworkDnsServers())
             currentRoutePlan = plan
             client.start(
                 config = config,
@@ -347,21 +347,19 @@ class BedlamVpnService : VpnService() {
                 ru.shapovalov.bedlam.core.routing.domain.model.Ipv6Mode.Enabled -> ru.shapovalov.hysteria.api.Ipv6Mode.Enabled
             },
             dns = dnsUpstream,
-            directDns = ru.shapovalov.hysteria.api.DirectDnsConfig(
-                servers = selectedUnderlyingNetwork
-                    ?.let { getSystemService(ConnectivityManager::class.java)?.getLinkProperties(it)?.dnsServers }
-                    .orEmpty()
-                    .mapNotNull { address ->
-                        if (address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress || address.isMulticastAddress) null
-                        else {
-                            val host = address.hostAddress ?: return@mapNotNull null
-                            val numericHost = host.substringBefore('%')
-                            "${if (address.address.size == 16) "[$numericHost]" else numericHost}:53"
-                        }
-                    },
-                domains = directDnsDomains,
-            ),
+            directDns = directDns,
         )
+
+    private fun selectedNetworkDnsServers(): List<String> =
+        selectedUnderlyingNetwork
+            ?.let { getSystemService(ConnectivityManager::class.java)?.getLinkProperties(it)?.dnsServers }
+            .orEmpty()
+            .mapNotNull { address ->
+                if (address.isAnyLocalAddress || address.isLoopbackAddress ||
+                    address.isLinkLocalAddress || address.isMulticastAddress
+                ) null
+                else address.hostAddress?.substringBefore('%')
+            }
 
     private fun startProfileNameWatcher(profileId: String?) {
         profileNameWatcherJob?.cancel()
@@ -386,7 +384,7 @@ class BedlamVpnService : VpnService() {
                 .debounce(SETTINGS_REAPPLY_DEBOUNCE_MS.milliseconds)
                 .collect {
                     if (!client.state.value.isActiveTunnel) return@collect
-                    val newPlan = runCatching { buildRoutePlan() }.getOrNull() ?: return@collect
+                    val newPlan = runCatching { buildRoutePlan(selectedNetworkDnsServers()) }.getOrNull() ?: return@collect
                     if (newPlan == currentRoutePlan) return@collect
                     val previous = currentRoutePlan
                     if (previous != null && newPlan.copy(dnsCacheEnabled = previous.dnsCacheEnabled) == previous) {
@@ -554,12 +552,10 @@ class BedlamVpnService : VpnService() {
 
     private suspend fun handleUnderlyingNetworkChange() {
         networkChangeMutex.withLock {
-            val newPlan = runCatching { buildRoutePlan() }.getOrNull()
+            val newPlan = runCatching { buildRoutePlan(selectedNetworkDnsServers()) }.getOrNull()
             if (newPlan != null) {
-                // The Direct resolver list is read from LinkProperties and is
-                // not part of RoutePlan equality. Recreate the TUN on every
-                // settled network change so native bootstrap and query sockets
-                // pick up the new network's resolver snapshot.
+                // Even unchanged resolver addresses may have pooled sockets bound
+                // to the old network. Recreate them on every settled network change.
                 reapplyDnsForNetworkChange(newPlan)
             }
             runCatching { client.resetAfterNetworkChange() }

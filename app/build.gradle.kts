@@ -25,6 +25,7 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = libs.versions.versionCode.get().toInt()
         versionName = libs.versions.versionName.get()
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -81,6 +82,7 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -111,6 +113,11 @@ abstract class BundleReadme : DefaultTask() {
 }
 
 androidComponents {
+    beforeVariants { variant ->
+        // AGP's host-test API is required for Compose Preview's resource packaging.
+        @Suppress("UnstableApiUsage")
+        variant.hostTests[com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE]?.enable = true
+    }
     finalizeDsl { extension ->
         listOf("benchmarkRelease", "nonMinifiedRelease").forEach { buildType ->
             extension.sourceSets.getByName(buildType) {
@@ -194,6 +201,14 @@ dependencies {
 
     implementation(libs.kotlin.inject.runtime)
     ksp(libs.kotlin.inject.compiler)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext)
+    androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.junit.jupiter.params)

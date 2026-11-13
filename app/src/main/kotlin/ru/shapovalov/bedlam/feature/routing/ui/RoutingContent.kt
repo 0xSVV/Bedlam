@@ -148,7 +148,11 @@ fun RoutingContent(component: RoutingComponent, modifier: Modifier = Modifier) {
                 )
             }
             item(key = "direct-dns", contentType = "direct-dns") {
-                DirectDnsCard(modifier = Modifier.animateItem())
+                DirectDnsCard(
+                    config = state.config,
+                    onSave = component::onSetDirectDns,
+                    modifier = Modifier.animateItem(),
+                )
             }
             item(key = "remote-dns", contentType = "remote-dns") {
                 RemoteDnsCard(

@@ -11,6 +11,7 @@ data class RoutingConfig(
     val directDnsMode: DnsMode = DnsMode.System,
     val directDnsTransport: DnsTransport = DnsTransport.Udp,
     val directCustomDns: List<String> = emptyList(),
+    val directDnsBootstrap: Map<String, List<String>> = emptyMap(),
     val dnsCacheEnabled: Boolean = true,
     val mtu: Int = AUTO_MTU,
     val customDns: List<String> = emptyList(),

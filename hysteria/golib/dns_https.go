@@ -37,7 +37,7 @@ func (e *dohStatusError) Error() string {
 }
 
 type httpsResolver struct {
-	client      client.Client
+	dialStream  dnsStreamDialer
 	url         string
 	dial        string
 	tlsCfg      *tls.Config
@@ -79,12 +79,18 @@ func (c *dohConn) release() {
 }
 
 func newHTTPSResolver(c client.Client, rawURL string, base *tls.Config) (*httpsResolver, error) {
+	return newHTTPSResolverWithDialer(rawURL, base, func(ctx context.Context, addr string) (net.Conn, error) {
+		return dialTunnelTCP(ctx, c, addr)
+	})
+}
+
+func newHTTPSResolverWithDialer(rawURL string, base *tls.Config, dialStream dnsStreamDialer) (*httpsResolver, error) {
 	host, dial, err := dohDialAddr(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("DoH server %q: %w", rawURL, err)
 	}
 	r := &httpsResolver{
-		client:      c,
+		dialStream:  dialStream,
 		url:         rawURL,
 		dial:        dial,
 		tlsCfg:      dnsTLSConfig(base, host, []string{"h2", "http/1.1"}),
@@ -121,7 +127,7 @@ func (r *httpsResolver) newTransport() *dohTransport {
 func (r *httpsResolver) dialTLS(ctx context.Context, owner *dohTransport) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.openTimeout)
 	defer cancel()
-	raw, err := dialTunnelTCP(ctx, r.client, r.dial)
+	raw, err := r.dialStream(ctx, r.dial)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", r.dial, err)
 	}

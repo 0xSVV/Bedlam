@@ -38,7 +38,7 @@ jobs:
         run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Lint
-        run: ./gradlew :app:lintRelease --stacktrace
+        run: ./gradlew :app:lintRelease :hysteria:lintRelease --stacktrace
 
       - name: Release build (R8 smoke, unsigned)
         run: ./gradlew :app:assembleRelease --stacktrace

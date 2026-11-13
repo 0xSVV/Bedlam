@@ -31,16 +31,24 @@ type dnsResolver interface {
 	close()
 }
 
+type dnsStreamDialer func(context.Context, string) (net.Conn, error)
+
 type tcpResolver struct {
 	server string
 	pool   *streamPool
 }
 
 func newTCPResolver(c client.Client, server string) *tcpResolver {
+	return newTCPResolverWithDialer(server, func(ctx context.Context, addr string) (net.Conn, error) {
+		return dialTunnelTCP(ctx, c, addr)
+	})
+}
+
+func newTCPResolverWithDialer(server string, dial dnsStreamDialer) *tcpResolver {
 	return &tcpResolver{
 		server: server,
 		pool: newStreamPool("DNS over TCP "+server, func(ctx context.Context) (net.Conn, error) {
-			conn, err := dialTunnelTCP(ctx, c, server)
+			conn, err := dial(ctx, server)
 			if err != nil {
 				return nil, fmt.Errorf("dial DNS server %s: %w", server, err)
 			}

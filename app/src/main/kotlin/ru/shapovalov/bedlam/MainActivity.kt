@@ -3,15 +3,16 @@ package ru.shapovalov.bedlam
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.arkivanov.decompose.defaultComponentContext
 import kotlinx.coroutines.launch
@@ -34,12 +35,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var root: RootComponent
 
     private val vpnPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
+        ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         val profileId = pendingStartProfileId
         pendingStartProfileId = null
         if (result.resultCode != RESULT_OK) {
             Log.w(TAG, "VPN permission denied")
+            Toast.makeText(this, R.string.vpn_permission_denied, Toast.LENGTH_LONG).show()
         } else if (profileId != null) {
             lifecycleScope.launch {
                 profileRepository.get(profileId)?.let { startVpnService(it) }
@@ -48,13 +50,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (!granted) Log.w(TAG, "Notification permission denied")
     }
 
     private val localNetworkPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission(),
     ) { granted ->
         val profileId = pendingStartProfileId
         pendingStartProfileId = null
@@ -71,7 +73,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        WindowCompat.enableEdgeToEdge(window)
+        val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        val darkIcons = nightMode != Configuration.UI_MODE_NIGHT_YES
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = darkIcons
+            isAppearanceLightNavigationBars = darkIcons
+        }
         val nativeLoadError = (application as BedlamApplication).nativeLoadError
         if (nativeLoadError != null) {
             setContent {
@@ -79,8 +87,7 @@ class MainActivity : ComponentActivity() {
                     NativeLoadErrorContent(
                         error = nativeLoadError,
                         supportedAbis = Build.SUPPORTED_ABIS.toList(),
-                        onOpenReleases = { openUrl(RELEASES_URL) },
-                    )
+                    ) { openUrl(RELEASES_URL) }
                 }
             }
             return
@@ -93,8 +100,7 @@ class MainActivity : ComponentActivity() {
         root = appComponent.rootComponentFactory.create(
             rootContext,
             { profile -> requestVpnPermissionThen(profile) },
-            { stopVpnService() },
-        )
+        ) { stopVpnService() }
         if (savedInstanceState == null) handleImportIntent(intent)
 
         setContent { BedlamTheme { RootContent(root) } }
@@ -129,8 +135,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestVpnPermissionThen(profile: Profile) {
-        if (Build.VERSION.SDK_INT >= ANDROID_17_API &&
-            checkSelfPermission(LOCAL_NETWORK_PERMISSION) != PackageManager.PERMISSION_GRANTED
+        if ((Build.VERSION.SDK_INT >= ANDROID_17_API) &&
+            (checkSelfPermission(LOCAL_NETWORK_PERMISSION) != PackageManager.PERMISSION_GRANTED)
         ) {
             pendingStartProfileId = profile.id
             localNetworkPermissionLauncher.launch(LOCAL_NETWORK_PERMISSION)
