@@ -52,7 +52,7 @@ class DirectDnsCardTest {
     }
 
     @Test
-    fun presetsAdaptTransportAndSaveWithoutCustomBootstrapInput() {
+    fun presetsPreserveTlsAndSaveWithoutCustomBootstrapInput() {
         var savedMode: DnsMode? = null
         var savedTransport: DnsTransport? = null
         compose.setContent {
@@ -65,17 +65,16 @@ class DirectDnsCardTest {
         }
         compose.onNodeWithText("Provider").performClick()
         compose.onNodeWithText("OpenDNS").performClick()
-        compose.onNodeWithText("DNS over HTTPS").assertExists()
+        compose.onNodeWithText("DNS over TLS").assertExists()
         compose.onNodeWithText("Bootstrap IP addresses").assertDoesNotExist()
         compose.onNodeWithText("Save").assertIsEnabled().performClick()
         compose.runOnIdle {
             assertEquals(DnsMode.OpenDns, savedMode)
-            assertEquals(DnsTransport.Https, savedTransport)
+            assertEquals(DnsTransport.Tls, savedTransport)
         }
         compose.onNodeWithText("Provider").performClick()
         compose.onNodeWithText("AdGuard (ad and tracker blocking)").performClick()
-        compose.onNodeWithText("Transport").performClick()
-        compose.onNodeWithText("DNS over TLS").performClick()
+        compose.onNodeWithText("DNS over TLS").assertExists()
         compose.onNodeWithText("Save").assertIsEnabled().performClick()
         compose.runOnIdle {
             assertEquals(DnsMode.AdGuard, savedMode)

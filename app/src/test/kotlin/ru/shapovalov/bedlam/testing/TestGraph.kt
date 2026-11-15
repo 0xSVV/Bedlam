@@ -150,7 +150,7 @@ class TestGraph(
                 SetActiveProfileUseCase(profiles),
                 ImportProfileUseCase(profiles, client),
                 client,
-                PingProfileUseCase(android),
+                PingProfileUseCase(android, client, routing),
                 runtimeState,
                 ReconcileConnectionStateUseCase(
                     client,

@@ -3,78 +3,85 @@ package ru.shapovalov.bedlam.core.latency
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
+import android.os.ParcelFileDescriptor
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.tatarka.inject.annotations.Inject
+import kotlin.time.Duration.Companion.seconds
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
-import ru.shapovalov.bedlam.core.util.isRealmAddress
-import ru.shapovalov.bedlam.core.util.parseHost
-import ru.shapovalov.bedlam.core.util.parsePort
-import java.io.IOException
-import java.net.ConnectException
-import java.net.InetSocketAddress
-import kotlin.coroutines.resume
+import ru.shapovalov.bedlam.core.routing.domain.repository.RoutingRepository
+import ru.shapovalov.bedlam.core.routing.engine.DirectDnsPlanner
+import ru.shapovalov.bedlam.core.vpn.DefaultNetworkListener
+import ru.shapovalov.hysteria.api.DiagnosticResult
+import ru.shapovalov.hysteria.api.HysteriaClient
 
 @Inject
-class PingProfileUseCase(private val context: Context) {
-
-    suspend operator fun invoke(profile: Profile): LatencyResult = withContext(Dispatchers.IO) {
-        val address = profile.config.server.address
-        if (isRealmAddress(address)) return@withContext LatencyResult.Idle
-        val host = parseHost(address)
-        val port = parsePort(address)
-        measureTcp(underlyingNetwork(), host, port)
-    }
-
-    private fun measureTcp(network: Network?, host: String, port: Int): LatencyResult {
-        val factory = network?.socketFactory ?: return LatencyResult.Unreachable
-        return try {
-            factory.createSocket().use { socket ->
-                val start = System.currentTimeMillis()
-                try {
-                    socket.connect(InetSocketAddress(host, port), TIMEOUT_MS)
-                } catch (_: ConnectException) {
-                    // RST received — port closed but host responded; RTT is still valid
-                } catch (_: IOException) {
-                    return@use LatencyResult.Unreachable
-                }
-                val ms = System.currentTimeMillis() - start
-                if (ms < TIMEOUT_MS) LatencyResult.Success(ms) else LatencyResult.Unreachable
+class PingProfileUseCase(
+    private val context: Context,
+    private val client: HysteriaClient,
+    private val routingRepository: RoutingRepository,
+) {
+    suspend operator fun invoke(profile: Profile): LatencyResult = coroutineScope {
+        val selected = CompletableDeferred<Network>()
+        val changed = CompletableDeferred<Unit>()
+        var first: Network? = null
+        val listener = DefaultNetworkListener(context) { network ->
+            if (!selected.isCompleted && (network != null)) {
+                first = network
+                selected.complete(network)
+            } else if (selected.isCompleted && (network != first)) {
+                changed.complete(Unit)
             }
-        } catch (_: IOException) {
-            LatencyResult.Unreachable
         }
-    }
-
-    private suspend fun underlyingNetwork(): Network? {
-        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-            .build()
-        return withTimeoutOrNull(NETWORK_TIMEOUT_MS) {
-            suspendCancellableCoroutine { cont ->
-                val callback = object : ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: Network) {
-                        runCatching { cm.unregisterNetworkCallback(this) }
-                        if (cont.isActive) cont.resume(network)
+        try {
+            listener.start()
+            val network = withTimeoutOrNull(2.seconds) { selected.await() }
+                ?: return@coroutineScope LatencyResult.NoNetwork
+            val measurement = async {
+                withContext(Dispatchers.IO) {
+                    val cm = context.getSystemService(ConnectivityManager::class.java)
+                    val servers = cm.getLinkProperties(network)?.dnsServers
+                        ?.mapNotNull { it.hostAddress }.orEmpty()
+                    val dns = DirectDnsPlanner.plan(routingRepository.get(), servers)
+                    when (val result = client.measureLatency(profile.config, dns, network.protector())) {
+                        is DiagnosticResult.Ok -> LatencyResult.Success(result.rttMillis)
+                        is DiagnosticResult.Error -> when (result.reason) {
+                            "timeout" -> LatencyResult.TimedOut
+                            "connection" -> LatencyResult.ConnectionFailed
+                            else -> LatencyResult.Unreachable
+                        }
                     }
                 }
-                cont.invokeOnCancellation {
-                    runCatching { cm.unregisterNetworkCallback(callback) }
-                }
-                runCatching { cm.registerNetworkCallback(request, callback) }
-                    .onFailure { if (cont.isActive) cont.resume(null) }
             }
+            select {
+                measurement.onAwait { it }
+                changed.onAwait {
+                    measurement.cancel()
+                    LatencyResult.NoNetwork
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            LatencyResult.Unreachable
+        } finally {
+            listener.stop()
         }
     }
 
-    private companion object {
-        const val TIMEOUT_MS = 3000
-        const val NETWORK_TIMEOUT_MS = 2_000L
+    private fun Network.protector() = object : HysteriaClient.SocketProtector {
+        override fun protect(fd: Int): Boolean = bindAndProtect(fd)
+        override fun bindAndProtect(fd: Int): Boolean = runCatching {
+            // Binding to an explicit physical network bypasses VPN routing.
+            // Duplicate the descriptor so Kotlin never closes Go's socket.
+            ParcelFileDescriptor.fromFd(fd).use { bindSocket(it.fileDescriptor) }
+            true
+        }.getOrDefault(defaultValue = false)
     }
 }

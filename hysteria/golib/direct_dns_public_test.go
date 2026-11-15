@@ -19,6 +19,7 @@ func TestPublicDNSPresets(t *testing.T) {
 	}{
 		{"OpenDNS/UDP", "udp", "208.67.222.222:53", "", ""},
 		{"OpenDNS/TCP", "tcp", "208.67.222.222:53", "", ""},
+		{"OpenDNS/TLS", "tls", "dns.opendns.com:853", "dns.opendns.com", "208.67.222.222"},
 		{"OpenDNS/HTTPS", "https", "https://doh.opendns.com/dns-query", "doh.opendns.com", "146.112.41.2"},
 		{"AdGuard/UDP", "udp", "94.140.14.14:53", "", ""},
 		{"AdGuard/TCP", "tcp", "94.140.14.14:53", "", ""},

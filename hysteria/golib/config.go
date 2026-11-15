@@ -20,14 +20,11 @@ import (
 
 const serverResolveTimeout = 3 * time.Second
 
-// QUIC negotiates the minimum of both ends, so a client ceiling also caps what
-// a tuned server may enforce: at 30s no server setting could keep a suspended
-// phone connected past 30s of sleep. 120s stays inert against a stock server
-// and lets a raised one take effect. quic-go clamps the keepalive to half the
-// negotiated idle timeout, so 30s becomes 15s there.
+// Match upstream's defaults. Explicit profile values still take precedence;
+// QUIC negotiates the smaller idle timeout advertised by the two peers.
 const (
-	defaultMaxIdleTimeoutSec  = 120
-	defaultKeepAlivePeriodSec = 30
+	defaultMaxIdleTimeoutSec  = 30
+	defaultKeepAlivePeriodSec = 10
 )
 
 type clientConfig struct {
@@ -271,11 +268,6 @@ func setupConnFactory(coreConfig *client.Config, cfg *clientConfig, serverAddr n
 	wrap, err := buildObfsWrapper(cfg)
 	if err != nil {
 		return err
-	}
-	hasProtect := session.protector != nil
-
-	if !isHop && wrap == nil && !hasProtect {
-		return nil
 	}
 
 	listenUDP := func() (net.PacketConn, error) {

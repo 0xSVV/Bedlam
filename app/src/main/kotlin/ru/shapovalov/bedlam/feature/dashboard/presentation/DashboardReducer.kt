@@ -24,6 +24,7 @@ internal sealed interface Msg {
     data class LinksFailed(val failures: List<ProfileImportFailure>) : Msg
     data class ErrorRaised(val reason: DashboardStore.ErrorReason) : Msg
     data object ErrorDismissed : Msg
+    data object LatenciesCleared : Msg
     data class LatencyUpdated(val id: String, val result: LatencyResult) : Msg
 }
 
@@ -38,7 +39,11 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
                 pendingSwitchProfileId = pendingSwitchProfileId?.takeIf { pending ->
                     pending in ids && pending != msg.activeId
                 },
-                latencies = latencies.filterKeys { it in ids },
+                latencies = latencies.filterKeys { id ->
+                    val before = profiles.firstOrNull { it.id == id }
+                    val after = msg.profiles.firstOrNull { it.id == id }
+                    before != null && after != null && before.config == after.config
+                },
             )
         }
 
@@ -107,6 +112,7 @@ internal object DashboardReducer : Reducer<DashboardStore.State, Msg> {
 
         is Msg.ErrorRaised -> copy(error = msg.reason)
         Msg.ErrorDismissed -> copy(error = null)
+        Msg.LatenciesCleared -> copy(latencies = emptyMap())
         is Msg.LatencyUpdated ->
             if (profiles.none { it.id == msg.id }) this
             else copy(latencies = latencies + (msg.id to msg.result))

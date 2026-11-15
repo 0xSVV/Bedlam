@@ -344,6 +344,15 @@ func (u *dnsUpstream) attemptBudget(ctx context.Context, remainingServers int) t
 
 func (u *dnsUpstream) id() string { return u.ident }
 
+// Keep the log description separate from the cache identity, which also includes
+// Direct DNS bootstrap settings.
+func (u *dnsUpstream) summary() string {
+	if len(u.servers) == 0 {
+		return "unavailable"
+	}
+	return u.transport + "|" + strings.Join(u.servers, ",")
+}
+
 func (u *dnsUpstream) close() {
 	for _, r := range u.resolvers {
 		r.close()

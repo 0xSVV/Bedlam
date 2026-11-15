@@ -10,6 +10,7 @@ import golib.Session
 import golib.TestResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +24,10 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import ru.shapovalov.hysteria.api.DirectDnsConfig
 import ru.shapovalov.hysteria.api.ConnectionInfo
 import ru.shapovalov.hysteria.api.DiagnosticResult
 import ru.shapovalov.hysteria.api.DisconnectReason
@@ -51,9 +56,11 @@ class HysteriaClientImpl : HysteriaClient {
 
     @Volatile
     private var session: Session? = null
+    private var sessionConfig: HysteriaConfig? = null
     private val sessionLock = Mutex()
     private val lifecycleLock = Any()
     private val liveGeneration = AtomicLong(0)
+    private val connectionSequence = AtomicLong(0)
 
     @Volatile
     private var serverAddress: String = ""
@@ -72,6 +79,7 @@ class HysteriaClientImpl : HysteriaClient {
         tunConfig: TunConfig,
         protector: HysteriaClient.SocketProtector,
         tun: HysteriaClient.TunFactory,
+        flowFilter: HysteriaClient.TcpFlowFilter?,
     ): Unit = sessionLock.withLock {
         requireNotStarted()
         beginConnecting(config)
@@ -79,16 +87,24 @@ class HysteriaClientImpl : HysteriaClient {
         try {
             withContext(Dispatchers.IO) {
                 val s = openSession(config, tunConfig, protector, generation)
+                if (flowFilter != null) {
+                    s.setTCPFlowFilter { source, sourcePort, destination, destinationPort ->
+                        flowFilter.allow(source, sourcePort, destination, destinationPort)
+                    }
+                }
                 val published = synchronized(lifecycleLock) {
                     if (liveGeneration.get() == generation) {
                         session = s
+                        sessionConfig = config
                         true
                     } else {
                         false
                     }
                 }
                 if (!published) {
-                    runCatching { s.close() }
+                    runCatching { s.close() }.onFailure {
+                        Log.w(TAG, "Cancelled session cleanup failed", it)
+                    }
                     throw CancellationException("client shut down during start")
                 }
                 attachTun(s, tunConfig, tun)
@@ -139,7 +155,12 @@ class HysteriaClientImpl : HysteriaClient {
         override fun onConnected(udpEnabled: Boolean, attempt: Int) {
             synchronized(lifecycleLock) {
                 if (liveGeneration.get() != generation) return
-                val info = ConnectionInfo(serverAddress, udpEnabled, attempt)
+                val info = ConnectionInfo(
+                    serverAddress,
+                    udpEnabled,
+                    attempt,
+                    connectionSequence.incrementAndGet(),
+                )
                 lastConnectInfo.set(info)
                 if (tunReady) {
                     if (sessionStartMillis == 0L) {
@@ -192,7 +213,7 @@ class HysteriaClientImpl : HysteriaClient {
         val fd = try {
             pfd.detachFd()
         } catch (t: Throwable) {
-            runCatching { pfd.close() }
+            runCatching { pfd.close() }.onFailure { Log.w(TAG, "TUN descriptor cleanup failed", it) }
             throw t
         }
         try {
@@ -214,6 +235,7 @@ class HysteriaClientImpl : HysteriaClient {
             // Go duplicates this borrowed descriptor before giving it to
             // sing-tun. Kotlin remains the owner of the detached original.
             runCatching { ParcelFileDescriptor.adoptFd(fd).close() }
+                .onFailure { Log.w(TAG, "Borrowed TUN descriptor cleanup failed", it) }
         }
     }
 
@@ -321,6 +343,43 @@ class HysteriaClientImpl : HysteriaClient {
             s.testDNSOverTCP().toDiagnosticResult()
         }
 
+    override suspend fun measureLatency(
+        config: HysteriaConfig,
+        directDns: DirectDnsConfig,
+        protector: HysteriaClient.SocketProtector,
+        endpoint: String,
+    ): DiagnosticResult = withContext(Dispatchers.IO) {
+        val probe = synchronized(lifecycleLock) {
+            session?.takeIf { sessionConfig == config && _state.value is ConnectionState.Connected }
+                ?.newLatencyProbe()
+        } ?: Golib.newProfileLatencyProbe(
+            config.toJson(),
+            directDns.toWireJson(),
+            object : golib.FdProtector {
+                override fun protect(fd: Int): Boolean = protector.protect(fd)
+                override fun bindAndProtect(fd: Int): Boolean = protector.bindAndProtect(fd)
+            },
+        )
+        try {
+            suspendCancellableCoroutine { continuation ->
+                continuation.invokeOnCancellation { probe.cancel() }
+                // Native Run returns on cancellation. When Fast Open is off,
+                // newLatencyProbe returns null and the fallback owns a separate
+                // session, which cancellation closes to unblock the TCP handshake.
+                Dispatchers.IO.dispatch(continuation.context) {
+                    try {
+                        val result = probe.run(endpoint, 12_000).toDiagnosticResult()
+                        continuation.resume(result)
+                    } catch (e: Exception) {
+                        continuation.resumeWithException(e)
+                    }
+                }
+            }
+        } finally {
+            probe.cancel()
+        }
+    }
+
     override fun logs(minLevel: LogLevel): Flow<LogEntry> = LogSink.flow
         .filter { it.level.ordinal >= minLevel.ordinal }
         .onStart { LogSink.register(minLevel) }
@@ -330,6 +389,7 @@ class HysteriaClientImpl : HysteriaClient {
         liveGeneration.incrementAndGet()
         val current = session
         session = null
+        sessionConfig = null
         current
     }
 
@@ -380,6 +440,7 @@ private object LogSink {
         Golib.setMinLogLevel(LogLevel.INFO.name)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun clearReplay() {
         flow.resetReplayCache()
     }

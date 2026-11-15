@@ -18,8 +18,6 @@ internal sealed interface Action {
     data class ProfilesLoaded(val profiles: List<Profile>, val activeId: String?) : Action
     data class ConnectionStateChanged(val state: ConnectionState, val connectedSinceMillis: Long?) :
         Action
-
-    data object TunnelConnected : Action
 }
 
 internal class DashboardBootstrapper(
@@ -40,20 +38,19 @@ internal class DashboardBootstrapper(
             }.collect(::dispatch)
         }
         scope.launch {
-            runCatching { reconcileConnectionState() }
-            var wasConnected = false
+            runCatching { reconcileConnectionState() }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                Log.w(TAG, "Connection reconciliation failed", it)
+            }
             combine(client.state, runtimeStateRepository.state) { state, runtimeState ->
                 state.effectiveWith(runtimeState)
             }.collect { state ->
-                val isConnected = state is ConnectionState.Connected
                 dispatch(
                     Action.ConnectionStateChanged(
                         state,
                         (state as? ConnectionState.Connected)?.connectedSinceElapsedRealtime
                     )
                 )
-                if (isConnected && !wasConnected) dispatch(Action.TunnelConnected)
-                wasConnected = isConnected
             }
         }
     }

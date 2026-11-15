@@ -41,7 +41,11 @@ internal object DirectDnsPlanner {
                 val addresses = when (mode) {
                     DnsMode.Cloudflare -> DnsPresets.cloudflareAddresses()
                     DnsMode.Google -> DnsPresets.googleAddresses()
-                    DnsMode.OpenDns -> DnsPresets.openDnsHttpsAddresses()
+                    DnsMode.OpenDns -> if (transport == DnsTransport.Https) {
+                        DnsPresets.openDnsHttpsAddresses()
+                    } else {
+                        DnsPresets.openDnsAddresses()
+                    }
                     DnsMode.AdGuard -> DnsPresets.adGuardAddresses()
                     else -> configuredBootstrap[host].orEmpty()
                 }

@@ -75,6 +75,12 @@ internal fun ProfilesCard(
                     )
                 }
             }
+            Text(
+                text = stringResource(R.string.dashboard_latency_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = spacing.large),
+            )
             Column(modifier = Modifier.selectableGroup()) {
                 profiles.forEachIndexed { index, profile ->
                     ProfileRow(
@@ -150,7 +156,6 @@ private fun ProfileRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                LatencyLabel(latency = latency)
             }
             Text(
                 text = profile.config.server.address,
@@ -159,6 +164,7 @@ private fun ProfileRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            LatencyLabel(latency = latency)
         }
         IconButton(onClick = onOpenConfig) {
             Icon(
@@ -172,8 +178,11 @@ private fun ProfileRow(
 
 @Composable
 private fun LatencyLabel(latency: LatencyResult) {
-    val (text, description) = when (latency) {
-        LatencyResult.Idle -> return
+    val [text, description] = when (latency) {
+        LatencyResult.Idle -> stringResource(R.string.dashboard_latency_idle) to null
+        LatencyResult.TimedOut -> stringResource(R.string.dashboard_latency_timeout) to null
+        LatencyResult.NoNetwork -> stringResource(R.string.dashboard_latency_no_network) to null
+        LatencyResult.ConnectionFailed -> stringResource(R.string.dashboard_latency_connection_failed) to null
         LatencyResult.Measuring -> stringResource(R.string.dashboard_latency_measuring) to
                 stringResource(R.string.dashboard_latency_measuring_cd)
         is LatencyResult.Success -> stringResource(R.string.dashboard_latency_ms, latency.ms) to null
@@ -184,13 +193,12 @@ private fun LatencyLabel(latency: LatencyResult) {
         is LatencyResult.Success -> when {
             latency.ms < 100 -> MaterialTheme.colorScheme.primary
             latency.ms < 300 -> MaterialTheme.colorScheme.secondary
-            else -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
         }
 
         LatencyResult.Unreachable -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Spacer(Modifier.width(MaterialTheme.spacing.small))
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),

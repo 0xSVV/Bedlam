@@ -1,7 +1,13 @@
 package ru.shapovalov.bedlam.feature.dashboard.presentation
 
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.launch
 import ru.shapovalov.bedlam.core.latency.LatencyResult
 import ru.shapovalov.bedlam.core.profile.domain.model.Profile
@@ -22,30 +28,39 @@ internal class DashboardExecutor(
 ) : CoroutineExecutor<DashboardStore.Intent, Action, DashboardStore.State, Msg, DashboardStore.Label>() {
 
     private val pingJobs = HashMap<String, Job>()
+    private val pingSlots = Semaphore(3)
+    private var pendingConnectedPing = false
 
     override fun executeAction(action: Action) {
         when (action) {
             is Action.ProfilesLoaded -> {
-                cancelPingsOfRemovedProfiles(action.profiles)
+                cancelPingsOfChangedProfiles(action.profiles)
                 dispatch(
                     Msg.ProfilesLoaded(
                         action.profiles,
                         action.activeId
                     )
                 )
+                if (pendingConnectedPing) pingActiveProfile()
             }
 
             is Action.ConnectionStateChanged -> {
+                val changed = state().connectionState != action.state
+                if (changed) invalidatePings()
+                if (action.state !is ConnectionState.Connected) {
+                    pendingConnectedPing = false
+                } else if (changed) {
+                    pendingConnectedPing = true
+                }
                 dispatch(
                     Msg.ConnectionChanged(
                         action.state,
                         action.connectedSinceMillis
                     )
                 )
+                if (pendingConnectedPing) pingActiveProfile()
                 if (!action.state.isActiveTunnel) applyPendingSwitch()
             }
-
-            Action.TunnelConnected -> pingActiveProfile()
         }
     }
 
@@ -98,7 +113,10 @@ internal class DashboardExecutor(
         dispatch(Msg.SwitchConfirmed)
         scope.launch {
             setActiveProfile(target.id)
-            runCatching { switchProfile(target.id) }
+            runCatching { switchProfile(target.id) }.onFailure {
+                if (it is CancellationException) throw it
+                android.util.Log.w("DashboardExecutor", "Profile switch failed", it)
+            }
             dispatch(Msg.SwitchFinished)
         }
     }
@@ -153,20 +171,48 @@ internal class DashboardExecutor(
     }
 
     private fun measure(profile: Profile) {
-        pingJobs[profile.id]?.cancel()
+        pingJobs.remove(profile.id)?.cancel()
         dispatch(Msg.LatencyUpdated(profile.id, LatencyResult.Measuring))
-        pingJobs[profile.id] = scope.launch {
-            dispatch(Msg.LatencyUpdated(profile.id, pingProfile(profile)))
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val result = pingSlots.withPermit { pingProfile(profile) }
+                currentCoroutineContext().ensureActive()
+                if (state().profiles.any { it.id == profile.id && it.config == profile.config }) {
+                    dispatch(Msg.LatencyUpdated(profile.id, result))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (state().profiles.any { it.id == profile.id && it.config == profile.config }) {
+                    dispatch(Msg.LatencyUpdated(profile.id, LatencyResult.Unreachable))
+                }
+            } finally {
+                if (pingJobs[profile.id] == currentCoroutineContext()[Job]) pingJobs.remove(profile.id)
+            }
         }
+        pingJobs[profile.id] = job
+        job.start()
     }
 
-    private fun cancelPingsOfRemovedProfiles(profiles: List<Profile>) {
-        val ids = profiles.mapTo(HashSet()) { it.id }
-        (pingJobs.keys - ids).forEach { id -> pingJobs.remove(id)?.cancel() }
+    private fun cancelPingsOfChangedProfiles(profiles: List<Profile>) {
+        val previous = state().profiles.associateBy { it.id }
+        val unchanged = profiles.mapNotNullTo(HashSet()) { next ->
+            next.id.takeIf { previous[it]?.config == next.config }
+        }
+        (pingJobs.keys - unchanged).forEach { id -> pingJobs.remove(id)?.cancel() }
+    }
+
+    private fun invalidatePings() {
+        val cancelled = pingJobs.values.toList()
+        pingJobs.clear()
+        cancelled.forEach(Job::cancel)
+        dispatch(Msg.LatenciesCleared)
     }
 
     private fun pingActiveProfile() {
-        val id = state().activeProfileId ?: return
-        ping(id)
+        val profile = state().activeProfile ?: return
+        pendingConnectedPing = false
+        measure(profile)
     }
 }

@@ -472,11 +472,16 @@
     <string name="logs_empty_filtered">The %1$s filter hides every line</string>
 
     <string name="dashboard_ping_all_cd">Measure latency of all profiles</string>
-    <string name="dashboard_latency_measuring">…</string>
+    <string name="dashboard_latency_measuring">Testing…</string>
     <string name="dashboard_latency_measuring_cd">Measuring latency</string>
     <string name="dashboard_latency_ms">%1$d ms</string>
-    <string name="dashboard_latency_unreachable">—</string>
-    <string name="dashboard_latency_unreachable_cd">Unreachable</string>
+    <string name="dashboard_latency_unreachable">Test failed</string>
+    <string name="dashboard_latency_unreachable_cd">HTTPS check failed; the tunnel may still work</string>
+    <string name="dashboard_latency_idle">Not tested</string>
+    <string name="dashboard_latency_timeout">Timed out</string>
+    <string name="dashboard_latency_no_network">Network unavailable</string>
+    <string name="dashboard_latency_connection_failed">Connection failed</string>
+    <string name="dashboard_latency_hint">HTTPS latency through each profile</string>
     <string name="routing_source_kind_cidr">CIDR</string>
     <string name="routing_source_kind_asn">ASN</string>
     <string name="routing_source_kind_domain">DOMAIN</string>

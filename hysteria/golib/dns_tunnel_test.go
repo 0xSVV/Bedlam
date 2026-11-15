@@ -54,11 +54,13 @@ func (acceptAllAuth) Authenticate(net.Addr, string, uint64) (bool, string) { ret
 
 type tcpOnlyOutbound func(addr string) (net.Conn, error)
 
-func (o tcpOnlyOutbound) TCP(addr string) (net.Conn, error) { return o(addr) }
+func (o tcpOnlyOutbound) TCP(_ *server.RequestInfo, addr string) (net.Conn, error) { return o(addr) }
 
-func (tcpOnlyOutbound) UDP(string) (server.UDPConn, error) { return nil, errors.New("udp disabled") }
+func (tcpOnlyOutbound) UDP(*server.RequestInfo, string) (server.UDPConn, error) {
+	return nil, errors.New("udp disabled")
+}
 
-func (tcpOnlyOutbound) CheckUDP(string) error { return errors.New("udp disabled") }
+func (tcpOnlyOutbound) CheckUDP(*server.RequestInfo, string) error { return errors.New("udp disabled") }
 
 type testTunnel struct {
 	*reconnectClient

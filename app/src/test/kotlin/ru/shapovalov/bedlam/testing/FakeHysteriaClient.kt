@@ -42,6 +42,7 @@ class FakeHysteriaClient(
         tunConfig: TunConfig,
         protector: HysteriaClient.SocketProtector,
         tun: HysteriaClient.TunFactory,
+        flowFilter: HysteriaClient.TcpFlowFilter?,
     ) = Unit
 
     override suspend fun updateTun(tunConfig: TunConfig, tun: HysteriaClient.TunFactory) = Unit
@@ -62,6 +63,13 @@ class FakeHysteriaClient(
 
     override fun logs(minLevel: HysteriaClient.LogLevel): Flow<HysteriaClient.LogEntry> =
         logEntries.filter { it.level >= minLevel }
+
+    override suspend fun measureLatency(
+        config: HysteriaConfig,
+        directDns: ru.shapovalov.hysteria.api.DirectDnsConfig,
+        protector: HysteriaClient.SocketProtector,
+        endpoint: String,
+    ): DiagnosticResult = DiagnosticResult.Error("unused")
 
     override suspend fun testUdp(): DiagnosticResult = DiagnosticResult.Error("unused")
     override suspend fun testDnsOverTcp(): DiagnosticResult = DiagnosticResult.Error("unused")

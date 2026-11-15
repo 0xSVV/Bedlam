@@ -103,7 +103,8 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 	}
 	s.domainIPs.reset()
 	handler := &tunHandler{session: s, client: c, ipv6Enabled: ipv6Mode != "disabled", ipv6Mode: ipv6Mode, dns: upstream, directDNS: directUpstream, dnsPolicy: policy}
-	stack, err := singtun.NewGVisor(tunStackOptions(ctx, tunIface, tunOpts, handler))
+	stackTun, activateEndpoint := deferTunRead(tunIface)
+	stack, err := singtun.NewGVisor(tunStackOptions(ctx, stackTun, tunOpts, handler))
 	if err != nil {
 		cancel()
 		tunIface.Close()
@@ -129,14 +130,15 @@ func (s *Session) StartTUN(fd int32, mtu int32, inet4Prefix, inet6Prefix string,
 		return fmt.Errorf("start TUN stack: %w", err)
 	}
 
+	activateEndpoint()
 	s.tunIface = tunIface
 	s.tunStack = stack
 	s.tunCancel = cancel
 	s.tunDNS = upstream
 	s.tunDirectDNS = directUpstream
 
-	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor, ipv6=%v, dns=%s)",
-		fd, mtu, ipv6Mode, upstream.id())
+	log(LogLevelInfo, srcTun, "TUN started (fd=%d, mtu=%d, stack=gvisor, ipv6=%v, direct-dns=%s, remote-dns=%s)",
+		fd, mtu, ipv6Mode, directUpstream.summary(), upstream.summary())
 	return nil
 }
 
@@ -256,6 +258,10 @@ func (h *tunHandler) newConnection(ctx context.Context, conn net.Conn, source M.
 
 	if err := N.ReportHandshakeSuccess(conn); err != nil {
 		return err
+	}
+
+	if !h.session.allowTCPFlow(source, destination) {
+		return errors.New("TCP flow denied by owner policy")
 	}
 
 	if h.rejectIPv6(destination) {

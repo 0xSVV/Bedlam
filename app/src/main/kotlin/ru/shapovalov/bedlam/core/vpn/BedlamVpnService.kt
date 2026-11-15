@@ -328,6 +328,7 @@ class BedlamVpnService : VpnService() {
                     override fun bindAndProtect(fd: Int): Boolean = this@BedlamVpnService.bindAndProtect(fd, requireUnderlyingNetwork = true)
                 },
                 tun = { tunConfig -> establishTun(plan, tunConfig) },
+                flowFilter = VpnTcpFlowFilter(this),
             )
             startSettingsWatcher()
         } catch (e: CancellationException) {
@@ -545,6 +546,7 @@ class BedlamVpnService : VpnService() {
                 return false
             } finally {
                 runCatching { duplicate.close() }
+                    .onFailure { Log.w(TAG, "Native socket duplicate cleanup failed", it) }
             }
         }
         return protect(fd)

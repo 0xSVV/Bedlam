@@ -6,18 +6,22 @@ import ru.shapovalov.bedlam.core.routing.domain.model.*
 import ru.shapovalov.hysteria.api.DnsTransport
 
 class NewDnsPresetsTest {
-    @Test fun `OpenDNS offers verified transports and independent HTTPS bootstrap`() {
+    @Test fun `OpenDNS supports TLS and keeps separate TLS and HTTPS bootstrap addresses`() {
         val mode = DnsMode.valueOf("OpenDns")
-        assertEquals(listOf(DnsTransport.Udp, DnsTransport.Tcp, DnsTransport.Https), DnsPresets.supportedTransports(mode))
-        assertEquals(DnsTransport.Https, DnsPresets.effectiveTransport(mode, DnsTransport.Tls))
+        assertEquals(listOf(DnsTransport.Udp, DnsTransport.Tcp, DnsTransport.Tls, DnsTransport.Https), DnsPresets.supportedTransports(mode))
+        assertEquals(DnsTransport.Tls, DnsPresets.effectiveTransport(mode, DnsTransport.Tls))
         val plain = DirectDnsPlanner.plan(RoutingConfig(directDnsMode = mode), emptyList())
         assertTrue("208.67.222.222:53" in plain.servers)
         val secure = DirectDnsPlanner.plan(RoutingConfig(directDnsMode = mode, directDnsTransport = DnsTransport.Https), emptyList())
         assertEquals(listOf("https://doh.opendns.com/dns-query"), secure.servers)
         assertTrue("146.112.41.2" in secure.bootstrap.getValue("doh.opendns.com"))
-        assertThrows(IllegalArgumentException::class.java) {
-            DirectDnsPlanner.plan(RoutingConfig(directDnsMode = mode, directDnsTransport = DnsTransport.Tls), emptyList())
-        }
+        val tls = DirectDnsPlanner.plan(RoutingConfig(directDnsMode = mode, directDnsTransport = DnsTransport.Tls), emptyList())
+        assertEquals(DnsTransport.Tls, tls.transport)
+        assertEquals(listOf("dns.opendns.com:853"), tls.servers)
+        assertEquals(
+            mapOf("dns.opendns.com" to listOf("208.67.222.222", "208.67.220.220", "2620:119:35::35", "2620:119:53::53")),
+            tls.bootstrap,
+        )
     }
 
     @Test fun `AdGuard uses filtering service with bootstrap for both encrypted transports`() {

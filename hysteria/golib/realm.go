@@ -68,7 +68,7 @@ func dialRealm(cfg *clientConfig, session *Session) (*client.Config, error) {
 	log(LogLevelInfo, srcTransport, "Realm: dialing rendezvous %s (realm=%s)",
 		addr.HostPort, addr.RealmID)
 
-	ctx := context.Background()
+	ctx := session.lifetimeContext()
 	stunServers := realmSTUNServers(cfg, addr)
 	localAddrs, err := realm.Discover(ctx, baseConn, realm.STUNConfig{
 		Servers:  stunServers,
@@ -161,7 +161,8 @@ func (s *Session) listenProtectedUDP(localPort int) (net.PacketConn, error) {
 		_ = conn.Close()
 		return nil, perr
 	}
-	return conn, nil
+	s.registerActiveConn(conn)
+	return &trackedPacketConn{PacketConn: conn, session: s}, nil
 }
 
 // realmHTTPClient returns an HTTP client whose sockets are protected from the

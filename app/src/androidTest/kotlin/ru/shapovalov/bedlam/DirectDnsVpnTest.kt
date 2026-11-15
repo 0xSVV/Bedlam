@@ -49,6 +49,11 @@ class DirectDnsVpnTest {
             )
         }
         assertNull("VPN consent must be granted on the emulator", VpnService.prepare(context))
+        component.vpnServiceLauncher.stop()
+        withTimeout(10.seconds) {
+            component.hysteriaClient.state.first { it is ConnectionState.Disconnected }
+        }
+        delay(300.milliseconds)
         context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         assertTrue(http("10.0.2.2", "/").contains("bedlam-fixture-ok"))
         val profile = Profile(
@@ -154,7 +159,11 @@ class DirectDnsVpnTest {
         while (true) {
             // Android can retain the VPN Network id when replacing its TUN.
             // Observe the actual server receiving traffic instead of that id.
-            runCatching { query(name) }
+            try {
+                query(name)
+            } catch (_: java.io.IOException) {
+                // The interface can be between generations while settings apply.
+            }
             if (count(transport, name) > 0) break
             delay(100.milliseconds)
         }

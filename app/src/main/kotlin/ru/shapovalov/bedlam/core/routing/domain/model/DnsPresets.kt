@@ -29,7 +29,7 @@ object DnsPresets {
     // Cisco: umbrella.cisco.com/blog/enhancing-support-dns-encryption-with-dns-over-https
     private val OPENDNS = Provider(
         addresses = listOf("208.67.222.222", "208.67.220.220", "2620:119:35::35", "2620:119:53::53"),
-        tlsHost = "",
+        tlsHost = "dns.opendns.com",
         httpsUrl = "https://doh.opendns.com/dns-query",
     )
     // AdGuard's default service filters ads, trackers and phishing domains.
@@ -68,8 +68,8 @@ object DnsPresets {
         // Neither preset publishes a DNS over QUIC endpoint, so it stays a
         // Custom-mode choice rather than a preset that cannot answer.
         DnsMode.Cloudflare, DnsMode.Google -> DnsTransport.entries - DnsTransport.Doq
-        DnsMode.OpenDns -> listOf(DnsTransport.Udp, DnsTransport.Tcp, DnsTransport.Https)
-        DnsMode.AdGuard -> listOf(DnsTransport.Udp, DnsTransport.Tcp, DnsTransport.Tls, DnsTransport.Https)
+        DnsMode.OpenDns, DnsMode.AdGuard ->
+            listOf(DnsTransport.Udp, DnsTransport.Tcp, DnsTransport.Tls, DnsTransport.Https)
         DnsMode.Custom -> DnsTransport.entries
     }
 

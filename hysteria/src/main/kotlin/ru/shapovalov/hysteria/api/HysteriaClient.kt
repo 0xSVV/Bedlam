@@ -54,6 +54,7 @@ interface HysteriaClient {
         tunConfig: TunConfig = TunConfig.Default,
         protector: SocketProtector,
         tun: TunFactory,
+        flowFilter: TcpFlowFilter? = null,
     )
 
     /**
@@ -143,6 +144,19 @@ interface HysteriaClient {
     /** Diagnostic: send a DNS query through a hysteria TCP stream. */
     suspend fun testDnsOverTcp(): DiagnosticResult
 
+    /**
+     * Measures a fresh HTTPS 204 response through an authenticated Hysteria client.
+     * Reuses the live session only when its complete configuration matches.
+     * Other profiles use an isolated, cancellable session with no local listener.
+     * Authentication time is excluded; remote TCP/TLS setup is included.
+     */
+    suspend fun measureLatency(
+        config: HysteriaConfig,
+        directDns: DirectDnsConfig,
+        protector: SocketProtector,
+        endpoint: String = "https://cp.cloudflare.com/generate_204",
+    ): DiagnosticResult
+
     /** Cumulative TX/RX byte counters for the current session. */
     data class TrafficStats(val txBytes: Long, val rxBytes: Long)
 
@@ -161,6 +175,17 @@ interface HysteriaClient {
      */
     enum class LogLevel { DEBUG, INFO, WARN, ERROR }
 
+    /** Decides whether a captured TCP flow may be forwarded. */
+    fun interface TcpFlowFilter {
+        /** Called before forwarding, using the flow's original numeric addresses. */
+        fun allow(
+            sourceAddress: String,
+            sourcePort: Int,
+            destinationAddress: String,
+            destinationPort: Int,
+        ): Boolean
+    }
+
     /**
      * Binds native sockets to the underlying network so they don't route
      * through the VPN. Called from a native goroutine, before the socket
@@ -174,10 +199,10 @@ interface HysteriaClient {
     }
 
     /**
-     * Establishes the Android VPN interface with the requested [config] and
+     * Establishes the Android VPN interface with the requested [TunConfig] and
      * returns the resulting TUN device. Ownership passes to the client; do
      * not close the returned descriptor yourself. The caller must wire the
-     * Builder's `addAddress`/MTU using the values in [config] so the kernel
+     * Builder's `addAddress`/MTU using the values in [TunConfig] so the kernel
      * TUN matches the gVisor stack the client will attach to it, and must
      * advertise [TunConfig.IPV4_DNS_ADDRESS] (and [TunConfig.IPV6_DNS_ADDRESS]
      * when IPv6 is enabled) via `addDnsServer` — the native layer answers DNS
@@ -196,6 +221,8 @@ data class ConnectionInfo(
     val udpEnabled: Boolean,
     /** Number of failed attempts that preceded this successful connect (0 on first connect). */
     val attempt: Int,
+    /** Increases after every successful handshake, including fast reconnects. */
+    val connectionSequence: Long = 0L,
 )
 
 /** Why a session ended. Recorded in [ConnectionState.Disconnected]. */

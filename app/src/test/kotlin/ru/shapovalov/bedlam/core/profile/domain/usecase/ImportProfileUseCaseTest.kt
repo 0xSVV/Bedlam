@@ -64,6 +64,7 @@ class ImportProfileUseCaseTest {
             tunConfig: TunConfig,
             protector: HysteriaClient.SocketProtector,
             tun: HysteriaClient.TunFactory,
+            flowFilter: HysteriaClient.TcpFlowFilter?,
         ) = Unit
 
         override suspend fun updateTun(
@@ -81,6 +82,13 @@ class ImportProfileUseCaseTest {
         override fun stats(): HysteriaClient.TrafficStats? = null
         override fun logs(minLevel: HysteriaClient.LogLevel): Flow<HysteriaClient.LogEntry> =
             flowOf()
+
+        override suspend fun measureLatency(
+            config: HysteriaConfig,
+            directDns: ru.shapovalov.hysteria.api.DirectDnsConfig,
+            protector: HysteriaClient.SocketProtector,
+            endpoint: String,
+        ): DiagnosticResult = DiagnosticResult.Error("unused")
 
         override suspend fun testUdp(): DiagnosticResult = DiagnosticResult.Error("unused")
         override suspend fun testDnsOverTcp(): DiagnosticResult = DiagnosticResult.Error("unused")
@@ -102,7 +110,7 @@ class ImportProfileUseCaseTest {
     @Test
     fun `rejects a link whose config is already saved`() = runTest {
         val repo = FakeRepo()
-        useCase(repo)(link, ProfileImportFormat.Link).getOrThrow()
+        assertTrue(useCase(repo)(link, ProfileImportFormat.Link).isSuccess)
 
         val result = useCase(repo)(link, ProfileImportFormat.Link)
 
@@ -117,7 +125,7 @@ class ImportProfileUseCaseTest {
     @Test
     fun `rejects a duplicate even when a different name is requested`() = runTest {
         val repo = FakeRepo()
-        useCase(repo)(link, ProfileImportFormat.Link, name = "First").getOrThrow()
+        assertTrue(useCase(repo)(link, ProfileImportFormat.Link, name = "First").isSuccess)
 
         val result = useCase(repo)(link, ProfileImportFormat.Link, name = "Second")
 
@@ -132,7 +140,7 @@ class ImportProfileUseCaseTest {
     @Test
     fun `imports a link that differs from the saved one`() = runTest {
         val repo = FakeRepo()
-        useCase(repo)(link, ProfileImportFormat.Link).getOrThrow()
+        assertTrue(useCase(repo)(link, ProfileImportFormat.Link).isSuccess)
 
         val result = useCase(repo)(
             "hysteria2://pw@other.example:443/?sni=other.example#Other",

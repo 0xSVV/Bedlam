@@ -532,7 +532,7 @@ class DashboardExecutorTest {
         val bootstrapper = TestBootstrapper<Action>()
         val state = DashboardStore.State(profiles = listOf(home, work), activeProfileId = "a")
         store(state, pinger = pinger, bootstrapper = bootstrapper).disposeAfter { store ->
-            bootstrapper.send(Action.TunnelConnected)
+            bootstrapper.send(Action.ConnectionStateChanged(testConnected(), 1))
 
             assertEquals(listOf("a"), pinger.calls.map { it.first })
             assertEquals(mapOf("a" to LatencyResult.Measuring), store.state.latencies)
@@ -540,6 +540,102 @@ class DashboardExecutorTest {
             pinger.calls.single().second.complete(LatencyResult.Success(42))
 
             assertEquals(mapOf("a" to LatencyResult.Success(42)), store.state.latencies)
+        }
+    }
+
+    @Test
+    fun `connection before profiles load still measures the active profile`() = runTest {
+        val pinger = FakeProfilePinger()
+        val bootstrapper = TestBootstrapper<Action>()
+        store(DashboardStore.State(), pinger = pinger, bootstrapper = bootstrapper).disposeAfter { store ->
+            bootstrapper.send(Action.ConnectionStateChanged(testConnected(), 1))
+            assertTrue(pinger.calls.isEmpty())
+            bootstrapper.send(Action.ProfilesLoaded(listOf(home), home.id))
+            assertEquals(listOf(home.id), pinger.calls.map { it.first })
+            pinger.calls.single().second.complete(LatencyResult.Success(42))
+            assertEquals(LatencyResult.Success(42), store.state.latencies[home.id])
+        }
+    }
+
+    @Test
+    fun `fast reconnect refreshes latency even when the reconnecting state is conflated`() = runTest {
+        val pinger = FakeProfilePinger()
+        val bootstrapper = TestBootstrapper<Action>()
+        val connected = testConnected()
+        val state = DashboardStore.State(profiles = listOf(home), activeProfileId = home.id)
+        store(state, pinger = pinger, bootstrapper = bootstrapper).disposeAfter { store ->
+            bootstrapper.send(Action.ConnectionStateChanged(connected, 1))
+            pinger.calls.single().second.complete(LatencyResult.Success(42))
+            bootstrapper.send(Action.ConnectionStateChanged(connected, 1))
+            assertEquals(1, pinger.calls.size)
+
+            val reconnected = connected.copy(
+                info = connected.info.copy(connectionSequence = connected.info.connectionSequence + 1),
+            )
+            bootstrapper.send(Action.ConnectionStateChanged(reconnected, 1))
+            assertEquals(2, pinger.calls.size)
+            assertEquals(LatencyResult.Measuring, store.state.latencies[home.id])
+            pinger.calls.last().second.complete(LatencyResult.Success(57))
+            assertEquals(LatencyResult.Success(57), store.state.latencies[home.id])
+        }
+    }
+
+    @Test
+    fun `disconnect cancels every running and queued batch measurement`() = runTest {
+        val pinger = FakeProfilePinger()
+        val bootstrapper = TestBootstrapper<Action>()
+        val profiles = (0..9).map { home.copy(id = it.toString()) }
+        val state = DashboardStore.State(profiles = profiles, connectionState = testConnected())
+        store(state, pinger = pinger, bootstrapper = bootstrapper).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.PingAllProfiles)
+            assertEquals(3, pinger.active)
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Disconnected(), null))
+            assertEquals(0, pinger.active)
+            assertTrue(store.state.latencies.isEmpty())
+        }
+    }
+
+    @Test
+    fun `editing a profile cancels its old measurement and clears the result`() = runTest {
+        val pinger = FakeProfilePinger()
+        val bootstrapper = TestBootstrapper<Action>()
+        store(DashboardStore.State(profiles = listOf(home)), pinger = pinger, bootstrapper = bootstrapper).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.PingProfile(home.id))
+            val edited = home.copy(config = home.config.copy(server = home.config.server.copy(address = "updated.example:443")))
+            bootstrapper.send(Action.ProfilesLoaded(listOf(edited), home.id))
+            pinger.calls.single().second.complete(LatencyResult.Success(900))
+            assertEquals(0, pinger.active)
+            assertTrue(store.state.latencies.isEmpty())
+        }
+    }
+
+    @Test
+    fun `disconnect cancels pending tests and clears measurements`() = runTest {
+        val pinger = FakeProfilePinger()
+        val bootstrapper = TestBootstrapper<Action>()
+        store(DashboardStore.State(profiles = listOf(home), connectionState = testConnected()), pinger = pinger, bootstrapper = bootstrapper).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.PingAllProfiles)
+            bootstrapper.send(Action.ConnectionStateChanged(ConnectionState.Disconnected(), null))
+            pinger.calls.single().second.complete(LatencyResult.Success(900))
+            assertEquals(0, pinger.active)
+            assertTrue(store.state.latencies.isEmpty())
+        }
+    }
+
+    @Test
+    fun `large profile batches run at most three measurements at once`() = runTest {
+        val pinger = FakeProfilePinger()
+        val profiles = (0..9).map { home.copy(id = it.toString()) }
+        store(DashboardStore.State(profiles = profiles), pinger = pinger).disposeAfter { store ->
+            store.accept(DashboardStore.Intent.PingAllProfiles)
+            assertEquals(3, pinger.active)
+            assertEquals(3, pinger.calls.size)
+            repeat(profiles.size) { index ->
+                pinger.calls[index].second.complete(LatencyResult.Success(10))
+                assertTrue(pinger.active <= 3)
+            }
+            assertEquals(10, pinger.calls.size)
+            assertEquals(0, pinger.active)
         }
     }
 

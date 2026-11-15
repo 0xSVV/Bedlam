@@ -288,7 +288,7 @@ func (s *Session) resolveHost(server string) (net.Addr, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid host address %q: %w", server, err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), serverResolveTimeout)
+	ctx, cancel := context.WithTimeout(s.lifetimeContext(), serverResolveTimeout)
 	defer cancel()
 	ips, err := s.lookupDirectHost(ctx, host)
 	if err != nil {

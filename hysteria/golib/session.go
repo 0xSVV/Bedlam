@@ -16,7 +16,11 @@ import (
 )
 
 type Session struct {
-	closed atomic.Bool
+	closed         atomic.Bool
+	tcpFlowFilter  atomic.Pointer[tcpFlowFilterHolder]
+	lifetime       context.Context
+	cancelLifetime context.CancelFunc
+	fastOpen       bool
 
 	clientMu sync.Mutex
 	client   *reconnectClient
@@ -65,13 +69,17 @@ func NewSession(configJSON string, directDNSJSON string, protector FdProtector, 
 	if err != nil {
 		return nil, err
 	}
+	lifetime, cancelLifetime := context.WithCancel(context.Background())
 	s := &Session{
-		protector:   protector,
-		directDNS:   directCfg,
-		dnsPolicy:   policy,
-		domainIPs:   newDomainAddressRegistry(4096),
-		activeConns: map[net.PacketConn]struct{}{},
-		dnsCache:    newDNSCache(),
+		lifetime:       lifetime,
+		cancelLifetime: cancelLifetime,
+		fastOpen:       cfg.FastOpen,
+		protector:      protector,
+		directDNS:      directCfg,
+		dnsPolicy:      policy,
+		domainIPs:      newDomainAddressRegistry(4096),
+		activeConns:    map[net.PacketConn]struct{}{},
+		dnsCache:       newDNSCache(),
 	}
 
 	wrappedHandler := &loggingHandler{inner: handler}
@@ -108,6 +116,7 @@ func NewSession(configJSON string, directDNSJSON string, protector FdProtector, 
 	)
 	if err != nil {
 		log(LogLevelError, srcTunnel, "Connection failed: %s", err.Error())
+		_ = s.Close()
 		return nil, err
 	}
 	s.client = rc
@@ -232,6 +241,9 @@ func (s *Session) Close() error {
 		return nil
 	}
 
+	if s.cancelLifetime != nil {
+		s.cancelLifetime()
+	}
 	log(LogLevelInfo, srcTunnel, "Closing session...")
 
 	_ = s.StopTUN()
@@ -384,6 +396,11 @@ func (s *Session) bindAndProtectPacketConn(conn net.PacketConn) error {
 
 func (s *Session) registerActiveConn(c net.PacketConn) {
 	s.activeConnsMu.Lock()
+	if s.closed.Load() || s.lifetimeContext().Err() != nil {
+		s.activeConnsMu.Unlock()
+		_ = c.Close()
+		return
+	}
 	s.activeConns[c] = struct{}{}
 	s.activeConnsMu.Unlock()
 }

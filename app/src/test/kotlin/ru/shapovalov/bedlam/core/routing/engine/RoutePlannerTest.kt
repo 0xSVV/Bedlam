@@ -81,6 +81,22 @@ class RoutePlannerTest {
     }
 
     @Test
+    fun `OpenDNS remote TLS is preserved alongside independent Direct DNS`() {
+        val plan = planner().plan(
+            RoutingConfig(
+                dnsMode = DnsMode.OpenDns,
+                dnsTransport = DnsTransport.Tls,
+                directDnsMode = DnsMode.Google,
+                directDnsTransport = DnsTransport.Tls,
+            ),
+            AppFilter(),
+        )
+        assertEquals(DnsTransport.Tls, plan.dnsUpstream.transport)
+        assertEquals(listOf("dns.opendns.com:853"), plan.dnsUpstream.servers)
+        assertEquals(listOf("dns.google:853"), plan.directDns.servers)
+    }
+
+    @Test
     fun `domain snapshots are policy only and do not become route exclusions`() {
         val domain = ResolvedSource(
             source = DirectRouteSource.Domain("domain-id", "example.com", "", true, 0),
