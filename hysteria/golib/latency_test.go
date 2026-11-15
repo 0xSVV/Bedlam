@@ -118,13 +118,32 @@ func TestLatencyCancellationKeepsActiveTunnel(t *testing.T) {
 }
 
 func TestLatencyTimeoutAndFreshRequest(t *testing.T) {
-	s, web := latencyTunnel(t, func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
-	}, false)
-	start := time.Now()
-	r := trustedLatencyProbe(t, s, web).Run(web.URL, 150)
-	if r.Ok || r.Error != "timeout" || time.Since(start) > time.Second {
-		t.Fatalf("timeout=%+v after %v", r, time.Since(start))
+	for _, fastOpen := range []bool{false, true} {
+		s, web := latencyTunnel(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/hang" {
+				<-r.Context().Done()
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}, fastOpen)
+		start := time.Now()
+		r := trustedLatencyProbe(t, s, web).Run(web.URL+"/hang", 150)
+		if r.Ok || r.Error != "timeout" || time.Since(start) > time.Second {
+			t.Fatalf("fastOpen=%v: timeout=%+v after %v", fastOpen, r, time.Since(start))
+		}
+		if r := trustedLatencyProbe(t, s, web).Run(web.URL, 1000); !r.Ok {
+			t.Fatalf("fastOpen=%v: fresh request after timeout failed: %+v", fastOpen, r)
+		}
+	}
+}
+
+func TestLatencyRequestErrorPreservesSocketTimeout(t *testing.T) {
+	timeout := &net.OpError{Op: "read", Net: "quic", Err: context.DeadlineExceeded}
+	if r := latencyRequestError(timeout); r.Error != "timeout" {
+		t.Fatalf("socket deadline lost before the context timer: %+v", r)
+	}
+	if r := latencyRequestError(errors.New("connection refused")); r.Error != "request" {
+		t.Fatalf("non-timeout error misclassified: %+v", r)
 	}
 }
 

@@ -134,6 +134,16 @@ func latencyContextError(ctx context.Context) *TestResult {
 	return &TestResult{Error: "cancelled"}
 }
 
+func latencyRequestError(err error) *TestResult {
+	// A socket deadline can fire before the context timer publishes its error.
+	// Preserve that timeout even if Run receives this result first.
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return &TestResult{Error: "timeout"}
+	}
+	return &TestResult{Error: "request"}
+}
+
 func (p *LatencyProbe) measure(ctx context.Context, endpoint *url.URL) *TestResult {
 	if ctx.Err() != nil {
 		return latencyContextError(ctx)
@@ -160,7 +170,7 @@ func (p *LatencyProbe) measure(ctx context.Context, endpoint *url.URL) *TestResu
 	}
 	conn, err := c.TCP(addr)
 	if err != nil {
-		return &TestResult{Error: "request"}
+		return latencyRequestError(err)
 	}
 	defer conn.Close()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
@@ -189,7 +199,7 @@ func (p *LatencyProbe) measure(ctx context.Context, endpoint *url.URL) *TestResu
 	req.Header.Set("Cache-Control", "no-cache")
 	resp, err := client.Do(req)
 	if err != nil {
-		return &TestResult{Error: "request"}
+		return latencyRequestError(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
